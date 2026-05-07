@@ -288,17 +288,22 @@ export default function App() {
   const canCreateIncident = role === "DBA" || role === "Analyst";
   const canResolve = role === "DBA";
   const canManageUsers = role === "DBA";
+  const selectedReport = reportCatalog.find((r) => r.key === selectedReportKey);
 
   return (
-    <main style={{ fontFamily: "Arial, sans-serif", maxWidth: 900, margin: "24px auto", padding: "0 16px" }}>
-      <h1>DBOps Control Center</h1>
-      <p>Render-first database operations dashboard (JWT, RBAC, whitelisted SQL reports).</p>
+    <main className="app-shell">
+      <header className="page-header">
+        <h1 className="page-title">DBOps Control Center</h1>
+        <p className="page-lede">
+          Render-first database operations dashboard (JWT, RBAC, whitelisted SQL reports).
+        </p>
+      </header>
 
       {!token ? (
-        <section style={{ marginBottom: 24, border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
-          <h2>Sign in</h2>
-          {authError ? <p style={{ color: "#b00020" }}>{authError}</p> : null}
-          <form onSubmit={login} style={{ display: "grid", gap: 8, maxWidth: 360 }}>
+        <section className="panel">
+          <h2 className="panel-title">Sign in</h2>
+          {authError ? <p className="error-text">{authError}</p> : null}
+          <form className="form-grid form-grid--narrow" onSubmit={login}>
             <input
               type="email"
               required
@@ -313,14 +318,14 @@ export default function App() {
               value={loginForm.password}
               onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
             />
-            <button type="submit">Login</button>
+            <button type="submit" className="btn btn-primary">
+              Login
+            </button>
           </form>
 
-          <h3 style={{ marginTop: 24 }}>First-time setup (bootstrap DBA)</h3>
-          <p style={{ color: "#555", fontSize: 14 }}>
-            Use once when the database has no users. Role must be DBA (fixed below).
-          </p>
-          <form onSubmit={bootstrapRegister} style={{ display: "grid", gap: 8, maxWidth: 360 }}>
+          <h3 className="section-lede">First-time setup (bootstrap DBA)</h3>
+          <p className="panel-sub">Use once when the database has no users. Role must be DBA (fixed below).</p>
+          <form className="form-grid form-grid--narrow" onSubmit={bootstrapRegister}>
             <input
               type="email"
               required
@@ -343,24 +348,26 @@ export default function App() {
               value={bootstrapForm.confirm}
               onChange={(e) => setBootstrapForm({ ...bootstrapForm, confirm: e.target.value })}
             />
-            <button type="submit">Create first DBA</button>
+            <button type="submit" className="btn btn-primary">
+              Create first DBA
+            </button>
           </form>
         </section>
       ) : (
-        <section style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          <span>
+        <div className="top-bar panel">
+          <span className="top-bar-meta">
             Signed in as <strong>{me?.email}</strong> ({me?.role})
           </span>
-          <button type="button" onClick={logout}>
+          <button type="button" className="btn btn-ghost" onClick={logout}>
             Log out
           </button>
-        </section>
+        </div>
       )}
 
       {token && canManageUsers ? (
-        <section style={{ marginBottom: 24, border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
-          <h2>Create user (DBA)</h2>
-          <form onSubmit={createUser} style={{ display: "grid", gap: 8, maxWidth: 360 }}>
+        <section className="panel">
+          <h2 className="panel-title">Create user (DBA)</h2>
+          <form className="form-grid form-grid--narrow" onSubmit={createUser}>
             <input
               type="email"
               required
@@ -381,38 +388,40 @@ export default function App() {
               <option value="Analyst">Analyst</option>
               <option value="DBA">DBA</option>
             </select>
-            <button type="submit">Create user</button>
+            <button type="submit" className="btn btn-primary">
+              Create user
+            </button>
           </form>
         </section>
       ) : null}
 
       {token ? (
         <>
-          <section style={{ marginBottom: 24 }}>
-            <h2>Operational Summary</h2>
+          <section className="stack-gap">
+            <h2 className="panel-title">Operational Summary</h2>
             {summary ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+              <div className="summary-grid">
                 <Card label="Total" value={summary.total_incidents} />
                 <Card label="Open" value={summary.open_incidents} />
                 <Card label="Resolved" value={summary.resolved_incidents} />
                 <Card label="High Severity" value={summary.high_severity_incidents} />
               </div>
             ) : (
-              <p>Loading summary...</p>
+              <p className="empty-state">Loading summary...</p>
             )}
           </section>
 
-          <section style={{ marginBottom: 24, border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
-            <h2>SQL reports (read-only)</h2>
-            <p style={{ color: "#555", fontSize: 14 }}>
+          <section className="panel">
+            <h2 className="panel-title">SQL reports (read-only)</h2>
+            <p className="panel-sub">
               Pre-approved SELECT queries with bound parameters. Executions are audited (DBA can view history).
             </p>
             {reportCatalog.length === 0 ? (
-              <p>Loading catalog...</p>
+              <p className="empty-state">Loading catalog...</p>
             ) : (
-              <form onSubmit={runReport} style={{ display: "grid", gap: 12 }}>
-                <label style={{ display: "grid", gap: 4 }}>
-                  <span>Report</span>
+              <form className="form-grid" onSubmit={runReport}>
+                <label className="field">
+                  <span className="field-label">Report</span>
                   <select value={selectedReportKey} onChange={(e) => setSelectedReportKey(e.target.value)}>
                     {reportCatalog.map((r) => (
                       <option key={r.key} value={r.key}>
@@ -421,14 +430,10 @@ export default function App() {
                     ))}
                   </select>
                 </label>
-                {reportCatalog.find((r) => r.key === selectedReportKey)?.description ? (
-                  <p style={{ margin: 0, color: "#555", fontSize: 14 }}>
-                    {reportCatalog.find((r) => r.key === selectedReportKey).description}
-                  </p>
-                ) : null}
-                {(reportCatalog.find((r) => r.key === selectedReportKey)?.params || []).map((p) => (
-                  <label key={p.name} style={{ display: "grid", gap: 4 }}>
-                    <span>
+                {selectedReport?.description ? <p className="hint">{selectedReport.description}</p> : null}
+                {(selectedReport?.params || []).map((p) => (
+                  <label key={p.name} className="field">
+                    <span className="field-label">
                       {p.name}
                       {p.min != null || p.max != null ? ` (${p.min ?? "?"}–${p.max ?? "?"})` : ""}
                     </span>
@@ -446,30 +451,30 @@ export default function App() {
                     />
                   </label>
                 ))}
-                {reportError ? <p style={{ color: "#b00020", margin: 0 }}>{reportError}</p> : null}
-                <button type="submit">Run report</button>
+                {reportError ? <p className="error-text">{reportError}</p> : null}
+                <button type="submit" className="btn btn-primary">
+                  Run report
+                </button>
               </form>
             )}
             {reportResult ? (
-              <div style={{ marginTop: 16 }}>
-                <p style={{ margin: "0 0 8px", fontSize: 14, color: "#555" }}>
+              <div className="stack-gap">
+                <p className="report-meta">
                   {reportResult.row_count} row(s) in {reportResult.duration_ms} ms
                   {reportResult.truncated ? " (truncated to 500 rows)" : ""}
                 </p>
-                <div style={{ overflowX: "auto" }}>
-                  <table cellPadding="8" style={{ borderCollapse: "collapse", minWidth: "100%" }}>
+                <div className="table-scroll">
+                  <table className="data-table">
                     <thead>
                       <tr>
                         {(reportResult.columns || []).map((col) => (
-                          <th key={col} align="left" style={{ borderBottom: "1px solid #ccc" }}>
-                            {col}
-                          </th>
+                          <th key={col}>{col}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {(reportResult.rows || []).map((row, idx) => (
-                        <tr key={idx} style={{ borderTop: "1px solid #eee" }}>
+                        <tr key={idx}>
                           {(reportResult.columns || []).map((col) => (
                             <td key={col}>{row[col] == null ? "" : String(row[col])}</td>
                           ))}
@@ -483,35 +488,35 @@ export default function App() {
           </section>
 
           {canManageUsers ? (
-            <section style={{ marginBottom: 24, border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
-              <h2>Report audit trail (DBA)</h2>
-              <p style={{ color: "#555", fontSize: 14 }}>Recent whitelisted report executions.</p>
+            <section className="panel">
+              <h2 className="panel-title">Report audit trail (DBA)</h2>
+              <p className="panel-sub">Recent whitelisted report executions.</p>
               {reportRuns.length === 0 ? (
-                <p>No executions logged yet.</p>
+                <p className="empty-state">No executions logged yet.</p>
               ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table cellPadding="8" style={{ borderCollapse: "collapse", width: "100%" }}>
+                <div className="table-scroll">
+                  <table className="data-table">
                     <thead>
                       <tr>
-                        <th align="left">Time</th>
-                        <th align="left">User</th>
-                        <th align="left">Report</th>
-                        <th align="left">Rows</th>
-                        <th align="left">ms</th>
-                        <th align="left">OK</th>
-                        <th align="left">Error</th>
+                        <th>Time</th>
+                        <th>User</th>
+                        <th>Report</th>
+                        <th>Rows</th>
+                        <th>ms</th>
+                        <th>OK</th>
+                        <th>Error</th>
                       </tr>
                     </thead>
                     <tbody>
                       {reportRuns.map((run) => (
-                        <tr key={run.id} style={{ borderTop: "1px solid #ddd" }}>
-                          <td style={{ fontSize: 13 }}>{run.created_at}</td>
+                        <tr key={run.id}>
+                          <td className="hint">{run.created_at}</td>
                           <td>{run.user_email}</td>
                           <td>{run.report_key}</td>
                           <td>{run.row_count ?? "—"}</td>
                           <td>{run.duration_ms ?? "—"}</td>
                           <td>{run.success ? "yes" : "no"}</td>
-                          <td style={{ fontSize: 12, maxWidth: 220 }} title={run.error_message || ""}>
+                          <td className="hint" title={run.error_message || ""}>
                             {run.error_message
                               ? run.error_message.length > 80
                                 ? `${run.error_message.slice(0, 80)}…`
@@ -528,9 +533,9 @@ export default function App() {
           ) : null}
 
           {canCreateIncident ? (
-            <section style={{ marginBottom: 24 }}>
-              <h2>Create Incident</h2>
-              <form onSubmit={createIncident} style={{ display: "grid", gap: 8 }}>
+            <section className="panel">
+              <h2 className="panel-title">Create Incident</h2>
+              <form className="form-grid" onSubmit={createIncident}>
                 <input
                   required
                   placeholder="Title"
@@ -553,52 +558,56 @@ export default function App() {
                   value={form.owner}
                   onChange={(e) => setForm({ ...form, owner: e.target.value })}
                 />
-                <button type="submit">Create</button>
+                <button type="submit" className="btn btn-primary">
+                  Create
+                </button>
               </form>
             </section>
           ) : (
-            <p style={{ color: "#555" }}>
+            <p className="hint stack-gap">
               Your role (Viewer) can list incidents, use the summary, and run predefined read-only SQL reports.
             </p>
           )}
 
-          <section>
-            <h2>Incidents</h2>
+          <section className="stack-gap">
+            <h2 className="panel-title">Incidents</h2>
             {incidents.length === 0 ? (
-              <p>No incidents yet.</p>
+              <p className="empty-state">No incidents yet.</p>
             ) : (
-              <table width="100%" cellPadding="8" style={{ borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    <th align="left">Title</th>
-                    <th align="left">Severity</th>
-                    <th align="left">Owner</th>
-                    <th align="left">Status</th>
-                    <th align="left">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {incidents.map((incident) => (
-                    <tr key={incident.id} style={{ borderTop: "1px solid #ddd" }}>
-                      <td>{incident.title}</td>
-                      <td>{incident.severity}</td>
-                      <td>{incident.owner}</td>
-                      <td>{incident.status}</td>
-                      <td>
-                        {incident.status === "open" && canResolve ? (
-                          <button type="button" onClick={() => resolveIncident(incident.id)}>
-                            Resolve
-                          </button>
-                        ) : incident.status === "open" ? (
-                          <span style={{ color: "#777" }}>DBA only</span>
-                        ) : (
-                          "Closed"
-                        )}
-                      </td>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Title</th>
+                      <th>Severity</th>
+                      <th>Owner</th>
+                      <th>Status</th>
+                      <th>Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {incidents.map((incident) => (
+                      <tr key={incident.id}>
+                        <td>{incident.title}</td>
+                        <td>{incident.severity}</td>
+                        <td>{incident.owner}</td>
+                        <td>{incident.status}</td>
+                        <td>
+                          {incident.status === "open" && canResolve ? (
+                            <button type="button" className="btn btn-primary" onClick={() => resolveIncident(incident.id)}>
+                              Resolve
+                            </button>
+                          ) : incident.status === "open" ? (
+                            <span className="pill-muted">DBA only</span>
+                          ) : (
+                            "Closed"
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </section>
         </>
@@ -609,9 +618,9 @@ export default function App() {
 
 function Card({ label, value }) {
   return (
-    <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
-      <div style={{ color: "#555", fontSize: 14 }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 700 }}>{value}</div>
+    <div className="stat-card">
+      <div className="stat-label">{label}</div>
+      <div className="stat-value">{value}</div>
     </div>
   );
 }
