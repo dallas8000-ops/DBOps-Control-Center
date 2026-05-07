@@ -1,13 +1,14 @@
 import json
 import os
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .auth_utils import create_access_token, hash_password, verify_password
-from .db import get_db
+from .db import engine, get_db
 from .deps import get_current_user, require_roles
 from .models import Incident, ReportExecutionLog, User
 from .report_catalog import REPORTS
@@ -41,8 +42,15 @@ app.add_middleware(
 
 
 @app.get("/health")
-def health():
-    return {"status": "ok"}
+def health(response: Response):
+    """Liveness plus PostgreSQL connectivity (SELECT 1). Returns 503 if DB unreachable."""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception:
+        response.status_code = 503
+        return {"status": "degraded", "database": "unreachable"}
+    return {"status": "ok", "database": "reachable"}
 
 
 @app.post("/auth/login", response_model=Token)

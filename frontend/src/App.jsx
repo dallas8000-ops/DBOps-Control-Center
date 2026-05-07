@@ -38,11 +38,41 @@ export default function App() {
   const [reportResult, setReportResult] = useState(null);
   const [reportRuns, setReportRuns] = useState([]);
   const [reportError, setReportError] = useState("");
+  const [connectionHealth, setConnectionHealth] = useState({ kind: "loading" });
 
   useEffect(() => {
     if (token) localStorage.setItem("dbops_token", token);
     else localStorage.removeItem("dbops_token");
   }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function ping(showSpinner) {
+      if (showSpinner) setConnectionHealth({ kind: "loading" });
+      try {
+        const res = await fetch(`${API_URL}/health`);
+        const body = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (res.ok && body.database === "reachable") {
+          setConnectionHealth({ kind: "ok" });
+          return;
+        }
+        if (res.status === 503 && body.database === "unreachable") {
+          setConnectionHealth({ kind: "db_unreachable" });
+          return;
+        }
+        setConnectionHealth({ kind: "api_error", status: res.status });
+      } catch {
+        if (!cancelled) setConnectionHealth({ kind: "network" });
+      }
+    }
+    ping(true);
+    const interval = setInterval(() => ping(false), 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   async function loadMe() {
     if (!token) {
@@ -301,6 +331,37 @@ export default function App() {
 
       {!token ? (
         <section className="panel">
+          {connectionHealth.kind === "loading" ? (
+            <div className="health-strip health-strip--loading" role="status">
+              <strong>System status:</strong> Checking API and PostgreSQL…
+            </div>
+          ) : null}
+          {connectionHealth.kind === "ok" ? (
+            <div className="health-strip health-strip--ok" role="status">
+              <strong>System status:</strong> API reachable · PostgreSQL reachable. Schema updates run automatically when the API
+              starts (Alembic).
+            </div>
+          ) : null}
+          {connectionHealth.kind === "db_unreachable" ? (
+            <div className="health-strip health-strip--warn" role="alert">
+              <strong>Database:</strong> API is up but PostgreSQL is not reachable from the server. On Render, verify the API service
+              has <code className="pill-muted">DATABASE_URL</code> and try appending <code className="pill-muted">?sslmode=require</code>{" "}
+              if SSL is required.
+            </div>
+          ) : null}
+          {connectionHealth.kind === "network" ? (
+            <div className="health-strip health-strip--bad" role="alert">
+              <strong>API:</strong> Cannot reach <code className="pill-muted">{API_URL}</code>. Confirm{" "}
+              <code className="pill-muted">VITE_API_URL</code> on the static site matches your deployed API URL, then redeploy the
+              frontend.
+            </div>
+          ) : null}
+          {connectionHealth.kind === "api_error" ? (
+            <div className="health-strip health-strip--bad" role="alert">
+              <strong>API:</strong> Unexpected response ({connectionHealth.status}). Check API logs on Render.
+            </div>
+          ) : null}
+
           <h2 className="panel-title">Sign in</h2>
           {authError ? <p className="error-text">{authError}</p> : null}
           <form className="form-grid form-grid--narrow" onSubmit={login}>
