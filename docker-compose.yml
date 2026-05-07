@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16
+    container_name: dbops-postgres
+    environment:
+      POSTGRES_USER: dbops
+      POSTGRES_PASSWORD: dbops
+      POSTGRES_DB: dbops
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dbops -d dbops"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    container_name: dbops-backend
+    environment:
+      DATABASE_URL: postgresql+psycopg2://dbops:dbops@db:5432/dbops
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-change-me-use-a-long-random-secret-for-production}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:5173}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: dbops-frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
