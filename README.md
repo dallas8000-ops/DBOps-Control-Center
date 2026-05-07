@@ -46,7 +46,7 @@ docker compose up --build
 Set secrets via environment or a root `.env` file used by Compose:
 
 - `JWT_SECRET_KEY` — long random string for signing tokens
-- `FRONTEND_ORIGINS` — comma-separated allowed origins (e.g. `http://localhost:5173`)
+- `FRONTEND_ORIGINS` — comma-separated allowed browser origins (values are trimmed; stray quotes/trailing slashes are stripped). For Render static sites, any `https://*.onrender.com` origin is allowed by default unless you set **`CORS_DISABLE_RENDER_REGEX=true`** on the API.
 
 ### Database migrations
 

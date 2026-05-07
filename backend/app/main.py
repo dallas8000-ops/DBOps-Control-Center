@@ -27,18 +27,35 @@ from .schemas import (
     UserRead,
 )
 
-app = FastAPI(title="DBOps Control Center API", version="0.3.0")
+app = FastAPI(title="DBOps Control Center API", version="0.3.1")
+
+
+def _parse_cors_origins(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    out: list[str] = []
+    for part in raw.replace("\r", "").split(","):
+        o = part.strip().strip('"').strip("'").rstrip("/")
+        if o:
+            out.append(o)
+    return out
+
 
 _frontend_origins = os.getenv("FRONTEND_ORIGINS", "http://localhost:5173").strip()
-allow_origins = [o.strip() for o in _frontend_origins.split(",") if o.strip()]
+_parsed_origins = _parse_cors_origins(_frontend_origins)
+allow_origins = _parsed_origins if _parsed_origins else ["http://localhost:5173"]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allow_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_cors_kw: dict = {
+    "allow_origins": allow_origins,
+    "allow_credentials": False,
+    "allow_methods": ["*"],
+    "allow_headers": ["*"],
+}
+# Lets any *.onrender.com static site call this API (JWT still required for protected routes).
+if os.getenv("CORS_DISABLE_RENDER_REGEX", "").lower() not in ("1", "true", "yes"):
+    _cors_kw["allow_origin_regex"] = r"^https://[a-zA-Z0-9\-]+\.onrender\.com$"
+
+app.add_middleware(CORSMiddleware, **_cors_kw)
 
 
 @app.get("/health")
