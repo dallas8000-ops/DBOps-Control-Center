@@ -24,7 +24,9 @@ from .schemas import (
     ReportRunRead,
     Token,
     UserCreate,
+    UserPasswordReset,
     UserRead,
+    UserStatusUpdate,
 )
 
 app = FastAPI(title="DBOps Control Center API", version="0.3.1")
@@ -73,7 +75,7 @@ def health(response: Response):
 @app.post("/auth/login", response_model=Token)
 def login_json(payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email.lower()).first()
-    if user is None or not verify_password(payload.password, user.hashed_password):
+    if user is None or not user.is_active or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     token = create_access_token(subject=str(user.id), role=user.role)
     return Token(access_token=token)
@@ -82,7 +84,7 @@ def login_json(payload: LoginRequest, db: Session = Depends(get_db)):
 @app.post("/auth/token", response_model=Token)
 def login_form(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == form_data.username.lower()).first()
-    if user is None or not verify_password(form_data.password, user.hashed_password):
+    if user is None or not user.is_active or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect username or password")
     token = create_access_token(subject=str(user.id), role=user.role)
     return Token(access_token=token)
@@ -139,6 +141,64 @@ def register_as_dba(
     db.commit()
     db.refresh(user)
     return user
+
+
+@app.get("/auth/users", response_model=list[UserRead])
+def list_users(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("DBA")),
+):
+    """So DBAs can confirm accounts and avoid duplicate-email surprises."""
+    return db.query(User).order_by(User.id.asc()).all()
+
+
+@app.patch("/auth/users/{user_id}/password", response_model=UserRead)
+def reset_user_password(
+    user_id: int,
+    payload: UserPasswordReset,
+    db: Session = Depends(get_db),
+    current: User = Depends(require_roles("DBA")),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.hashed_password = hash_password(payload.password)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.patch("/auth/users/{user_id}/status", response_model=UserRead)
+def set_user_status(
+    user_id: int,
+    payload: UserStatusUpdate,
+    db: Session = Depends(get_db),
+    current: User = Depends(require_roles("DBA")),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if current.id == user.id and not payload.is_active:
+        raise HTTPException(status_code=400, detail="You cannot disable your own account")
+    user.is_active = payload.is_active
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.delete("/auth/users/{user_id}", status_code=204)
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current: User = Depends(require_roles("DBA")),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if current.id == user.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    db.delete(user)
+    db.commit()
 
 
 @app.get("/incidents", response_model=list[IncidentRead])

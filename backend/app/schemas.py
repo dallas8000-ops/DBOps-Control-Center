@@ -24,6 +24,7 @@ class UserRead(BaseModel):
     id: int
     email: str
     role: str
+    is_active: bool
 
     class Config:
         from_attributes = True
@@ -88,3 +89,11 @@ class ReportRunRead(BaseModel):
     error_message: str | None
     created_at: datetime
     user_email: str
+
+
+class UserPasswordReset(BaseModel):
+    password: str = Field(min_length=8, max_length=128)
+
+
+class UserStatusUpdate(BaseModel):
+    is_active: bool

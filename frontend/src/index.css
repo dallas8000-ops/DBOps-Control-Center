@@ -293,10 +293,46 @@ table.data-table {
   background: rgba(148, 163, 184, 0.06);
 }
 
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
 .report-meta {
   margin: 0 0 0.65rem;
   font-size: 0.88rem;
   color: var(--muted);
+}
+
+.api-config-banner {
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  font-size: 0.92rem;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.api-config-banner strong {
+  font-weight: 650;
+}
+
+.api-config-banner code {
+  font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+  font-size: 0.86em;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--text);
+  word-break: break-all;
+}
+
+.api-config-banner .api-config-banner__note {
+  display: block;
+  margin-top: 0.45rem;
 }
 
 .hint {
@@ -314,8 +350,28 @@ table.data-table {
   color: var(--muted);
 }
 
-.stack-gap {
-  margin-bottom: 1.25rem;
+.login-error-banner .error-text {
+  margin-bottom: 0.75rem;
+}
+
+output.feedback-success {
+  display: block;
+}
+
+.feedback-success {
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: var(--accent-dim);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+output.health-strip {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .health-strip {

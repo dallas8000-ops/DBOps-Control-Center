@@ -1,6 +1,23 @@
 import { useEffect, useState } from "react";
+import PropTypes from "prop-types";
 
 const API_URL = String(import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
+
+const CREATE_USER_FETCH_MS = 25_000;
+
+/** Hosted site (e.g. Render) still pointing at loopback — browser will block or fail the request. */
+function apiUrlMismatchForHostedPage(apiUrl) {
+  const win = globalThis.window;
+  if (win === undefined) return false;
+  const pageHost = win.location.hostname;
+  if (pageHost === "localhost" || pageHost === "127.0.0.1") return false;
+  try {
+    const { hostname } = new URL(apiUrl);
+    return hostname === "localhost" || hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
 
 function headers(token, json = true) {
   const h = {};
@@ -8,6 +25,613 @@ function headers(token, json = true) {
   if (token) h.Authorization = `Bearer ${token}`;
   return h;
 }
+
+/** FastAPI may return detail as string or validation array */
+function formatApiDetail(body) {
+  const d = body?.detail;
+  if (typeof d === "string") return d;
+  if (Array.isArray(d)) {
+    return d
+      .map((item) => (typeof item === "object" && item.msg ? `${item.msg}` : JSON.stringify(item)))
+      .join(" ");
+  }
+  if (d != null && typeof d === "object") return JSON.stringify(d);
+  return "Request failed";
+}
+
+function auditErrorPreview(message) {
+  if (!message) return "—";
+  if (message.length <= 80) return message;
+  return `${message.slice(0, 80)}…`;
+}
+
+/** Stable React key for JSON-serializable report rows from the API */
+function reportRowKey(row) {
+  return JSON.stringify(row);
+}
+
+function HealthConnectionMessages({ health, apiUrl }) {
+  switch (health.kind) {
+    case "loading":
+      return (
+        <output className="health-strip health-strip--loading">
+          <strong>System status:</strong> Checking API and PostgreSQL…
+        </output>
+      );
+    case "ok":
+      return (
+        <output className="health-strip health-strip--ok">
+          <strong>System status:</strong> API reachable · PostgreSQL reachable. Schema updates run automatically when the API
+          starts (Alembic).
+        </output>
+      );
+    case "db_unreachable":
+      return (
+        <div className="health-strip health-strip--warn" role="alert">
+          <strong>Database:</strong> API is up but PostgreSQL is not reachable from the server. On Render, verify the API service
+          has <code className="pill-muted">DATABASE_URL</code> and try appending <code className="pill-muted">?sslmode=require</code>{" "}
+          if SSL is required.
+        </div>
+      );
+    case "network":
+      return (
+        <div className="health-strip health-strip--bad" role="alert">
+          <strong>API:</strong> Cannot reach <code className="pill-muted">{apiUrl}</code>. Confirm{" "}
+          <code className="pill-muted">VITE_API_URL</code> on the static site matches your deployed API URL, then redeploy the
+          frontend.
+        </div>
+      );
+    case "api_error":
+      return (
+        <div className="health-strip health-strip--bad" role="alert">
+          <strong>API:</strong> Unexpected response ({health.status}). Check API logs on Render.
+        </div>
+      );
+    default:
+      return null;
+  }
+}
+
+HealthConnectionMessages.propTypes = {
+  health: PropTypes.object.isRequired,
+  apiUrl: PropTypes.string.isRequired,
+};
+
+function LoginPanel({
+  connectionHealth,
+  apiUrl,
+  authError,
+  loginForm,
+  setLoginForm,
+  onLogin,
+  bootstrapForm,
+  setBootstrapForm,
+  onBootstrap,
+}) {
+  return (
+    <section className="panel">
+      <HealthConnectionMessages health={connectionHealth} apiUrl={apiUrl} />
+
+      <h2 className="panel-title">Sign in</h2>
+      {authError ? <p className="error-text">{authError}</p> : null}
+      <form className="form-grid form-grid--narrow" onSubmit={onLogin}>
+        <input
+          type="email"
+          required
+          placeholder="Email"
+          value={loginForm.email}
+          onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+        />
+        <input
+          type="password"
+          required
+          placeholder="Password"
+          value={loginForm.password}
+          onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+        />
+        <button type="submit" className="btn btn-primary">
+          Login
+        </button>
+      </form>
+
+      <h3 className="section-lede">First-time setup (bootstrap DBA)</h3>
+      <p className="panel-sub">Use once when the database has no users. Role must be DBA (fixed below).</p>
+      <form className="form-grid form-grid--narrow" onSubmit={onBootstrap}>
+        <input
+          type="email"
+          required
+          placeholder="Admin email"
+          value={bootstrapForm.email}
+          onChange={(e) => setBootstrapForm({ ...bootstrapForm, email: e.target.value })}
+        />
+        <input
+          type="password"
+          required
+          minLength={8}
+          placeholder="Password (min 8 characters)"
+          value={bootstrapForm.password}
+          onChange={(e) => setBootstrapForm({ ...bootstrapForm, password: e.target.value })}
+        />
+        <input
+          type="password"
+          required
+          placeholder="Confirm password"
+          value={bootstrapForm.confirm}
+          onChange={(e) => setBootstrapForm({ ...bootstrapForm, confirm: e.target.value })}
+        />
+        <button type="submit" className="btn btn-primary">
+          Create first DBA
+        </button>
+      </form>
+    </section>
+  );
+}
+
+LoginPanel.propTypes = {
+  connectionHealth: PropTypes.object.isRequired,
+  apiUrl: PropTypes.string.isRequired,
+  authError: PropTypes.string.isRequired,
+  loginForm: PropTypes.shape({ email: PropTypes.string, password: PropTypes.string }).isRequired,
+  setLoginForm: PropTypes.func.isRequired,
+  onLogin: PropTypes.func.isRequired,
+  bootstrapForm: PropTypes.shape({
+    email: PropTypes.string,
+    password: PropTypes.string,
+    confirm: PropTypes.string,
+  }).isRequired,
+  setBootstrapForm: PropTypes.func.isRequired,
+  onBootstrap: PropTypes.func.isRequired,
+};
+
+function IncidentResolveCell({ incident, canResolve, onResolve }) {
+  if (incident.status === "open" && canResolve) {
+    return (
+      <button type="button" className="btn btn-primary" onClick={() => onResolve(incident.id)}>
+        Resolve
+      </button>
+    );
+  }
+  if (incident.status === "open") {
+    return <span className="pill-muted">DBA only</span>;
+  }
+  return "Closed";
+}
+
+IncidentResolveCell.propTypes = {
+  incident: PropTypes.shape({
+    id: PropTypes.number.isRequired,
+    status: PropTypes.string.isRequired,
+  }).isRequired,
+  canResolve: PropTypes.bool.isRequired,
+  onResolve: PropTypes.func.isRequired,
+};
+
+function Card({ label, value }) {
+  return (
+    <div className="stat-card">
+      <div className="stat-label">{label}</div>
+      <div className="stat-value">{value}</div>
+    </div>
+  );
+}
+
+Card.propTypes = {
+  label: PropTypes.string.isRequired,
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+};
+
+function CreateUserSection({
+  apiBaseUrl,
+  existingUsers,
+  userListLoading,
+  feedback,
+  userForm,
+  setUserForm,
+  busy,
+  onSubmit,
+  currentUserId,
+  actionBusyId,
+  onResetPassword,
+  onToggleActive,
+  onDeleteUser,
+}) {
+  const configBroken = apiUrlMismatchForHostedPage(apiBaseUrl);
+
+  return (
+    <section className="panel">
+      <h2 className="panel-title">Create user (DBA)</h2>
+      <div className="api-config-banner">
+        <strong>API base URL baked into this frontend build:</strong>{" "}
+        <code>{apiBaseUrl}</code>
+        <span className="hint api-config-banner__note">
+          On Render, set <code className="pill-muted">VITE_API_URL</code> on <strong>dbops-web</strong> to your live API (example{" "}
+          <code className="pill-muted">https://dbops-api.onrender.com</code>), save, then redeploy the static site. If you only see the
+          title and form with no box like this, your browser is still loading an old deploy — hard-refresh or redeploy.
+        </span>
+      </div>
+      <p className="panel-sub">
+        New accounts need a <strong>unique email</strong> (not your own). Password at least 8 characters. Roles{" "}
+        <strong>Viewer</strong>, Analyst, and DBA are all allowed here.
+      </p>
+      {configBroken ? (
+        <p className="error-text" role="alert">
+          This page is not running on localhost, but the app is still configured to call{" "}
+          <code className="pill-muted">{apiBaseUrl}</code>. Browsers will block or ignore that. In the Render dashboard, set{" "}
+          <code className="pill-muted">VITE_API_URL</code> to your public API URL (for example{" "}
+          <code className="pill-muted">https://dbops-api.onrender.com</code>), then redeploy <strong>dbops-web</strong>.
+        </p>
+      ) : null}
+      <div aria-live="polite">
+        {feedback.kind === "error" ? (
+          <p className="error-text" role="alert">
+            {feedback.text}
+          </p>
+        ) : null}
+        {feedback.kind === "success" ? <output className="feedback-success">{feedback.text}</output> : null}
+      </div>
+
+      <h3 className="section-lede">Accounts in database</h3>
+      {userListLoading ? (
+        <p className="hint">Loading account list…</p>
+      ) : (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {existingUsers.map((u) => (
+                <tr key={u.id}>
+                  <td>{u.email}</td>
+                  <td>{u.role}</td>
+                  <td>{u.is_active ? "active" : "disabled"}</td>
+                  <td>
+                    <div className="action-row">
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        disabled={actionBusyId === u.id}
+                        onClick={() => onResetPassword(u)}
+                      >
+                        Reset password
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        disabled={u.id === currentUserId || actionBusyId === u.id}
+                        onClick={() => onToggleActive(u)}
+                      >
+                        {u.is_active ? "Disable" : "Enable"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        disabled={u.id === currentUserId || actionBusyId === u.id}
+                        onClick={() => onDeleteUser(u)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="hint">
+        If create fails with &quot;Email already registered&quot;, that address is already in this table (check another inbox or typo).
+      </p>
+
+      <form className="form-grid form-grid--narrow" onSubmit={onSubmit}>
+        <input
+          type="email"
+          required
+          placeholder="Email"
+          value={userForm.email}
+          onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
+        />
+        <input
+          type="password"
+          required
+          minLength={8}
+          placeholder="Password"
+          value={userForm.password}
+          onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+        />
+        <select value={userForm.role} onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}>
+          <option value="Viewer">Viewer</option>
+          <option value="Analyst">Analyst</option>
+          <option value="DBA">DBA</option>
+        </select>
+        <button type="submit" className="btn btn-primary" disabled={busy}>
+          {busy ? "Creating…" : "Create user"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+CreateUserSection.propTypes = {
+  apiBaseUrl: PropTypes.string.isRequired,
+  existingUsers: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.number.isRequired,
+      email: PropTypes.string.isRequired,
+      role: PropTypes.string.isRequired,
+    }),
+  ).isRequired,
+  userListLoading: PropTypes.bool.isRequired,
+  feedback: PropTypes.shape({ kind: PropTypes.string, text: PropTypes.string }).isRequired,
+  userForm: PropTypes.shape({
+    email: PropTypes.string,
+    password: PropTypes.string,
+    role: PropTypes.string,
+  }).isRequired,
+  setUserForm: PropTypes.func.isRequired,
+  busy: PropTypes.bool.isRequired,
+  onSubmit: PropTypes.func.isRequired,
+  currentUserId: PropTypes.number,
+  actionBusyId: PropTypes.oneOfType([PropTypes.number, PropTypes.oneOf([null])]),
+  onResetPassword: PropTypes.func.isRequired,
+  onToggleActive: PropTypes.func.isRequired,
+  onDeleteUser: PropTypes.func.isRequired,
+};
+
+function DashboardBody({
+  summary,
+  reportCatalog,
+  selectedReportKey,
+  setSelectedReportKey,
+  selectedReport,
+  reportParams,
+  setReportParams,
+  reportError,
+  onRunReport,
+  reportResult,
+  canManageUsers,
+  reportRuns,
+  canCreateIncident,
+  form,
+  setForm,
+  onCreateIncident,
+  incidents,
+  canResolve,
+  onResolveIncident,
+}) {
+  return (
+    <>
+      <section className="stack-gap">
+        <h2 className="panel-title">Operational Summary</h2>
+        {summary ? (
+          <div className="summary-grid">
+            <Card label="Total" value={summary.total_incidents} />
+            <Card label="Open" value={summary.open_incidents} />
+            <Card label="Resolved" value={summary.resolved_incidents} />
+            <Card label="High Severity" value={summary.high_severity_incidents} />
+          </div>
+        ) : (
+          <p className="empty-state">Loading summary...</p>
+        )}
+      </section>
+
+      <section className="panel">
+        <h2 className="panel-title">SQL reports (read-only)</h2>
+        <p className="panel-sub">
+          Pre-approved SELECT queries with bound parameters. Executions are audited (DBA can view history).
+        </p>
+        {reportCatalog.length === 0 ? (
+          <p className="empty-state">Loading catalog...</p>
+        ) : (
+          <form className="form-grid" onSubmit={onRunReport}>
+            <label className="field">
+              <span className="field-label">Report</span>
+              <select value={selectedReportKey} onChange={(e) => setSelectedReportKey(e.target.value)}>
+                {reportCatalog.map((r) => (
+                  <option key={r.key} value={r.key}>
+                    {r.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {selectedReport?.description ? <p className="hint">{selectedReport.description}</p> : null}
+            {(selectedReport?.params || []).map((p) => (
+              <label key={p.name} className="field">
+                <span className="field-label">
+                  {p.name}
+                  {p.min != null || p.max != null ? ` (${p.min ?? "?"}–${p.max ?? "?"})` : ""}
+                </span>
+                <input
+                  type="number"
+                  value={reportParams[p.name] ?? ""}
+                  onChange={(e) =>
+                    setReportParams({
+                      ...reportParams,
+                      [p.name]: e.target.value === "" ? "" : Number(e.target.value),
+                    })
+                  }
+                  min={p.min ?? undefined}
+                  max={p.max ?? undefined}
+                />
+              </label>
+            ))}
+            {reportError ? <p className="error-text">{reportError}</p> : null}
+            <button type="submit" className="btn btn-primary">
+              Run report
+            </button>
+          </form>
+        )}
+        {reportResult ? (
+          <div className="stack-gap">
+            <p className="report-meta">
+              {reportResult.row_count} row(s) in {reportResult.duration_ms} ms
+              {reportResult.truncated ? " (truncated to 500 rows)" : ""}
+            </p>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    {(reportResult.columns || []).map((col) => (
+                      <th key={col}>{col}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(reportResult.rows || []).map((row) => (
+                    <tr key={reportRowKey(row)}>
+                      {(reportResult.columns || []).map((col) => (
+                        <td key={col}>{row[col] == null ? "" : String(row[col])}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      {canManageUsers ? (
+        <section className="panel">
+          <h2 className="panel-title">Report audit trail (DBA)</h2>
+          <p className="panel-sub">Recent whitelisted report executions.</p>
+          {reportRuns.length === 0 ? (
+            <p className="empty-state">No executions logged yet.</p>
+          ) : (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>User</th>
+                    <th>Report</th>
+                    <th>Rows</th>
+                    <th>ms</th>
+                    <th>OK</th>
+                    <th>Error</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reportRuns.map((run) => (
+                    <tr key={run.id}>
+                      <td className="hint">{run.created_at}</td>
+                      <td>{run.user_email}</td>
+                      <td>{run.report_key}</td>
+                      <td>{run.row_count ?? "—"}</td>
+                      <td>{run.duration_ms ?? "—"}</td>
+                      <td>{run.success ? "yes" : "no"}</td>
+                      <td className="hint" title={run.error_message || ""}>
+                        {auditErrorPreview(run.error_message)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {canCreateIncident ? (
+        <section className="panel">
+          <h2 className="panel-title">Create Incident</h2>
+          <form className="form-grid" onSubmit={onCreateIncident}>
+            <input
+              required
+              placeholder="Title"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+            />
+            <textarea
+              required
+              placeholder="Description"
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+            />
+            <select value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })}>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+            </select>
+            <input
+              placeholder="Owner"
+              value={form.owner}
+              onChange={(e) => setForm({ ...form, owner: e.target.value })}
+            />
+            <button type="submit" className="btn btn-primary">
+              Create
+            </button>
+          </form>
+        </section>
+      ) : (
+        <p className="hint stack-gap">
+          Your role (Viewer) can list incidents, use the summary, and run predefined read-only SQL reports.
+        </p>
+      )}
+
+      <section className="stack-gap">
+        <h2 className="panel-title">Incidents</h2>
+        {incidents.length === 0 ? (
+          <p className="empty-state">No incidents yet.</p>
+        ) : (
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Severity</th>
+                  <th>Owner</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {incidents.map((incident) => (
+                  <tr key={incident.id}>
+                    <td>{incident.title}</td>
+                    <td>{incident.severity}</td>
+                    <td>{incident.owner}</td>
+                    <td>{incident.status}</td>
+                    <td>
+                      <IncidentResolveCell incident={incident} canResolve={canResolve} onResolve={onResolveIncident} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
+DashboardBody.propTypes = {
+  summary: PropTypes.object,
+  reportCatalog: PropTypes.arrayOf(PropTypes.object).isRequired,
+  selectedReportKey: PropTypes.string.isRequired,
+  setSelectedReportKey: PropTypes.func.isRequired,
+  selectedReport: PropTypes.object,
+  reportParams: PropTypes.object.isRequired,
+  setReportParams: PropTypes.func.isRequired,
+  reportError: PropTypes.string.isRequired,
+  onRunReport: PropTypes.func.isRequired,
+  reportResult: PropTypes.object,
+  canManageUsers: PropTypes.bool.isRequired,
+  reportRuns: PropTypes.arrayOf(PropTypes.object).isRequired,
+  canCreateIncident: PropTypes.bool.isRequired,
+  form: PropTypes.object.isRequired,
+  setForm: PropTypes.func.isRequired,
+  onCreateIncident: PropTypes.func.isRequired,
+  incidents: PropTypes.arrayOf(PropTypes.object).isRequired,
+  canResolve: PropTypes.bool.isRequired,
+  onResolveIncident: PropTypes.func.isRequired,
+};
 
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem("dbops_token") || "");
@@ -39,6 +663,11 @@ export default function App() {
   const [reportRuns, setReportRuns] = useState([]);
   const [reportError, setReportError] = useState("");
   const [connectionHealth, setConnectionHealth] = useState({ kind: "loading" });
+  const [userCreateFeedback, setUserCreateFeedback] = useState({ kind: "", text: "" });
+  const [userCreateBusy, setUserCreateBusy] = useState(false);
+  const [userDirectory, setUserDirectory] = useState([]);
+  const [userDirectoryLoading, setUserDirectoryLoading] = useState(false);
+  const [userActionBusyId, setUserActionBusyId] = useState(null);
 
   useEffect(() => {
     if (token) localStorage.setItem("dbops_token", token);
@@ -135,6 +764,29 @@ export default function App() {
     setReportRuns(await res.json());
   }
 
+  async function loadUserDirectory() {
+    if (!token || me?.role !== "DBA") {
+      setUserDirectory([]);
+      setUserDirectoryLoading(false);
+      return;
+    }
+    setUserDirectoryLoading(true);
+    const res = await fetch(`${API_URL}/auth/users`, { headers: headers(token, false) });
+    if (res.status === 401) {
+      setToken("");
+      setMe(null);
+      setUserDirectory([]);
+      setUserDirectoryLoading(false);
+      return;
+    }
+    if (!res.ok) {
+      setUserDirectoryLoading(false);
+      return;
+    }
+    setUserDirectory(await res.json());
+    setUserDirectoryLoading(false);
+  }
+
   useEffect(() => {
     loadMe();
   }, [token]);
@@ -149,6 +801,10 @@ export default function App() {
 
   useEffect(() => {
     loadReportRuns();
+  }, [token, me]);
+
+  useEffect(() => {
+    loadUserDirectory();
   }, [token, me]);
 
   useEffect(() => {
@@ -227,22 +883,114 @@ export default function App() {
 
   async function createUser(e) {
     e.preventDefault();
-    setAuthError("");
-    const res = await fetch(`${API_URL}/auth/users`, {
-      method: "POST",
+    setUserCreateFeedback({ kind: "", text: "" });
+    setUserCreateBusy(true);
+    const ctrl = new AbortController();
+    const timeoutId = setTimeout(() => ctrl.abort(), CREATE_USER_FETCH_MS);
+    try {
+      const res = await fetch(`${API_URL}/auth/users`, {
+        method: "POST",
+        headers: headers(token, true),
+        body: JSON.stringify({
+          email: userForm.email.trim(),
+          password: userForm.password,
+          role: userForm.role,
+        }),
+        signal: ctrl.signal,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        let msg = formatApiDetail(body);
+        if (!msg || msg === "Request failed") msg = `Server returned ${res.status}.`;
+        setUserCreateFeedback({ kind: "error", text: msg });
+        return;
+      }
+      const created = await res.json().catch(() => ({}));
+      const emailLabel = created.email || userForm.email;
+      const roleLabel = created.role || userForm.role;
+      setUserCreateFeedback({
+        kind: "success",
+        text: `Created ${emailLabel} (${roleLabel}). They can sign in now.`,
+      });
+      setUserForm({ email: "", password: "", role: "Viewer" });
+      await loadUserDirectory();
+    } catch (err) {
+      let reason = err instanceof Error ? err.message : String(err);
+      if (String(err?.name) === "AbortError") {
+        reason = `No response after ${CREATE_USER_FETCH_MS / 1000}s (timed out).`;
+      }
+      setUserCreateFeedback({
+        kind: "error",
+        text:
+          `Could not reach the API (${API_URL}). ${reason} ` +
+          "Open DevTools → Network for POST /auth/users. On Render, set VITE_API_URL on dbops-web and redeploy.",
+      });
+    } finally {
+      clearTimeout(timeoutId);
+      setUserCreateBusy(false);
+    }
+  }
+
+  async function resetUserPassword(user) {
+    const next = globalThis.window?.prompt(`Enter new password for ${user.email} (min 8 characters):`);
+    if (!next) return;
+    setUserActionBusyId(user.id);
+    setUserCreateFeedback({ kind: "", text: "" });
+    const res = await fetch(`${API_URL}/auth/users/${user.id}/password`, {
+      method: "PATCH",
       headers: headers(token, true),
-      body: JSON.stringify({
-        email: userForm.email,
-        password: userForm.password,
-        role: userForm.role,
-      }),
+      body: JSON.stringify({ password: next }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      setAuthError(body.detail || "Create user failed");
+      setUserCreateFeedback({ kind: "error", text: formatApiDetail(body) });
+      setUserActionBusyId(null);
       return;
     }
-    setUserForm({ email: "", password: "", role: "Viewer" });
+    setUserCreateFeedback({ kind: "success", text: `Password updated for ${user.email}.` });
+    setUserActionBusyId(null);
+  }
+
+  async function toggleUserActive(user) {
+    setUserActionBusyId(user.id);
+    setUserCreateFeedback({ kind: "", text: "" });
+    const res = await fetch(`${API_URL}/auth/users/${user.id}/status`, {
+      method: "PATCH",
+      headers: headers(token, true),
+      body: JSON.stringify({ is_active: !user.is_active }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setUserCreateFeedback({ kind: "error", text: formatApiDetail(body) });
+      setUserActionBusyId(null);
+      return;
+    }
+    await loadUserDirectory();
+    setUserCreateFeedback({
+      kind: "success",
+      text: `${user.email} is now ${user.is_active ? "disabled" : "active"}.`,
+    });
+    setUserActionBusyId(null);
+  }
+
+  async function deleteUser(user) {
+    const ok = globalThis.window?.confirm(`Delete ${user.email}? This cannot be undone.`);
+    if (!ok) return;
+    setUserActionBusyId(user.id);
+    setUserCreateFeedback({ kind: "", text: "" });
+    const res = await fetch(`${API_URL}/auth/users/${user.id}`, {
+      method: "DELETE",
+      headers: headers(token, false),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setUserCreateFeedback({ kind: "error", text: formatApiDetail(body) });
+      setUserActionBusyId(null);
+      return;
+    }
+    await loadUserDirectory();
+    setUserCreateFeedback({ kind: "success", text: `${user.email} deleted.` });
+    setUserActionBusyId(null);
   }
 
   function logout() {
@@ -256,6 +1004,11 @@ export default function App() {
     setReportResult(null);
     setReportRuns([]);
     setReportError("");
+    setUserCreateFeedback({ kind: "", text: "" });
+    setUserCreateBusy(false);
+    setUserActionBusyId(null);
+    setUserDirectory([]);
+    setUserDirectoryLoading(false);
   }
 
   async function runReport(e) {
@@ -329,359 +1082,68 @@ export default function App() {
         </p>
       </header>
 
-      {!token ? (
-        <section className="panel">
-          {connectionHealth.kind === "loading" ? (
-            <div className="health-strip health-strip--loading" role="status">
-              <strong>System status:</strong> Checking API and PostgreSQL…
-            </div>
-          ) : null}
-          {connectionHealth.kind === "ok" ? (
-            <div className="health-strip health-strip--ok" role="status">
-              <strong>System status:</strong> API reachable · PostgreSQL reachable. Schema updates run automatically when the API
-              starts (Alembic).
-            </div>
-          ) : null}
-          {connectionHealth.kind === "db_unreachable" ? (
-            <div className="health-strip health-strip--warn" role="alert">
-              <strong>Database:</strong> API is up but PostgreSQL is not reachable from the server. On Render, verify the API service
-              has <code className="pill-muted">DATABASE_URL</code> and try appending <code className="pill-muted">?sslmode=require</code>{" "}
-              if SSL is required.
-            </div>
-          ) : null}
-          {connectionHealth.kind === "network" ? (
-            <div className="health-strip health-strip--bad" role="alert">
-              <strong>API:</strong> Cannot reach <code className="pill-muted">{API_URL}</code>. Confirm{" "}
-              <code className="pill-muted">VITE_API_URL</code> on the static site matches your deployed API URL, then redeploy the
-              frontend.
-            </div>
-          ) : null}
-          {connectionHealth.kind === "api_error" ? (
-            <div className="health-strip health-strip--bad" role="alert">
-              <strong>API:</strong> Unexpected response ({connectionHealth.status}). Check API logs on Render.
-            </div>
-          ) : null}
-
-          <h2 className="panel-title">Sign in</h2>
-          {authError ? <p className="error-text">{authError}</p> : null}
-          <form className="form-grid form-grid--narrow" onSubmit={login}>
-            <input
-              type="email"
-              required
-              placeholder="Email"
-              value={loginForm.email}
-              onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
-            />
-            <input
-              type="password"
-              required
-              placeholder="Password"
-              value={loginForm.password}
-              onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-            />
-            <button type="submit" className="btn btn-primary">
-              Login
-            </button>
-          </form>
-
-          <h3 className="section-lede">First-time setup (bootstrap DBA)</h3>
-          <p className="panel-sub">Use once when the database has no users. Role must be DBA (fixed below).</p>
-          <form className="form-grid form-grid--narrow" onSubmit={bootstrapRegister}>
-            <input
-              type="email"
-              required
-              placeholder="Admin email"
-              value={bootstrapForm.email}
-              onChange={(e) => setBootstrapForm({ ...bootstrapForm, email: e.target.value })}
-            />
-            <input
-              type="password"
-              required
-              minLength={8}
-              placeholder="Password (min 8 characters)"
-              value={bootstrapForm.password}
-              onChange={(e) => setBootstrapForm({ ...bootstrapForm, password: e.target.value })}
-            />
-            <input
-              type="password"
-              required
-              placeholder="Confirm password"
-              value={bootstrapForm.confirm}
-              onChange={(e) => setBootstrapForm({ ...bootstrapForm, confirm: e.target.value })}
-            />
-            <button type="submit" className="btn btn-primary">
-              Create first DBA
-            </button>
-          </form>
-        </section>
-      ) : (
-        <div className="top-bar panel">
-          <span className="top-bar-meta">
-            Signed in as <strong>{me?.email}</strong> ({me?.role})
-          </span>
-          <button type="button" className="btn btn-ghost" onClick={logout}>
-            Log out
-          </button>
-        </div>
-      )}
-
-      {token && canManageUsers ? (
-        <section className="panel">
-          <h2 className="panel-title">Create user (DBA)</h2>
-          <form className="form-grid form-grid--narrow" onSubmit={createUser}>
-            <input
-              type="email"
-              required
-              placeholder="Email"
-              value={userForm.email}
-              onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
-            />
-            <input
-              type="password"
-              required
-              minLength={8}
-              placeholder="Password"
-              value={userForm.password}
-              onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
-            />
-            <select value={userForm.role} onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}>
-              <option value="Viewer">Viewer</option>
-              <option value="Analyst">Analyst</option>
-              <option value="DBA">DBA</option>
-            </select>
-            <button type="submit" className="btn btn-primary">
-              Create user
-            </button>
-          </form>
-        </section>
-      ) : null}
-
       {token ? (
         <>
-          <section className="stack-gap">
-            <h2 className="panel-title">Operational Summary</h2>
-            {summary ? (
-              <div className="summary-grid">
-                <Card label="Total" value={summary.total_incidents} />
-                <Card label="Open" value={summary.open_incidents} />
-                <Card label="Resolved" value={summary.resolved_incidents} />
-                <Card label="High Severity" value={summary.high_severity_incidents} />
-              </div>
-            ) : (
-              <p className="empty-state">Loading summary...</p>
-            )}
-          </section>
-
-          <section className="panel">
-            <h2 className="panel-title">SQL reports (read-only)</h2>
-            <p className="panel-sub">
-              Pre-approved SELECT queries with bound parameters. Executions are audited (DBA can view history).
-            </p>
-            {reportCatalog.length === 0 ? (
-              <p className="empty-state">Loading catalog...</p>
-            ) : (
-              <form className="form-grid" onSubmit={runReport}>
-                <label className="field">
-                  <span className="field-label">Report</span>
-                  <select value={selectedReportKey} onChange={(e) => setSelectedReportKey(e.target.value)}>
-                    {reportCatalog.map((r) => (
-                      <option key={r.key} value={r.key}>
-                        {r.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {selectedReport?.description ? <p className="hint">{selectedReport.description}</p> : null}
-                {(selectedReport?.params || []).map((p) => (
-                  <label key={p.name} className="field">
-                    <span className="field-label">
-                      {p.name}
-                      {p.min != null || p.max != null ? ` (${p.min ?? "?"}–${p.max ?? "?"})` : ""}
-                    </span>
-                    <input
-                      type="number"
-                      value={reportParams[p.name] ?? ""}
-                      onChange={(e) =>
-                        setReportParams({
-                          ...reportParams,
-                          [p.name]: e.target.value === "" ? "" : Number(e.target.value),
-                        })
-                      }
-                      min={p.min ?? undefined}
-                      max={p.max ?? undefined}
-                    />
-                  </label>
-                ))}
-                {reportError ? <p className="error-text">{reportError}</p> : null}
-                <button type="submit" className="btn btn-primary">
-                  Run report
-                </button>
-              </form>
-            )}
-            {reportResult ? (
-              <div className="stack-gap">
-                <p className="report-meta">
-                  {reportResult.row_count} row(s) in {reportResult.duration_ms} ms
-                  {reportResult.truncated ? " (truncated to 500 rows)" : ""}
-                </p>
-                <div className="table-scroll">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        {(reportResult.columns || []).map((col) => (
-                          <th key={col}>{col}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(reportResult.rows || []).map((row, idx) => (
-                        <tr key={idx}>
-                          {(reportResult.columns || []).map((col) => (
-                            <td key={col}>{row[col] == null ? "" : String(row[col])}</td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : null}
-          </section>
-
+          <div className="top-bar panel">
+            <span className="top-bar-meta">
+              Signed in as <strong>{me?.email}</strong> ({me?.role})
+            </span>
+            <button type="button" className="btn btn-ghost" onClick={logout}>
+              Log out
+            </button>
+          </div>
           {canManageUsers ? (
-            <section className="panel">
-              <h2 className="panel-title">Report audit trail (DBA)</h2>
-              <p className="panel-sub">Recent whitelisted report executions.</p>
-              {reportRuns.length === 0 ? (
-                <p className="empty-state">No executions logged yet.</p>
-              ) : (
-                <div className="table-scroll">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Time</th>
-                        <th>User</th>
-                        <th>Report</th>
-                        <th>Rows</th>
-                        <th>ms</th>
-                        <th>OK</th>
-                        <th>Error</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {reportRuns.map((run) => (
-                        <tr key={run.id}>
-                          <td className="hint">{run.created_at}</td>
-                          <td>{run.user_email}</td>
-                          <td>{run.report_key}</td>
-                          <td>{run.row_count ?? "—"}</td>
-                          <td>{run.duration_ms ?? "—"}</td>
-                          <td>{run.success ? "yes" : "no"}</td>
-                          <td className="hint" title={run.error_message || ""}>
-                            {run.error_message
-                              ? run.error_message.length > 80
-                                ? `${run.error_message.slice(0, 80)}…`
-                                : run.error_message
-                              : "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
+            <CreateUserSection
+              apiBaseUrl={API_URL}
+              existingUsers={userDirectory}
+              userListLoading={userDirectoryLoading}
+              feedback={userCreateFeedback}
+              userForm={userForm}
+              setUserForm={setUserForm}
+              busy={userCreateBusy}
+              onSubmit={createUser}
+              currentUserId={me?.id}
+              actionBusyId={userActionBusyId}
+              onResetPassword={resetUserPassword}
+              onToggleActive={toggleUserActive}
+              onDeleteUser={deleteUser}
+            />
           ) : null}
-
-          {canCreateIncident ? (
-            <section className="panel">
-              <h2 className="panel-title">Create Incident</h2>
-              <form className="form-grid" onSubmit={createIncident}>
-                <input
-                  required
-                  placeholder="Title"
-                  value={form.title}
-                  onChange={(e) => setForm({ ...form, title: e.target.value })}
-                />
-                <textarea
-                  required
-                  placeholder="Description"
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                />
-                <select value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })}>
-                  <option value="low">low</option>
-                  <option value="medium">medium</option>
-                  <option value="high">high</option>
-                </select>
-                <input
-                  placeholder="Owner"
-                  value={form.owner}
-                  onChange={(e) => setForm({ ...form, owner: e.target.value })}
-                />
-                <button type="submit" className="btn btn-primary">
-                  Create
-                </button>
-              </form>
-            </section>
-          ) : (
-            <p className="hint stack-gap">
-              Your role (Viewer) can list incidents, use the summary, and run predefined read-only SQL reports.
-            </p>
-          )}
-
-          <section className="stack-gap">
-            <h2 className="panel-title">Incidents</h2>
-            {incidents.length === 0 ? (
-              <p className="empty-state">No incidents yet.</p>
-            ) : (
-              <div className="table-scroll">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Title</th>
-                      <th>Severity</th>
-                      <th>Owner</th>
-                      <th>Status</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {incidents.map((incident) => (
-                      <tr key={incident.id}>
-                        <td>{incident.title}</td>
-                        <td>{incident.severity}</td>
-                        <td>{incident.owner}</td>
-                        <td>{incident.status}</td>
-                        <td>
-                          {incident.status === "open" && canResolve ? (
-                            <button type="button" className="btn btn-primary" onClick={() => resolveIncident(incident.id)}>
-                              Resolve
-                            </button>
-                          ) : incident.status === "open" ? (
-                            <span className="pill-muted">DBA only</span>
-                          ) : (
-                            "Closed"
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+          <DashboardBody
+            summary={summary}
+            reportCatalog={reportCatalog}
+            selectedReportKey={selectedReportKey}
+            setSelectedReportKey={setSelectedReportKey}
+            selectedReport={selectedReport}
+            reportParams={reportParams}
+            setReportParams={setReportParams}
+            reportError={reportError}
+            onRunReport={runReport}
+            reportResult={reportResult}
+            canManageUsers={canManageUsers}
+            reportRuns={reportRuns}
+            canCreateIncident={canCreateIncident}
+            form={form}
+            setForm={setForm}
+            onCreateIncident={createIncident}
+            incidents={incidents}
+            canResolve={canResolve}
+            onResolveIncident={resolveIncident}
+          />
         </>
-      ) : null}
+      ) : (
+        <LoginPanel
+          connectionHealth={connectionHealth}
+          apiUrl={API_URL}
+          authError={authError}
+          loginForm={loginForm}
+          setLoginForm={setLoginForm}
+          onLogin={login}
+          bootstrapForm={bootstrapForm}
+          setBootstrapForm={setBootstrapForm}
+          onBootstrap={bootstrapRegister}
+        />
+      )}
     </main>
-  );
-}
-
-function Card({ label, value }) {
-  return (
-    <div className="stat-card">
-      <div className="stat-label">{label}</div>
-      <div className="stat-value">{value}</div>
-    </div>
   );
 }
