@@ -299,6 +299,21 @@ table.data-table {
   gap: 0.35rem;
 }
 
+.incident-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 0.8rem;
+}
+
+.incident-filters .btn {
+  width: 100%;
+}
+
+.inline-input {
+  min-width: 110px;
+}
+
 .report-meta {
   margin: 0 0 0.65rem;
   font-size: 0.88rem;

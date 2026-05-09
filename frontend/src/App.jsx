@@ -45,9 +45,53 @@ function auditErrorPreview(message) {
   return `${message.slice(0, 80)}…`;
 }
 
+function userAuditDetailsPreview(details) {
+  if (!details || typeof details !== "object") return "—";
+  const parts = Object.entries(details).map(([k, v]) => `${k}: ${String(v)}`);
+  return parts.length ? parts.join(", ") : "—";
+}
+
 /** Stable React key for JSON-serializable report rows from the API */
 function reportRowKey(row) {
   return JSON.stringify(row);
+}
+
+function sessionErrorMessage(detailText = "") {
+  const detail = String(detailText || "").toLowerCase();
+  if (detail.includes("disabled")) return "Your account is disabled. Contact a DBA.";
+  if (detail.includes("expired") || detail.includes("invalid")) return "Your session expired. Please sign in again.";
+  return "Your session is no longer valid. Please sign in again.";
+}
+
+async function parseResponseBody(res) {
+  return res.json().catch(() => ({}));
+}
+
+function toIncidentQuery(filters) {
+  const params = new URLSearchParams();
+  if (filters.status) params.set("status", filters.status);
+  if (filters.severity) params.set("severity", filters.severity);
+  if (filters.owner) params.set("owner", filters.owner);
+  if (filters.search) params.set("search", filters.search);
+  if (filters.startDate) params.set("start_date", filters.startDate);
+  if (filters.endDate) params.set("end_date", filters.endDate);
+  if (filters.sort) params.set("sort", filters.sort);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function reportParamsPayload(spec, reportParams) {
+  const paramsPayload = {};
+  if (!spec) return paramsPayload;
+  for (const p of spec.params) {
+    const raw = reportParams[p.name];
+    if (p.type === "int") {
+      paramsPayload[p.name] = Number.parseInt(String(raw), 10);
+    } else {
+      paramsPayload[p.name] = raw;
+    }
+  }
+  return paramsPayload;
 }
 
 function HealthConnectionMessages({ health, apiUrl }) {
@@ -234,6 +278,8 @@ function CreateUserSection({
   onResetPassword,
   onToggleActive,
   onDeleteUser,
+  userAuditLogs,
+  userAuditLoading,
 }) {
   const configBroken = apiUrlMismatchForHostedPage(apiBaseUrl);
 
@@ -328,6 +374,38 @@ function CreateUserSection({
         If create fails with &quot;Email already registered&quot;, that address is already in this table (check another inbox or typo).
       </p>
 
+      <h3 className="section-lede">User admin audit trail</h3>
+      {userAuditLoading ? (
+        <p className="hint">Loading user admin audit…</p>
+      ) : userAuditLogs.length === 0 ? (
+        <p className="empty-state">No user admin actions logged yet.</p>
+      ) : (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Actor</th>
+                <th>Action</th>
+                <th>Target</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {userAuditLogs.map((item) => (
+                <tr key={item.id}>
+                  <td className="hint">{item.created_at}</td>
+                  <td>{item.actor_email || "deleted user"}</td>
+                  <td>{item.action}</td>
+                  <td>{item.target_email}</td>
+                  <td className="hint">{userAuditDetailsPreview(item.details)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <form className="form-grid form-grid--narrow" onSubmit={onSubmit}>
         <input
           type="email"
@@ -381,6 +459,8 @@ CreateUserSection.propTypes = {
   onResetPassword: PropTypes.func.isRequired,
   onToggleActive: PropTypes.func.isRequired,
   onDeleteUser: PropTypes.func.isRequired,
+  userAuditLogs: PropTypes.arrayOf(PropTypes.object).isRequired,
+  userAuditLoading: PropTypes.bool.isRequired,
 };
 
 function DashboardBody({
@@ -393,6 +473,7 @@ function DashboardBody({
   setReportParams,
   reportError,
   onRunReport,
+  onExportReportCsv,
   reportResult,
   canManageUsers,
   reportRuns,
@@ -401,9 +482,41 @@ function DashboardBody({
   setForm,
   onCreateIncident,
   incidents,
+  incidentFilters,
+  onIncidentFilterChange,
+  onClearIncidentFilters,
+  canEditIncidents,
+  editingIncidentId,
+  incidentEditForm,
+  incidentEditError,
+  onStartIncidentEdit,
+  onChangeIncidentEditField,
+  onSaveIncidentEdit,
+  onCancelIncidentEdit,
   canResolve,
   onResolveIncident,
 }) {
+  function renderEditActions(incident) {
+    if (!canEditIncidents) return null;
+    if (editingIncidentId !== incident.id) {
+      return (
+        <button type="button" className="btn btn-ghost" onClick={() => onStartIncidentEdit(incident)}>
+          Edit
+        </button>
+      );
+    }
+    return (
+      <>
+        <button type="button" className="btn btn-primary" onClick={() => onSaveIncidentEdit(incident.id)}>
+          Save
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={onCancelIncidentEdit}>
+          Cancel
+        </button>
+      </>
+    );
+  }
+
   return (
     <>
       <section className="stack-gap">
@@ -461,9 +574,14 @@ function DashboardBody({
               </label>
             ))}
             {reportError ? <p className="error-text">{reportError}</p> : null}
-            <button type="submit" className="btn btn-primary">
-              Run report
-            </button>
+            <div className="action-row">
+              <button type="submit" className="btn btn-primary">
+                Run report
+              </button>
+              <button type="button" className="btn btn-ghost" disabled={!reportResult} onClick={onExportReportCsv}>
+                Export CSV
+              </button>
+            </div>
           </form>
         )}
         {reportResult ? (
@@ -576,6 +694,49 @@ function DashboardBody({
 
       <section className="stack-gap">
         <h2 className="panel-title">Incidents</h2>
+        <div className="incident-filters">
+          <input
+            type="text"
+            placeholder="Search title, description, owner"
+            value={incidentFilters.search}
+            onChange={(e) => onIncidentFilterChange("search", e.target.value)}
+          />
+          <select value={incidentFilters.status} onChange={(e) => onIncidentFilterChange("status", e.target.value)}>
+            <option value="">All status</option>
+            <option value="open">open</option>
+            <option value="resolved">resolved</option>
+          </select>
+          <select value={incidentFilters.severity} onChange={(e) => onIncidentFilterChange("severity", e.target.value)}>
+            <option value="">All severity</option>
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Owner contains"
+            value={incidentFilters.owner}
+            onChange={(e) => onIncidentFilterChange("owner", e.target.value)}
+          />
+          <input
+            type="date"
+            value={incidentFilters.startDate}
+            onChange={(e) => onIncidentFilterChange("startDate", e.target.value)}
+          />
+          <input
+            type="date"
+            value={incidentFilters.endDate}
+            onChange={(e) => onIncidentFilterChange("endDate", e.target.value)}
+          />
+          <select value={incidentFilters.sort} onChange={(e) => onIncidentFilterChange("sort", e.target.value)}>
+            <option value="newest">Sort: newest</option>
+            <option value="oldest">Sort: oldest</option>
+            <option value="severity">Sort: severity</option>
+          </select>
+          <button type="button" className="btn btn-ghost" onClick={onClearIncidentFilters}>
+            Clear filters
+          </button>
+        </div>
         {incidents.length === 0 ? (
           <p className="empty-state">No incidents yet.</p>
         ) : (
@@ -584,6 +745,7 @@ function DashboardBody({
               <thead>
                 <tr>
                   <th>Title</th>
+                  <th>Description</th>
                   <th>Severity</th>
                   <th>Owner</th>
                   <th>Status</th>
@@ -593,12 +755,60 @@ function DashboardBody({
               <tbody>
                 {incidents.map((incident) => (
                   <tr key={incident.id}>
-                    <td>{incident.title}</td>
-                    <td>{incident.severity}</td>
-                    <td>{incident.owner}</td>
+                    <td>
+                      {editingIncidentId === incident.id ? (
+                        <input
+                          className="inline-input"
+                          value={incidentEditForm.title}
+                          onChange={(e) => onChangeIncidentEditField("title", e.target.value)}
+                        />
+                      ) : (
+                        incident.title
+                      )}
+                    </td>
+                    <td>
+                      {editingIncidentId === incident.id ? (
+                        <input
+                          className="inline-input"
+                          value={incidentEditForm.description}
+                          onChange={(e) => onChangeIncidentEditField("description", e.target.value)}
+                        />
+                      ) : (
+                        incident.description
+                      )}
+                    </td>
+                    <td>
+                      {editingIncidentId === incident.id ? (
+                        <select
+                          className="inline-input"
+                          value={incidentEditForm.severity}
+                          onChange={(e) => onChangeIncidentEditField("severity", e.target.value)}
+                        >
+                          <option value="low">low</option>
+                          <option value="medium">medium</option>
+                          <option value="high">high</option>
+                        </select>
+                      ) : (
+                        incident.severity
+                      )}
+                    </td>
+                    <td>
+                      {editingIncidentId === incident.id ? (
+                        <input
+                          className="inline-input"
+                          value={incidentEditForm.owner}
+                          onChange={(e) => onChangeIncidentEditField("owner", e.target.value)}
+                        />
+                      ) : (
+                        incident.owner
+                      )}
+                    </td>
                     <td>{incident.status}</td>
                     <td>
-                      <IncidentResolveCell incident={incident} canResolve={canResolve} onResolve={onResolveIncident} />
+                      <div className="action-row">
+                        <IncidentResolveCell incident={incident} canResolve={canResolve} onResolve={onResolveIncident} />
+                        {renderEditActions(incident)}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -606,6 +816,7 @@ function DashboardBody({
             </table>
           </div>
         )}
+        {incidentEditError ? <p className="error-text">{incidentEditError}</p> : null}
       </section>
     </>
   );
@@ -621,6 +832,7 @@ DashboardBody.propTypes = {
   setReportParams: PropTypes.func.isRequired,
   reportError: PropTypes.string.isRequired,
   onRunReport: PropTypes.func.isRequired,
+  onExportReportCsv: PropTypes.func.isRequired,
   reportResult: PropTypes.object,
   canManageUsers: PropTypes.bool.isRequired,
   reportRuns: PropTypes.arrayOf(PropTypes.object).isRequired,
@@ -629,12 +841,27 @@ DashboardBody.propTypes = {
   setForm: PropTypes.func.isRequired,
   onCreateIncident: PropTypes.func.isRequired,
   incidents: PropTypes.arrayOf(PropTypes.object).isRequired,
+  incidentFilters: PropTypes.object.isRequired,
+  onIncidentFilterChange: PropTypes.func.isRequired,
+  onClearIncidentFilters: PropTypes.func.isRequired,
+  canEditIncidents: PropTypes.bool.isRequired,
+  editingIncidentId: PropTypes.oneOfType([PropTypes.number, PropTypes.oneOf([null])]),
+  incidentEditForm: PropTypes.object.isRequired,
+  incidentEditError: PropTypes.string.isRequired,
+  onStartIncidentEdit: PropTypes.func.isRequired,
+  onChangeIncidentEditField: PropTypes.func.isRequired,
+  onSaveIncidentEdit: PropTypes.func.isRequired,
+  onCancelIncidentEdit: PropTypes.func.isRequired,
   canResolve: PropTypes.bool.isRequired,
   onResolveIncident: PropTypes.func.isRequired,
 };
 
 export default function App() {
-  const [token, setToken] = useState(() => localStorage.getItem("dbops_token") || "");
+  const [token, setToken] = useState(() => {
+    const store = globalThis.window?.localStorage;
+    if (!store || typeof store.getItem !== "function") return "";
+    return store.getItem("dbops_token") || "";
+  });
   const [me, setMe] = useState(null);
   const [authError, setAuthError] = useState("");
   const [incidents, setIncidents] = useState([]);
@@ -667,11 +894,85 @@ export default function App() {
   const [userCreateBusy, setUserCreateBusy] = useState(false);
   const [userDirectory, setUserDirectory] = useState([]);
   const [userDirectoryLoading, setUserDirectoryLoading] = useState(false);
+  const [userAuditLogs, setUserAuditLogs] = useState([]);
+  const [userAuditLoading, setUserAuditLoading] = useState(false);
   const [userActionBusyId, setUserActionBusyId] = useState(null);
+  const [incidentFilters, setIncidentFilters] = useState({
+    search: "",
+    status: "",
+    severity: "",
+    owner: "",
+    startDate: "",
+    endDate: "",
+    sort: "newest",
+  });
+  const [editingIncidentId, setEditingIncidentId] = useState(null);
+  const [incidentEditForm, setIncidentEditForm] = useState({
+    title: "",
+    description: "",
+    severity: "medium",
+    owner: "unassigned",
+  });
+  const [incidentEditError, setIncidentEditError] = useState("");
+
+  function clearClientState() {
+    setToken("");
+    setMe(null);
+    setIncidents([]);
+    setSummary(null);
+    setReportCatalog([]);
+    setSelectedReportKey("");
+    setReportParams({});
+    setReportResult(null);
+    setReportRuns([]);
+    setReportError("");
+    setUserCreateFeedback({ kind: "", text: "" });
+    setUserCreateBusy(false);
+    setUserActionBusyId(null);
+    setUserDirectory([]);
+    setUserDirectoryLoading(false);
+    setUserAuditLogs([]);
+    setUserAuditLoading(false);
+    setEditingIncidentId(null);
+    setIncidentEditForm({ title: "", description: "", severity: "medium", owner: "unassigned" });
+    setIncidentEditError("");
+  }
+
+  function forceLogoutWithMessage(detail = "") {
+    clearClientState();
+    setAuthError(sessionErrorMessage(detail));
+  }
+
+  async function apiJson(path, options = {}) {
+    const {
+      method = "GET",
+      body,
+      withAuth = true,
+      parseJson = true,
+      handleUnauthorized = true,
+    } = options;
+
+    const res = await fetch(`${API_URL}${path}`, {
+      method,
+      headers: headers(withAuth ? token : "", body != null),
+      body: body == null ? undefined : JSON.stringify(body),
+    });
+
+    const parsed = parseJson ? await parseResponseBody(res) : null;
+    if (handleUnauthorized && (res.status === 401 || res.status === 403)) {
+      const detail = typeof parsed?.detail === "string" ? parsed.detail : "";
+      if (res.status === 401 || detail.toLowerCase().includes("disabled")) {
+        forceLogoutWithMessage(detail);
+      }
+    }
+    return { res, body: parsed };
+  }
 
   useEffect(() => {
-    if (token) localStorage.setItem("dbops_token", token);
-    else localStorage.removeItem("dbops_token");
+    const store = globalThis.window?.localStorage;
+    if (!store) return;
+    if (token && typeof store.setItem === "function") store.setItem("dbops_token", token);
+    if (!token && typeof store.removeItem === "function") store.removeItem("dbops_token");
   }, [token]);
 
   useEffect(() => {
@@ -708,13 +1009,11 @@ export default function App() {
       setMe(null);
       return;
     }
-    const res = await fetch(`${API_URL}/auth/me`, { headers: headers(token, false) });
+    const { res, body } = await apiJson("/auth/me", { parseJson: true });
     if (!res.ok) {
-      setToken("");
-      setMe(null);
       return;
     }
-    setMe(await res.json());
+    setMe(body);
   }
 
   async function loadData() {
@@ -723,17 +1022,16 @@ export default function App() {
       setSummary(null);
       return;
     }
-    const [incidentsRes, summaryRes] = await Promise.all([
-      fetch(`${API_URL}/incidents`, { headers: headers(token, false) }),
-      fetch(`${API_URL}/reports/summary`, { headers: headers(token, false) }),
+    const incidentQuery = toIncidentQuery(incidentFilters);
+    const [incidentsReq, summaryReq] = await Promise.all([
+      apiJson(`/incidents${incidentQuery}`),
+      apiJson("/reports/summary"),
     ]);
-    if (incidentsRes.status === 401 || summaryRes.status === 401) {
-      setToken("");
-      setMe(null);
+    if (!incidentsReq.res.ok || !summaryReq.res.ok) {
       return;
     }
-    setIncidents(await incidentsRes.json());
-    setSummary(await summaryRes.json());
+    setIncidents(incidentsReq.body);
+    setSummary(summaryReq.body);
   }
 
   async function loadReportCatalog() {
@@ -744,14 +1042,11 @@ export default function App() {
       setReportError("");
       return;
     }
-    const res = await fetch(`${API_URL}/reports/catalog`, { headers: headers(token, false) });
-    if (res.status === 401) {
-      setToken("");
-      setMe(null);
+    const { res, body } = await apiJson("/reports/catalog");
+    if (!res.ok) {
       return;
     }
-    const data = await res.json();
-    setReportCatalog(data);
+    setReportCatalog(body);
   }
 
   async function loadReportRuns() {
@@ -759,9 +1054,9 @@ export default function App() {
       setReportRuns([]);
       return;
     }
-    const res = await fetch(`${API_URL}/reports/runs?limit=50`, { headers: headers(token, false) });
+    const { res, body } = await apiJson("/reports/runs?limit=50");
     if (!res.ok) return;
-    setReportRuns(await res.json());
+    setReportRuns(body);
   }
 
   async function loadUserDirectory() {
@@ -771,20 +1066,29 @@ export default function App() {
       return;
     }
     setUserDirectoryLoading(true);
-    const res = await fetch(`${API_URL}/auth/users`, { headers: headers(token, false) });
-    if (res.status === 401) {
-      setToken("");
-      setMe(null);
-      setUserDirectory([]);
-      setUserDirectoryLoading(false);
-      return;
-    }
+    const { res, body } = await apiJson("/auth/users");
     if (!res.ok) {
       setUserDirectoryLoading(false);
       return;
     }
-    setUserDirectory(await res.json());
+    setUserDirectory(body);
     setUserDirectoryLoading(false);
+  }
+
+  async function loadUserAuditLogs() {
+    if (!token || me?.role !== "DBA") {
+      setUserAuditLogs([]);
+      setUserAuditLoading(false);
+      return;
+    }
+    setUserAuditLoading(true);
+    const { res, body } = await apiJson("/auth/users/audit?limit=100");
+    if (!res.ok) {
+      setUserAuditLoading(false);
+      return;
+    }
+    setUserAuditLogs(body);
+    setUserAuditLoading(false);
   }
 
   useEffect(() => {
@@ -793,7 +1097,7 @@ export default function App() {
 
   useEffect(() => {
     loadData();
-  }, [token, me]);
+  }, [token, me, incidentFilters]);
 
   useEffect(() => {
     loadReportCatalog();
@@ -805,6 +1109,10 @@ export default function App() {
 
   useEffect(() => {
     loadUserDirectory();
+  }, [token, me]);
+
+  useEffect(() => {
+    loadUserAuditLogs();
   }, [token, me]);
 
   useEffect(() => {
@@ -847,7 +1155,12 @@ export default function App() {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      setAuthError(body.detail || "Login failed");
+      const detail = typeof body.detail === "string" ? body.detail : "";
+      if (detail.toLowerCase().includes("disabled")) {
+        setAuthError("Your account is disabled. Contact a DBA.");
+      } else {
+        setAuthError(detail || "Login failed");
+      }
       return;
     }
     const data = await res.json();
@@ -900,6 +1213,10 @@ export default function App() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
+        if (res.status === 401 || (res.status === 403 && String(body?.detail || "").toLowerCase().includes("disabled"))) {
+          forceLogoutWithMessage(String(body?.detail || ""));
+          return;
+        }
         let msg = formatApiDetail(body);
         if (!msg || msg === "Request failed") msg = `Server returned ${res.status}.`;
         setUserCreateFeedback({ kind: "error", text: msg });
@@ -914,6 +1231,7 @@ export default function App() {
       });
       setUserForm({ email: "", password: "", role: "Viewer" });
       await loadUserDirectory();
+      await loadUserAuditLogs();
     } catch (err) {
       let reason = err instanceof Error ? err.message : String(err);
       if (String(err?.name) === "AbortError") {
@@ -948,6 +1266,7 @@ export default function App() {
       return;
     }
     setUserCreateFeedback({ kind: "success", text: `Password updated for ${user.email}.` });
+    await loadUserAuditLogs();
     setUserActionBusyId(null);
   }
 
@@ -966,6 +1285,7 @@ export default function App() {
       return;
     }
     await loadUserDirectory();
+    await loadUserAuditLogs();
     setUserCreateFeedback({
       kind: "success",
       text: `${user.email} is now ${user.is_active ? "disabled" : "active"}.`,
@@ -989,49 +1309,25 @@ export default function App() {
       return;
     }
     await loadUserDirectory();
+    await loadUserAuditLogs();
     setUserCreateFeedback({ kind: "success", text: `${user.email} deleted.` });
     setUserActionBusyId(null);
   }
 
   function logout() {
-    setToken("");
-    setMe(null);
-    setIncidents([]);
-    setSummary(null);
-    setReportCatalog([]);
-    setSelectedReportKey("");
-    setReportParams({});
-    setReportResult(null);
-    setReportRuns([]);
-    setReportError("");
-    setUserCreateFeedback({ kind: "", text: "" });
-    setUserCreateBusy(false);
-    setUserActionBusyId(null);
-    setUserDirectory([]);
-    setUserDirectoryLoading(false);
+    clearClientState();
+    setAuthError("");
   }
 
   async function runReport(e) {
     e.preventDefault();
     setReportError("");
     const spec = reportCatalog.find((r) => r.key === selectedReportKey);
-    const paramsPayload = {};
-    if (spec) {
-      for (const p of spec.params) {
-        const raw = reportParams[p.name];
-        if (p.type === "int") {
-          paramsPayload[p.name] = Number.parseInt(String(raw), 10);
-        } else {
-          paramsPayload[p.name] = raw;
-        }
-      }
-    }
-    const res = await fetch(`${API_URL}/reports/run`, {
+    const paramsPayload = reportParamsPayload(spec, reportParams);
+    const { res, body } = await apiJson("/reports/run", {
       method: "POST",
-      headers: headers(token, true),
-      body: JSON.stringify({ report_key: selectedReportKey, params: paramsPayload }),
+      body: { report_key: selectedReportKey, params: paramsPayload },
     });
-    const body = await res.json().catch(() => ({}));
     if (!res.ok) {
       setReportResult(null);
       setReportError(typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail) || "Report failed");
@@ -1043,13 +1339,42 @@ export default function App() {
     }
   }
 
+  async function exportReportCsv() {
+    setReportError("");
+    const spec = reportCatalog.find((r) => r.key === selectedReportKey);
+    const paramsPayload = reportParamsPayload(spec, reportParams);
+    const { res } = await apiJson("/reports/export/csv", {
+      method: "POST",
+      body: { report_key: selectedReportKey, params: paramsPayload },
+      parseJson: false,
+    });
+    if (!res.ok) {
+      const body = await parseResponseBody(res);
+      setReportError(typeof body.detail === "string" ? body.detail : "CSV export failed");
+      return;
+    }
+    const csvText = await res.text();
+    const blob = new Blob([csvText], { type: "text/csv;charset=utf-8" });
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = `${selectedReportKey}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+    if (me?.role === "DBA") {
+      loadReportRuns();
+    }
+  }
+
   async function createIncident(e) {
     e.preventDefault();
-    await fetch(`${API_URL}/incidents`, {
-      method: "POST",
-      headers: headers(token, true),
-      body: JSON.stringify(form),
-    });
+    const { res, body } = await apiJson("/incidents", { method: "POST", body: form });
+    if (!res.ok) {
+      setIncidentEditError(formatApiDetail(body));
+      return;
+    }
     setForm({
       title: "",
       description: "",
@@ -1060,15 +1385,69 @@ export default function App() {
   }
 
   async function resolveIncident(id) {
-    await fetch(`${API_URL}/incidents/${id}/resolve`, {
-      method: "PATCH",
-      headers: headers(token, false),
-    });
+    const { res } = await apiJson(`/incidents/${id}/resolve`, { method: "PATCH", parseJson: false });
+    if (!res.ok) return;
     await loadData();
+  }
+
+  function startIncidentEdit(incident) {
+    setIncidentEditError("");
+    setEditingIncidentId(incident.id);
+    setIncidentEditForm({
+      title: incident.title,
+      description: incident.description,
+      severity: incident.severity,
+      owner: incident.owner,
+    });
+  }
+
+  function changeIncidentEditField(field, value) {
+    setIncidentEditForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function cancelIncidentEdit() {
+    setEditingIncidentId(null);
+    setIncidentEditError("");
+  }
+
+  async function saveIncidentEdit(incidentId) {
+    setIncidentEditError("");
+    const { res, body } = await apiJson(`/incidents/${incidentId}`, {
+      method: "PATCH",
+      body: {
+        title: incidentEditForm.title,
+        description: incidentEditForm.description,
+        severity: incidentEditForm.severity,
+        owner: incidentEditForm.owner,
+      },
+    });
+    if (!res.ok) {
+      setIncidentEditError(formatApiDetail(body));
+      return;
+    }
+    setEditingIncidentId(null);
+    await loadData();
+  }
+
+  function setIncidentFilterField(field, value) {
+    setIncidentFilters((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function clearIncidentFilters() {
+    setIncidentFilters({
+      search: "",
+      status: "",
+      severity: "",
+      owner: "",
+      startDate: "",
+      endDate: "",
+      sort: "newest",
+    });
   }
 
   const role = me?.role;
   const canCreateIncident = role === "DBA" || role === "Analyst";
+  const canEditIncidents = role === "DBA" || role === "Analyst";
   const canResolve = role === "DBA";
   const canManageUsers = role === "DBA";
   const selectedReport = reportCatalog.find((r) => r.key === selectedReportKey);
@@ -1107,6 +1486,8 @@ export default function App() {
               onResetPassword={resetUserPassword}
               onToggleActive={toggleUserActive}
               onDeleteUser={deleteUser}
+              userAuditLogs={userAuditLogs}
+              userAuditLoading={userAuditLoading}
             />
           ) : null}
           <DashboardBody
@@ -1119,6 +1500,7 @@ export default function App() {
             setReportParams={setReportParams}
             reportError={reportError}
             onRunReport={runReport}
+            onExportReportCsv={exportReportCsv}
             reportResult={reportResult}
             canManageUsers={canManageUsers}
             reportRuns={reportRuns}
@@ -1127,6 +1509,17 @@ export default function App() {
             setForm={setForm}
             onCreateIncident={createIncident}
             incidents={incidents}
+            incidentFilters={incidentFilters}
+            onIncidentFilterChange={setIncidentFilterField}
+            onClearIncidentFilters={clearIncidentFilters}
+            canEditIncidents={canEditIncidents}
+            editingIncidentId={editingIncidentId}
+            incidentEditForm={incidentEditForm}
+            incidentEditError={incidentEditError}
+            onStartIncidentEdit={startIncidentEdit}
+            onChangeIncidentEditField={changeIncidentEditField}
+            onSaveIncidentEdit={saveIncidentEdit}
+            onCancelIncidentEdit={cancelIncidentEdit}
             canResolve={canResolve}
             onResolveIncident={resolveIncident}
           />

@@ -1,21 +1,27 @@
 import json
 import os
+from csv import DictWriter
+from datetime import date, datetime, time, timedelta
+from io import StringIO
 
-from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import text
+from sqlalchemy import case, or_, text
 from sqlalchemy.orm import Session
 
 from .auth_utils import create_access_token, hash_password, verify_password
 from .db import engine, get_db
 from .deps import get_current_user, require_roles
-from .models import Incident, ReportExecutionLog, User
+from .models import Incident, ReportExecutionLog, User, UserAdminAuditLog
 from .report_catalog import REPORTS
+from .rate_limit import check_auth_rate_limit
 from .report_runner import execute_whitelisted_report
 from .schemas import (
     IncidentCreate,
     IncidentRead,
+    IncidentUpdate,
     LoginRequest,
     ReportCatalogEntry,
     ReportExecuteRequest,
@@ -23,6 +29,7 @@ from .schemas import (
     ReportParamSpec,
     ReportRunRead,
     Token,
+    UserAdminAuditRead,
     UserCreate,
     UserPasswordReset,
     UserRead,
@@ -30,6 +37,34 @@ from .schemas import (
 )
 
 app = FastAPI(title="DBOps Control Center API", version="0.3.1")
+
+
+def _log_user_admin_action(
+    db: Session,
+    *,
+    actor_user_id: int,
+    target_user_id: int | None,
+    target_email: str,
+    action: str,
+    details: dict,
+) -> None:
+    db.add(
+        UserAdminAuditLog(
+            actor_user_id=actor_user_id,
+            target_user_id=target_user_id,
+            target_email=target_email.lower(),
+            action=action,
+            details_json=json.dumps(details, sort_keys=True),
+        )
+    )
+
+
+def _csv_text(columns: list[str], rows: list[dict]) -> str:
+    buf = StringIO()
+    writer = DictWriter(buf, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(rows)
+    return buf.getvalue()
 
 
 def _parse_cors_origins(raw: str | None) -> list[str]:
@@ -73,7 +108,9 @@ def health(response: Response):
 
 
 @app.post("/auth/login", response_model=Token)
-def login_json(payload: LoginRequest, db: Session = Depends(get_db)):
+def login_json(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    if not check_auth_rate_limit(request.client.host if request.client else None, "auth-login"):
+        raise HTTPException(status_code=429, detail="Too many auth requests. Please try again shortly.")
     user = db.query(User).filter(User.email == payload.email.lower()).first()
     if user is None or not user.is_active or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
@@ -82,7 +119,9 @@ def login_json(payload: LoginRequest, db: Session = Depends(get_db)):
 
 
 @app.post("/auth/token", response_model=Token)
-def login_form(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login_form(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    if not check_auth_rate_limit(request.client.host if request.client else None, "auth-token"):
+        raise HTTPException(status_code=429, detail="Too many auth requests. Please try again shortly.")
     user = db.query(User).filter(User.email == form_data.username.lower()).first()
     if user is None or not user.is_active or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect username or password")
@@ -96,8 +135,10 @@ def me(current: User = Depends(get_current_user)):
 
 
 @app.post("/auth/register", response_model=UserRead, status_code=201)
-def register_bootstrap(payload: UserCreate, db: Session = Depends(get_db)):
+def register_bootstrap(payload: UserCreate, request: Request, db: Session = Depends(get_db)):
     """First user only (role must be DBA). Further accounts use POST /auth/users as DBA."""
+    if not check_auth_rate_limit(request.client.host if request.client else None, "auth-register"):
+        raise HTTPException(status_code=429, detail="Too many auth requests. Please try again shortly.")
     user_count = db.query(User).count()
     if user_count > 0:
         raise HTTPException(
@@ -128,7 +169,7 @@ def register_bootstrap(payload: UserCreate, db: Session = Depends(get_db)):
 def register_as_dba(
     payload: UserCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles("DBA")),
+    current: User = Depends(require_roles("DBA")),
 ):
     if db.query(User).filter(User.email == payload.email.lower()).first():
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -138,6 +179,15 @@ def register_as_dba(
         role=payload.role,
     )
     db.add(user)
+    db.flush()
+    _log_user_admin_action(
+        db,
+        actor_user_id=current.id,
+        target_user_id=user.id,
+        target_email=user.email,
+        action="create_user",
+        details={"role": user.role},
+    )
     db.commit()
     db.refresh(user)
     return user
@@ -152,6 +202,45 @@ def list_users(
     return db.query(User).order_by(User.id.asc()).all()
 
 
+@app.get("/auth/users/audit", response_model=list[UserAdminAuditRead])
+def list_user_admin_audit(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("DBA")),
+    limit: int = 100,
+):
+    limit = min(max(limit, 1), 500)
+    actor_user = User.__table__.alias("actor_user")
+    rows = (
+        db.query(
+            UserAdminAuditLog,
+            actor_user.c.email,
+        )
+        .outerjoin(actor_user, UserAdminAuditLog.actor_user_id == actor_user.c.id)
+        .order_by(UserAdminAuditLog.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    out: list[UserAdminAuditRead] = []
+    for audit, actor_email in rows:
+        try:
+            details = json.loads(audit.details_json)
+        except json.JSONDecodeError:
+            details = {}
+        out.append(
+            UserAdminAuditRead(
+                id=audit.id,
+                actor_user_id=audit.actor_user_id,
+                actor_email=actor_email,
+                target_user_id=audit.target_user_id,
+                target_email=audit.target_email,
+                action=audit.action,
+                details=details,
+                created_at=audit.created_at,
+            )
+        )
+    return out
+
+
 @app.patch("/auth/users/{user_id}/password", response_model=UserRead)
 def reset_user_password(
     user_id: int,
@@ -163,6 +252,14 @@ def reset_user_password(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     user.hashed_password = hash_password(payload.password)
+    _log_user_admin_action(
+        db,
+        actor_user_id=current.id,
+        target_user_id=user.id,
+        target_email=user.email,
+        action="reset_password",
+        details={"password_reset": True},
+    )
     db.commit()
     db.refresh(user)
     return user
@@ -181,6 +278,14 @@ def set_user_status(
     if current.id == user.id and not payload.is_active:
         raise HTTPException(status_code=400, detail="You cannot disable your own account")
     user.is_active = payload.is_active
+    _log_user_admin_action(
+        db,
+        actor_user_id=current.id,
+        target_user_id=user.id,
+        target_email=user.email,
+        action="set_status",
+        details={"is_active": payload.is_active},
+    )
     db.commit()
     db.refresh(user)
     return user
@@ -197,6 +302,16 @@ def delete_user(
         raise HTTPException(status_code=404, detail="User not found")
     if current.id == user.id:
         raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    target_id = user.id
+    target_email = user.email
+    _log_user_admin_action(
+        db,
+        actor_user_id=current.id,
+        target_user_id=target_id,
+        target_email=target_email,
+        action="delete_user",
+        details={"deleted": True},
+    )
     db.delete(user)
     db.commit()
 
@@ -205,8 +320,50 @@ def delete_user(
 def list_incidents(
     db: Session = Depends(get_db),
     _: User = Depends(require_roles("DBA", "Analyst", "Viewer")),
+    status: str | None = Query(default=None),
+    severity: str | None = Query(default=None),
+    owner: str | None = Query(default=None),
+    search: str | None = Query(default=None, min_length=1, max_length=120),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    sort: str = Query(default="newest", pattern="^(newest|oldest|severity)$"),
 ):
-    return db.query(Incident).order_by(Incident.created_at.desc()).all()
+    query = db.query(Incident)
+
+    if status:
+        query = query.filter(Incident.status == status)
+    if severity:
+        query = query.filter(Incident.severity == severity)
+    if owner:
+        query = query.filter(Incident.owner.ilike(f"%{owner}%"))
+    if search:
+        like_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                Incident.title.ilike(like_term),
+                Incident.description.ilike(like_term),
+                Incident.owner.ilike(like_term),
+            )
+        )
+    if start_date:
+        query = query.filter(Incident.created_at >= datetime.combine(start_date, time.min))
+    if end_date:
+        query = query.filter(Incident.created_at < datetime.combine(end_date + timedelta(days=1), time.min))
+
+    if sort == "oldest":
+        query = query.order_by(Incident.created_at.asc())
+    elif sort == "severity":
+        severity_rank = case(
+            (Incident.severity == "high", 1),
+            (Incident.severity == "medium", 2),
+            (Incident.severity == "low", 3),
+            else_=4,
+        )
+        query = query.order_by(severity_rank.asc(), Incident.created_at.desc())
+    else:
+        query = query.order_by(Incident.created_at.desc())
+
+    return query.all()
 
 
 @app.post("/incidents", response_model=IncidentRead, status_code=201)
@@ -223,6 +380,31 @@ def create_incident(
         status="open",
     )
     db.add(incident)
+    db.commit()
+    db.refresh(incident)
+    return incident
+
+
+@app.patch("/incidents/{incident_id}", response_model=IncidentRead)
+def update_incident(
+    incident_id: int,
+    payload: IncidentUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("DBA", "Analyst")),
+):
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    if payload.title is not None:
+        incident.title = payload.title
+    if payload.description is not None:
+        incident.description = payload.description
+    if payload.severity is not None:
+        incident.severity = payload.severity
+    if payload.owner is not None:
+        incident.owner = payload.owner
+
     db.commit()
     db.refresh(incident)
     return incident
@@ -269,6 +451,26 @@ def run_report(
     try:
         data = execute_whitelisted_report(db, current, body.report_key, body.params)
         return ReportExecuteResponse.model_validate(data)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Insufficient permissions for this report")
+    except ValueError as exc:
+        msg = str(exc)
+        code = 404 if msg.startswith("Unknown report:") else 400
+        raise HTTPException(status_code=code, detail=msg)
+
+
+@app.post("/reports/export/csv", response_class=PlainTextResponse)
+def export_report_csv(
+    body: ReportExecuteRequest,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    try:
+        data = execute_whitelisted_report(db, current, body.report_key, body.params)
+        csv_text = _csv_text(data["columns"], data["rows"])
+        response = PlainTextResponse(csv_text, media_type="text/csv")
+        response.headers["Content-Disposition"] = f'attachment; filename="{body.report_key}.csv"'
+        return response
     except PermissionError:
         raise HTTPException(status_code=403, detail="Insufficient permissions for this report")
     except ValueError as exc:

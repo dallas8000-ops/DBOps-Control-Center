@@ -37,6 +37,13 @@ class IncidentCreate(BaseModel):
     owner: str = Field(default="unassigned")
 
 
+class IncidentUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=3, max_length=200)
+    description: str | None = Field(default=None, min_length=5)
+    severity: str | None = None
+    owner: str | None = Field(default=None, min_length=1, max_length=120)
+
+
 class IncidentRead(BaseModel):
     id: int
     title: str
@@ -97,3 +104,14 @@ class UserPasswordReset(BaseModel):
 
 class UserStatusUpdate(BaseModel):
     is_active: bool
+
+
+class UserAdminAuditRead(BaseModel):
+    id: int
+    actor_user_id: int | None
+    actor_email: str | None
+    target_user_id: int | None
+    target_email: str
+    action: str
+    details: dict[str, Any]
+    created_at: datetime

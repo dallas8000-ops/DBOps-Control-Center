@@ -26,6 +26,8 @@ services:
       FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:5173}
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend/seed_data.json:/app/seed_data.json:ro
     depends_on:
       db:
         condition: service_healthy
