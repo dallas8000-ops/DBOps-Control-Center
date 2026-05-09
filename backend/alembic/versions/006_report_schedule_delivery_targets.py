@@ -1,6 +1,6 @@
 """add report schedule delivery targets
 
-Revision ID: 006_report_schedule_delivery_targets
+Revision ID: 006_sched_delivery_targets
 Revises: 005_report_schedules
 Create Date: 2026-05-09
 
@@ -11,7 +11,7 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "006_report_schedule_delivery_targets"
+revision: str = "006_sched_delivery_targets"
 down_revision: Union[str, None] = "005_report_schedules"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
