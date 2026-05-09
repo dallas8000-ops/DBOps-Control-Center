@@ -58,23 +58,28 @@ body,
 #root {
   width: 100%;
   min-height: 100%;
+  max-height: none !important;
 }
 
 #root {
   display: block;
   min-height: 100vh;
-  overflow: visible;
+  height: auto !important;
+  overflow: visible !important;
 }
 
 html,
 body {
-  height: auto;
-  overflow-x: hidden;
-  overflow-y: auto;
+  height: auto !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
 }
 
 .app-shell {
   max-width: 1080px;
+  min-height: max-content;
+  overflow: visible;
   margin: 0 auto;
   padding: clamp(1.25rem, 4vw, 2rem) clamp(1rem, 3vw, 1.5rem) 3rem;
 }
