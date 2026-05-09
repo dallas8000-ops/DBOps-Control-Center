@@ -4,6 +4,7 @@ import PropTypes from "prop-types";
 const API_URL = String(import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 const CREATE_USER_FETCH_MS = 25_000;
+const UI_BUILD_MARKER = "audit-dropdown-rollout-2026-05-09";
 const REPORT_AUDIT_VIEW_LIMIT_KEY = "dbops_report_audit_view_limit";
 const REPORT_AUDIT_VIEW_LIMIT_OPTIONS = new Set(["3", "10", "25", "all"]);
 
@@ -1778,6 +1779,7 @@ export default function App() {
         <p className="page-lede">
           Render-first database operations dashboard (JWT, RBAC, whitelisted SQL reports).
         </p>
+        <p className="hint">UI build marker: {UI_BUILD_MARKER}</p>
       </header>
 
       {token ? (
