@@ -15,6 +15,30 @@ function routeKey(method, path) {
   return `${method} ${path}`;
 }
 
+function clearStoredToken() {
+  const store = globalThis.window?.localStorage;
+  if (!store || typeof store.removeItem !== "function") return;
+  store.removeItem("dbops_token");
+}
+
+function installLocalStorageMock() {
+  const values = new Map();
+  Object.defineProperty(globalThis.window, "localStorage", {
+    configurable: true,
+    value: {
+      getItem(key) {
+        return values.has(key) ? values.get(key) : null;
+      },
+      setItem(key, value) {
+        values.set(key, String(value));
+      },
+      removeItem(key) {
+        values.delete(key);
+      },
+    },
+  });
+}
+
 function createFetchMock({
   meRole = "Analyst",
   meEmail = "analyst@example.com",
@@ -118,10 +142,13 @@ function createFetchMock({
 
 beforeEach(() => {
   vi.stubGlobal("alert", vi.fn());
+  installLocalStorageMock();
+  clearStoredToken();
 });
 
 afterEach(() => {
   cleanup();
+  clearStoredToken();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -152,6 +179,19 @@ describe("App smoke", () => {
     });
     expect(screen.getByText(/analyst@example.com/)).toBeInTheDocument();
     expect(screen.getByText(/Analyst/)).toBeInTheDocument();
+  });
+
+  it("restores a persisted token from localStorage", async () => {
+    globalThis.window.localStorage.setItem("dbops_token", "stored-token");
+    vi.stubGlobal("fetch", createFetchMock());
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Signed in as/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/analyst@example.com/)).toBeInTheDocument();
+    expect(globalThis.window.localStorage.getItem("dbops_token")).toBe("stored-token");
   });
 
   it("shows a disabled-account message on login failure", async () => {
@@ -235,6 +275,35 @@ describe("App smoke", () => {
     await waitFor(() => {
       expect(screen.getByText("Setup is already complete. Sign in with an existing DBA account.")).toBeInTheDocument();
     });
+  });
+
+  it("clears the stored token and returns to login on expired session", async () => {
+    globalThis.window.localStorage.setItem("dbops_token", "expired-token");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url, options = {}) => {
+        const method = (options.method || "GET").toUpperCase();
+        const path = new URL(String(url)).pathname;
+
+        if (path === "/health" && method === "GET") {
+          return jsonResponse({ status: "ok", database: "reachable" });
+        }
+
+        if (["/auth/me", "/incidents", "/reports/summary", "/reports/catalog"].includes(path) && method === "GET") {
+          return jsonResponse({ detail: "Token expired" }, 401);
+        }
+
+        return jsonResponse({ detail: `Unhandled route ${method} ${path}` }, 500);
+      }),
+    );
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Your session expired. Please sign in again.")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Login" })).toBeInTheDocument();
+    expect(globalThis.window.localStorage.getItem("dbops_token")).toBeNull();
   });
 
   it("submits create incident request", async () => {
