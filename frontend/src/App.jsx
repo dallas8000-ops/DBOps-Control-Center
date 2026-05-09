@@ -54,13 +54,24 @@ function userAuditDetailsPreview(details) {
 }
 
 function reportAuditSummary(viewLimit, visibleCount, totalCount, refreshStatus) {
-  if (refreshStatus) return refreshStatus;
-  if (totalCount === 0) return "No runs loaded yet.";
-  if (viewLimit === "all") return `Showing all ${totalCount} run(s).`;
-  const requested = Number.parseInt(viewLimit, 10);
-  if (Number.isNaN(requested)) return `Showing ${visibleCount} of ${totalCount} run(s).`;
-  if (totalCount <= requested) return `Showing all ${totalCount} available run(s).`;
-  return `Showing the latest ${visibleCount} of ${totalCount} run(s).`;
+  let detail = "";
+  if (totalCount === 0) {
+    detail = "No runs loaded yet.";
+  } else if (viewLimit === "all") {
+    detail = `Showing all ${totalCount} run(s).`;
+  } else {
+    const requested = Number.parseInt(viewLimit, 10);
+    if (Number.isNaN(requested)) {
+      detail = `Showing ${visibleCount} of ${totalCount} run(s).`;
+    } else if (totalCount <= requested) {
+      detail = `Showing all ${totalCount} available run(s).`;
+    } else {
+      detail = `Showing the latest ${visibleCount} of ${totalCount} run(s).`;
+    }
+  }
+
+  if (!refreshStatus) return detail;
+  return `${refreshStatus} ${detail}`.trim();
 }
 
 /** Stable React key for JSON-serializable report rows from the API */
