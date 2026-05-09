@@ -483,6 +483,10 @@ def test_dba_can_create_list_and_disable_report_schedule() -> None:
                 "cadence": "daily",
                 "run_hour_utc": 6,
                 "run_minute_utc": 30,
+                "delivery_kind": "email",
+                "delivery_target": "ops@example.com",
+                "notify_on_success": True,
+                "notify_on_failure": True,
             },
             headers=_auth_headers(dba_token),
         )
@@ -490,6 +494,10 @@ def test_dba_can_create_list_and_disable_report_schedule() -> None:
         schedule = create_resp.json()
         assert schedule["report_key"] == "incidents_recent"
         assert schedule["params"] == {"max_rows": 25}
+        assert schedule["delivery_kind"] == "email"
+        assert schedule["delivery_target"] == "ops@example.com"
+        assert schedule["notify_on_success"] is True
+        assert schedule["notify_on_failure"] is True
         assert schedule["is_enabled"] is True
 
         list_resp = client.get("/reports/schedules", headers=_auth_headers(dba_token))

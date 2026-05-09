@@ -106,6 +106,10 @@ class ReportScheduleCreate(BaseModel):
     weekday_utc: int | None = Field(default=None, ge=0, le=6)
     run_hour_utc: int = Field(ge=0, le=23)
     run_minute_utc: int = Field(ge=0, le=59)
+    delivery_kind: str = Field(default="none", pattern="^(none|email|webhook)$")
+    delivery_target: str | None = Field(default=None, max_length=320)
+    notify_on_success: bool = False
+    notify_on_failure: bool = True
 
     @model_validator(mode="after")
     def validate_weekday(self):
@@ -113,6 +117,10 @@ class ReportScheduleCreate(BaseModel):
             raise ValueError("weekday_utc is required for weekly schedules")
         if self.cadence == "daily":
             self.weekday_utc = None
+        if self.delivery_kind != "none" and not self.delivery_target:
+            raise ValueError("delivery_target is required when delivery_kind is not none")
+        if self.delivery_kind == "none":
+            self.delivery_target = None
         return self
 
 
@@ -128,6 +136,10 @@ class ReportScheduleRead(BaseModel):
     weekday_utc: int | None
     run_hour_utc: int
     run_minute_utc: int
+    delivery_kind: str
+    delivery_target: str | None
+    notify_on_success: bool
+    notify_on_failure: bool
     is_enabled: bool
     next_run_at: datetime
     last_run_at: datetime | None

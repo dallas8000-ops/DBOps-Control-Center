@@ -190,7 +190,7 @@ Definition of done:
 - [ ] Week 1 complete and green in CI.
 - [ ] Week 2 security and audit trail complete.
 - [ ] Week 3 reporting value upgrades complete.
-- [ ] Week 4 scheduling MVP complete.
-- [ ] Commercial assets package complete and reviewed.
+- [x] Week 4 scheduling MVP complete.
+- [x] Commercial assets package complete and reviewed.
 
 If all five are checked, the product is positioned for medium-to-high price discussions with materially lower buyer risk.

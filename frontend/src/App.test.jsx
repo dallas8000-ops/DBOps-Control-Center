@@ -45,6 +45,30 @@ function createFetchMock({
   reportRows = [{ status: "open", total: 1 }],
   loginResponse = jsonResponse({ access_token: "token-123", token_type: "bearer" }),
 } = {}) {
+  const schedules = [
+    {
+      id: 1,
+      report_key: "incidents_by_status",
+      params: {},
+      cadence: "daily",
+      weekday_utc: null,
+      run_hour_utc: 9,
+      run_minute_utc: 0,
+      delivery_kind: "none",
+      delivery_target: null,
+      notify_on_success: false,
+      notify_on_failure: true,
+      is_enabled: true,
+      next_run_at: "2026-05-10T09:00:00",
+      last_run_at: null,
+      last_success_at: null,
+      last_error: null,
+      created_at: "2026-05-09T10:00:00",
+      created_by_user_id: 2,
+      created_by_email: meEmail,
+    },
+  ];
+
   const staticResponses = {
     "GET /health": jsonResponse({ status: "ok", database: "reachable" }),
     "GET /auth/me": jsonResponse({ id: 2, email: meEmail, role: meRole, is_active: true }),
@@ -63,6 +87,7 @@ function createFetchMock({
       },
     ]),
     "GET /reports/runs": jsonResponse([]),
+    "GET /reports/schedules": jsonResponse(schedules),
     "GET /auth/users": jsonResponse([]),
   };
 
@@ -122,6 +147,22 @@ function createFetchMock({
         status: 200,
         text: async () => "status,incident_count\nopen,1\n",
       };
+    }
+
+    if (path === "/reports/schedules" && method === "POST") {
+      return jsonResponse(
+        {
+          ...schedules[0],
+          id: 2,
+          delivery_kind: "email",
+          delivery_target: "ops@example.com",
+        },
+        201,
+      );
+    }
+
+    if (path.startsWith("/reports/schedules/") && path.endsWith("/status") && method === "PATCH") {
+      return jsonResponse({ ...schedules[0], is_enabled: false });
     }
 
     if (path.endsWith("/resolve") && method === "PATCH") {
@@ -372,6 +413,55 @@ describe("App smoke", () => {
           ([url, options]) =>
             String(url).includes("/reports/run") &&
             (options?.method || "GET").toUpperCase() === "POST",
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it("DBA can create and toggle a report schedule", async () => {
+    const fetchMock = createFetchMock({ meRole: "DBA", meEmail: "dba@example.com" });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "dba@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "Password123!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Login" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Scheduled reports (DBA)" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByDisplayValue("none"), {
+      target: { value: "email" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("ops@example.com"), {
+      target: { value: "ops@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, options]) =>
+            String(url).includes("/reports/schedules") &&
+            (options?.method || "GET").toUpperCase() === "POST",
+        ),
+      ).toBe(true);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Disable" }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, options]) =>
+            String(url).includes("/reports/schedules/1/status") &&
+            (options?.method || "GET").toUpperCase() === "PATCH",
         ),
       ).toBe(true);
     });

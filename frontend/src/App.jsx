@@ -56,6 +56,8 @@ function reportRowKey(row) {
   return JSON.stringify(row);
 }
 
+const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
 function sessionErrorMessage(detailText = "") {
   const detail = String(detailText || "").toLowerCase();
   if (detail.includes("disabled")) return "Your account is disabled. Contact a DBA.";
@@ -493,6 +495,14 @@ function DashboardBody({
   reportResult,
   canManageUsers,
   reportRuns,
+  reportSchedules,
+  scheduleForm,
+  setScheduleForm,
+  scheduleFeedback,
+  scheduleBusy,
+  scheduleActionBusyId,
+  onCreateSchedule,
+  onToggleSchedule,
   canCreateIncident,
   form,
   setForm,
@@ -629,6 +639,166 @@ function DashboardBody({
           </div>
         ) : null}
       </section>
+
+      {canManageUsers ? (
+        <section className="panel">
+          <h2 className="panel-title">Scheduled reports (DBA)</h2>
+          <p className="panel-sub">Run approved reports automatically and route completion/failure notifications.</p>
+
+          <form className="form-grid" onSubmit={onCreateSchedule}>
+            <label className="field">
+              <span className="field-label">Report</span>
+              <select
+                value={scheduleForm.report_key}
+                onChange={(e) => setScheduleForm({ ...scheduleForm, report_key: e.target.value })}
+              >
+                {reportCatalog.map((r) => (
+                  <option key={r.key} value={r.key}>
+                    {r.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field-label">Cadence</span>
+              <select
+                value={scheduleForm.cadence}
+                onChange={(e) => setScheduleForm({ ...scheduleForm, cadence: e.target.value })}
+              >
+                <option value="daily">daily</option>
+                <option value="weekly">weekly</option>
+              </select>
+            </label>
+            {scheduleForm.cadence === "weekly" ? (
+              <label className="field">
+                <span className="field-label">Weekday (UTC)</span>
+                <select
+                  value={String(scheduleForm.weekday_utc)}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, weekday_utc: Number(e.target.value) })}
+                >
+                  {WEEKDAY_LABELS.map((label, idx) => (
+                    <option key={label} value={idx}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <label className="field">
+              <span className="field-label">Hour (UTC)</span>
+              <input
+                type="number"
+                min="0"
+                max="23"
+                value={scheduleForm.run_hour_utc}
+                onChange={(e) => setScheduleForm({ ...scheduleForm, run_hour_utc: Number(e.target.value) })}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Minute (UTC)</span>
+              <input
+                type="number"
+                min="0"
+                max="59"
+                value={scheduleForm.run_minute_utc}
+                onChange={(e) => setScheduleForm({ ...scheduleForm, run_minute_utc: Number(e.target.value) })}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Delivery</span>
+              <select
+                value={scheduleForm.delivery_kind}
+                onChange={(e) => setScheduleForm({ ...scheduleForm, delivery_kind: e.target.value })}
+              >
+                <option value="none">none</option>
+                <option value="email">email</option>
+                <option value="webhook">webhook</option>
+              </select>
+            </label>
+            {scheduleForm.delivery_kind !== "none" ? (
+              <label className="field">
+                <span className="field-label">Delivery target</span>
+                <input
+                  type="text"
+                  required
+                  placeholder={scheduleForm.delivery_kind === "email" ? "ops@example.com" : "https://example.com/hook"}
+                  value={scheduleForm.delivery_target}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, delivery_target: e.target.value })}
+                />
+              </label>
+            ) : null}
+            <label className="field field--inline">
+              <input
+                type="checkbox"
+                checked={scheduleForm.notify_on_success}
+                onChange={(e) => setScheduleForm({ ...scheduleForm, notify_on_success: e.target.checked })}
+              />
+              <span className="field-label">Notify on success</span>
+            </label>
+            <label className="field field--inline">
+              <input
+                type="checkbox"
+                checked={scheduleForm.notify_on_failure}
+                onChange={(e) => setScheduleForm({ ...scheduleForm, notify_on_failure: e.target.checked })}
+              />
+              <span className="field-label">Notify on failure</span>
+            </label>
+            <button type="submit" className="btn btn-primary" disabled={scheduleBusy}>
+              {scheduleBusy ? "Saving…" : "Create schedule"}
+            </button>
+          </form>
+          {scheduleFeedback ? <p className="hint">{scheduleFeedback}</p> : null}
+
+          {reportSchedules.length === 0 ? (
+            <p className="empty-state">No schedules created yet.</p>
+          ) : (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Report</th>
+                    <th>Cadence</th>
+                    <th>Next run</th>
+                    <th>Delivery</th>
+                    <th>Last result</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reportSchedules.map((schedule) => (
+                    <tr key={schedule.id}>
+                      <td>{schedule.report_key}</td>
+                      <td>
+                        {schedule.cadence}
+                        {schedule.cadence === "weekly" ? ` (${WEEKDAY_LABELS[schedule.weekday_utc ?? 0]})` : ""}
+                        {` @ ${String(schedule.run_hour_utc).padStart(2, "0")}:${String(schedule.run_minute_utc).padStart(2, "0")} UTC`}
+                      </td>
+                      <td className="hint">{schedule.next_run_at}</td>
+                      <td>
+                        {schedule.delivery_kind}
+                        {schedule.delivery_target ? `: ${schedule.delivery_target}` : ""}
+                      </td>
+                      <td className="hint">{schedule.last_error || (schedule.last_success_at ? "ok" : "—")}</td>
+                      <td>{schedule.is_enabled ? "enabled" : "disabled"}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          disabled={scheduleActionBusyId === schedule.id}
+                          onClick={() => onToggleSchedule(schedule)}
+                        >
+                          {schedule.is_enabled ? "Disable" : "Enable"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      ) : null}
 
       {canManageUsers ? (
         <section className="panel">
@@ -852,6 +1022,14 @@ DashboardBody.propTypes = {
   reportResult: PropTypes.object,
   canManageUsers: PropTypes.bool.isRequired,
   reportRuns: PropTypes.arrayOf(PropTypes.object).isRequired,
+  reportSchedules: PropTypes.arrayOf(PropTypes.object).isRequired,
+  scheduleForm: PropTypes.object.isRequired,
+  setScheduleForm: PropTypes.func.isRequired,
+  scheduleFeedback: PropTypes.string.isRequired,
+  scheduleBusy: PropTypes.bool.isRequired,
+  scheduleActionBusyId: PropTypes.oneOfType([PropTypes.number, PropTypes.oneOf([null])]),
+  onCreateSchedule: PropTypes.func.isRequired,
+  onToggleSchedule: PropTypes.func.isRequired,
   canCreateIncident: PropTypes.bool.isRequired,
   form: PropTypes.object.isRequired,
   setForm: PropTypes.func.isRequired,
@@ -904,6 +1082,7 @@ export default function App() {
   const [reportParams, setReportParams] = useState({});
   const [reportResult, setReportResult] = useState(null);
   const [reportRuns, setReportRuns] = useState([]);
+  const [reportSchedules, setReportSchedules] = useState([]);
   const [reportError, setReportError] = useState("");
   const [connectionHealth, setConnectionHealth] = useState({ kind: "loading" });
   const [userCreateFeedback, setUserCreateFeedback] = useState({ kind: "", text: "" });
@@ -913,6 +1092,9 @@ export default function App() {
   const [userAuditLogs, setUserAuditLogs] = useState([]);
   const [userAuditLoading, setUserAuditLoading] = useState(false);
   const [userActionBusyId, setUserActionBusyId] = useState(null);
+  const [scheduleActionBusyId, setScheduleActionBusyId] = useState(null);
+  const [scheduleBusy, setScheduleBusy] = useState(false);
+  const [scheduleFeedback, setScheduleFeedback] = useState("");
   const [incidentFilters, setIncidentFilters] = useState({
     search: "",
     status: "",
@@ -930,6 +1112,17 @@ export default function App() {
     owner: "unassigned",
   });
   const [incidentEditError, setIncidentEditError] = useState("");
+  const [scheduleForm, setScheduleForm] = useState({
+    report_key: "",
+    cadence: "daily",
+    weekday_utc: 0,
+    run_hour_utc: 9,
+    run_minute_utc: 0,
+    delivery_kind: "none",
+    delivery_target: "",
+    notify_on_success: false,
+    notify_on_failure: true,
+  });
 
   function clearClientState() {
     setToken("");
@@ -941,6 +1134,7 @@ export default function App() {
     setReportParams({});
     setReportResult(null);
     setReportRuns([]);
+    setReportSchedules([]);
     setReportError("");
     setUserCreateFeedback({ kind: "", text: "" });
     setUserCreateBusy(false);
@@ -1075,6 +1269,16 @@ export default function App() {
     setReportRuns(body);
   }
 
+  async function loadReportSchedules() {
+    if (!token || me?.role !== "DBA") {
+      setReportSchedules([]);
+      return;
+    }
+    const { res, body } = await apiJson("/reports/schedules");
+    if (!res.ok) return;
+    setReportSchedules(body);
+  }
+
   async function loadUserDirectory() {
     if (!token || me?.role !== "DBA") {
       setUserDirectory([]);
@@ -1124,6 +1328,10 @@ export default function App() {
   }, [token, me]);
 
   useEffect(() => {
+    loadReportSchedules();
+  }, [token, me]);
+
+  useEffect(() => {
     loadUserDirectory();
   }, [token, me]);
 
@@ -1159,7 +1367,18 @@ export default function App() {
     setReportParams(next);
     setReportResult(null);
     setReportError("");
+    setScheduleForm((prev) => ({ ...prev, report_key: spec.key }));
   }, [selectedReportKey, reportCatalog]);
+
+  useEffect(() => {
+    if (!reportCatalog.length) return;
+    setScheduleForm((prev) => {
+      if (prev.report_key && reportCatalog.some((r) => r.key === prev.report_key)) {
+        return prev;
+      }
+      return { ...prev, report_key: reportCatalog[0].key };
+    });
+  }, [reportCatalog]);
 
   async function login(e) {
     e.preventDefault();
@@ -1405,6 +1624,51 @@ export default function App() {
     await loadData();
   }
 
+  async function createReportSchedule(e) {
+    e.preventDefault();
+    setScheduleFeedback("");
+    setScheduleBusy(true);
+    const selected = reportCatalog.find((r) => r.key === scheduleForm.report_key);
+    const payload = {
+      report_key: scheduleForm.report_key,
+      params: reportParamsPayload(selected, reportParams),
+      cadence: scheduleForm.cadence,
+      weekday_utc: scheduleForm.cadence === "weekly" ? scheduleForm.weekday_utc : null,
+      run_hour_utc: scheduleForm.run_hour_utc,
+      run_minute_utc: scheduleForm.run_minute_utc,
+      delivery_kind: scheduleForm.delivery_kind,
+      delivery_target: scheduleForm.delivery_kind === "none" ? null : scheduleForm.delivery_target,
+      notify_on_success: scheduleForm.notify_on_success,
+      notify_on_failure: scheduleForm.notify_on_failure,
+    };
+    const { res, body } = await apiJson("/reports/schedules", { method: "POST", body: payload });
+    if (!res.ok) {
+      setScheduleFeedback(`Schedule create failed: ${formatApiDetail(body)}`);
+      setScheduleBusy(false);
+      return;
+    }
+    setScheduleFeedback("Schedule created.");
+    setScheduleBusy(false);
+    await loadReportSchedules();
+  }
+
+  async function toggleReportSchedule(schedule) {
+    setScheduleActionBusyId(schedule.id);
+    setScheduleFeedback("");
+    const { res, body } = await apiJson(`/reports/schedules/${schedule.id}/status`, {
+      method: "PATCH",
+      body: { is_enabled: !schedule.is_enabled },
+    });
+    if (!res.ok) {
+      setScheduleFeedback(`Schedule update failed: ${formatApiDetail(body)}`);
+      setScheduleActionBusyId(null);
+      return;
+    }
+    setScheduleFeedback(`Schedule ${body.is_enabled ? "enabled" : "disabled"}.`);
+    setScheduleActionBusyId(null);
+    await loadReportSchedules();
+  }
+
   async function resolveIncident(id) {
     const { res } = await apiJson(`/incidents/${id}/resolve`, { method: "PATCH", parseJson: false });
     if (!res.ok) return;
@@ -1525,6 +1789,14 @@ export default function App() {
             reportResult={reportResult}
             canManageUsers={canManageUsers}
             reportRuns={reportRuns}
+            reportSchedules={reportSchedules}
+            scheduleForm={scheduleForm}
+            setScheduleForm={setScheduleForm}
+            scheduleFeedback={scheduleFeedback}
+            scheduleBusy={scheduleBusy}
+            scheduleActionBusyId={scheduleActionBusyId}
+            onCreateSchedule={createReportSchedule}
+            onToggleSchedule={toggleReportSchedule}
             canCreateIncident={canCreateIncident}
             form={form}
             setForm={setForm}

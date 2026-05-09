@@ -59,6 +59,7 @@ Overall project completion is approximately **75%** toward a production-ready in
   - Parameterized, whitelisted, read-only SQL execution
   - Execution logging to `report_execution_logs`
   - DBA-managed report schedules with daily or weekly UTC run windows
+  - Delivery target hooks for scheduled runs (`none`, `email` placeholder logging, `webhook` POST)
 
 - **Deployment readiness**
   - Alembic migrations on startup
@@ -185,9 +186,19 @@ docker compose exec backend python -m app
 - Schedules run inside the API process on a simple polling loop.
 - Supported cadences are `daily` and `weekly`, using UTC hour/minute fields.
 - Scheduled executions reuse the same whitelisted report validation and write into `report_execution_logs`.
+- Delivery configuration supports `none`, `email`, and `webhook` targets.
 - Failures are stored on the schedule (`last_error`) and also logged as failed report executions.
+- Email delivery is a hook placeholder that logs notification payloads for operator wiring.
+- Webhook delivery sends a JSON payload with short timeout and logs delivery errors without blocking scheduler progress.
 - Known limitation: this is a single-process scheduler. If you run multiple API instances, each instance can attempt the same due schedule unless you add external coordination.
 - Known limitation: schedules are owned by the creating DBA account. If that user is disabled, the schedule remains enabled but future runs log a failure until the owner is re-enabled or the schedule is replaced.
+
+## Commercial assets package
+
+- Pricing sheet: `docs/commercial-assets/pricing-sheet.md`
+- Onboarding checklist: `docs/commercial-assets/onboarding-checklist-day0-day7.md`
+- Support SLA matrix: `docs/commercial-assets/support-sla-response-matrix.md`
+- Demo scripts: `docs/commercial-assets/demo-video-scripts.md`
 
 ## Testing and validation status
 
