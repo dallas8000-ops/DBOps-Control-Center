@@ -824,10 +824,29 @@ function DashboardBody({
       {canManageUsers ? (
         <section className="panel">
           <h2 className="panel-title">Report audit trail (DBA)</h2>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.6rem",
+              flexWrap: "wrap",
+              marginBottom: "0.45rem",
+              padding: "0.45rem 0.55rem",
+              border: "1px dashed rgba(56, 189, 248, 0.45)",
+              borderRadius: "8px",
+              background: "rgba(56, 189, 248, 0.08)",
+            }}
+          >
+            <strong style={{ fontSize: "0.82rem" }}>Audit controls active</strong>
+            <span className="hint" style={{ marginLeft: "auto" }}>
+              build: {UI_BUILD_MARKER}
+            </span>
+          </div>
           <div className="report-audit-controls">
-            <label htmlFor="report-audit-view-limit">Audit view</label>
+            <label htmlFor="report-audit-view-limit"><strong>Audit view</strong></label>
             <select
               id="report-audit-view-limit"
+              data-testid="report-audit-view-limit"
               value={reportAuditViewLimit}
               onChange={(e) => setReportAuditViewLimit(e.target.value)}
             >
