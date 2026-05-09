@@ -500,7 +500,7 @@ describe("App smoke", () => {
     expect(screen.getByText("audit-run-2")).toBeInTheDocument();
     expect(screen.getByText("audit-run-3")).toBeInTheDocument();
     expect(screen.queryByText("audit-run-4")).not.toBeInTheDocument();
-    expect(screen.getByText("Showing the latest 3 of 12 run(s).")) .toBeInTheDocument();
+    expect(screen.getByText(/Loaded 12 run\(s\) at/)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Audit view"), {
       target: { value: "10" },
@@ -509,7 +509,6 @@ describe("App smoke", () => {
     await waitFor(() => {
       expect(screen.getByText("audit-run-10")).toBeInTheDocument();
       expect(screen.queryByText("audit-run-11")).not.toBeInTheDocument();
-      expect(screen.getByText("Showing the latest 10 of 12 run(s).")) .toBeInTheDocument();
     });
 
     fireEvent.change(screen.getByLabelText("Audit view"), {
@@ -518,7 +517,6 @@ describe("App smoke", () => {
 
     await waitFor(() => {
       expect(screen.getByText("audit-run-12")).toBeInTheDocument();
-      expect(screen.getByText("Showing all 12 available run(s).")) .toBeInTheDocument();
     });
 
     fireEvent.change(screen.getByLabelText("Audit view"), {
@@ -527,13 +525,13 @@ describe("App smoke", () => {
 
     await waitFor(() => {
       expect(screen.getByText("audit-run-12")).toBeInTheDocument();
-      expect(screen.getByText("Showing all 12 run(s).")) .toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 
     await waitFor(() => {
       expect(screen.getAllByRole("row").length).toBeGreaterThan(1);
+      expect(screen.getByText(/Loaded 12 run\(s\) at/)).toBeInTheDocument();
     });
   });
 

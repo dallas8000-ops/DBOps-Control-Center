@@ -53,7 +53,8 @@ function userAuditDetailsPreview(details) {
   return parts.length ? parts.join(", ") : "—";
 }
 
-function reportAuditSummary(viewLimit, visibleCount, totalCount) {
+function reportAuditSummary(viewLimit, visibleCount, totalCount, refreshStatus) {
+  if (refreshStatus) return refreshStatus;
   if (totalCount === 0) return "No runs loaded yet.";
   if (viewLimit === "all") return `Showing all ${totalCount} run(s).`;
   const requested = Number.parseInt(viewLimit, 10);
@@ -506,6 +507,8 @@ function DashboardBody({
   reportResult,
   canManageUsers,
   reportRuns,
+  reportRunsLoading,
+  reportRunsStatus,
   reportSchedules,
   scheduleForm,
   setScheduleForm,
@@ -848,10 +851,12 @@ function DashboardBody({
               <option value="25">Last 25</option>
               <option value="all">Show all</option>
             </select>
-            <button type="button" className="btn btn-ghost" onClick={onRefreshReportRuns}>
-              Refresh
+            <button type="button" className="btn btn-ghost" onClick={onRefreshReportRuns} disabled={reportRunsLoading}>
+              {reportRunsLoading ? "Refreshing…" : "Refresh"}
             </button>
-            <span className="hint">{reportAuditSummary(reportAuditViewLimit, visibleReportRuns.length, reportRuns.length)}</span>
+            <span className="hint">
+              {reportAuditSummary(reportAuditViewLimit, visibleReportRuns.length, reportRuns.length, reportRunsStatus)}
+            </span>
           </div>
           <p className="panel-sub">Recent whitelisted report executions.</p>
           {reportRuns.length === 0 ? (
@@ -1072,6 +1077,8 @@ DashboardBody.propTypes = {
   reportResult: PropTypes.object,
   canManageUsers: PropTypes.bool.isRequired,
   reportRuns: PropTypes.arrayOf(PropTypes.object).isRequired,
+  reportRunsLoading: PropTypes.bool.isRequired,
+  reportRunsStatus: PropTypes.string.isRequired,
   reportSchedules: PropTypes.arrayOf(PropTypes.object).isRequired,
   scheduleForm: PropTypes.object.isRequired,
   setScheduleForm: PropTypes.func.isRequired,
@@ -1133,6 +1140,8 @@ export default function App() {
   const [reportParams, setReportParams] = useState({});
   const [reportResult, setReportResult] = useState(null);
   const [reportRuns, setReportRuns] = useState([]);
+  const [reportRunsLoading, setReportRunsLoading] = useState(false);
+  const [reportRunsStatus, setReportRunsStatus] = useState("");
   const [reportSchedules, setReportSchedules] = useState([]);
   const [reportError, setReportError] = useState("");
   const [connectionHealth, setConnectionHealth] = useState({ kind: "loading" });
@@ -1185,6 +1194,8 @@ export default function App() {
     setReportParams({});
     setReportResult(null);
     setReportRuns([]);
+    setReportRunsLoading(false);
+    setReportRunsStatus("");
     setReportSchedules([]);
     setReportError("");
     setUserCreateFeedback({ kind: "", text: "" });
@@ -1313,11 +1324,23 @@ export default function App() {
   async function loadReportRuns() {
     if (!token || me?.role !== "DBA") {
       setReportRuns([]);
+      setReportRunsLoading(false);
+      setReportRunsStatus("");
       return;
     }
+    setReportRunsLoading(true);
+    setReportRunsStatus("Refreshing audit trail…");
     const { res, body } = await apiJson("/reports/runs?limit=50");
-    if (!res.ok) return;
-    setReportRuns(body);
+    if (!res.ok) {
+      setReportRunsLoading(false);
+      setReportRunsStatus(`Refresh failed (${res.status}).`);
+      return;
+    }
+    const rows = Array.isArray(body) ? body : [];
+    const stamp = new Date().toLocaleTimeString();
+    setReportRuns(rows);
+    setReportRunsLoading(false);
+    setReportRunsStatus(`Loaded ${rows.length} run(s) at ${stamp}.`);
   }
 
   async function loadReportSchedules() {
@@ -1840,6 +1863,8 @@ export default function App() {
             reportResult={reportResult}
             canManageUsers={canManageUsers}
             reportRuns={reportRuns}
+            reportRunsLoading={reportRunsLoading}
+            reportRunsStatus={reportRunsStatus}
             reportSchedules={reportSchedules}
             scheduleForm={scheduleForm}
             setScheduleForm={setScheduleForm}
