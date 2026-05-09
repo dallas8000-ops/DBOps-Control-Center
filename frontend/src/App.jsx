@@ -522,6 +522,8 @@ function DashboardBody({
   canResolve,
   onResolveIncident,
 }) {
+  const [reportAuditViewLimit, setReportAuditViewLimit] = useState("3");
+
   function renderEditActions(incident) {
     if (!canEditIncidents) return null;
     if (editingIncidentId !== incident.id) {
@@ -542,6 +544,11 @@ function DashboardBody({
       </>
     );
   }
+
+  const visibleReportRuns =
+    reportAuditViewLimit === "all"
+      ? reportRuns
+      : reportRuns.slice(0, Number.parseInt(reportAuditViewLimit, 10));
 
   return (
     <>
@@ -803,6 +810,22 @@ function DashboardBody({
       {canManageUsers ? (
         <section className="panel">
           <h2 className="panel-title">Report audit trail (DBA)</h2>
+          <div className="action-row">
+            <label className="field field--inline" htmlFor="report-audit-view-limit">
+              <span className="field-label">Audit view</span>
+              <select
+                id="report-audit-view-limit"
+                value={reportAuditViewLimit}
+                onChange={(e) => setReportAuditViewLimit(e.target.value)}
+              >
+                <option value="3">Last 3</option>
+                <option value="10">Last 10</option>
+                <option value="25">Last 25</option>
+                <option value="all">Show all</option>
+              </select>
+            </label>
+            <span className="hint">Showing {visibleReportRuns.length} of {reportRuns.length} run(s)</span>
+          </div>
           <p className="panel-sub">Recent whitelisted report executions.</p>
           {reportRuns.length === 0 ? (
             <p className="empty-state">No executions logged yet.</p>
@@ -821,7 +844,7 @@ function DashboardBody({
                   </tr>
                 </thead>
                 <tbody>
-                  {reportRuns.map((run) => (
+                  {visibleReportRuns.map((run) => (
                     <tr key={run.id}>
                       <td className="hint">{run.created_at}</td>
                       <td>{run.user_email}</td>

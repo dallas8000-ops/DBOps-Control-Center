@@ -43,6 +43,7 @@ function createFetchMock({
   meRole = "Analyst",
   meEmail = "analyst@example.com",
   reportRows = [{ status: "open", total: 1 }],
+  auditRuns = [],
   loginResponse = jsonResponse({ access_token: "token-123", token_type: "bearer" }),
 } = {}) {
   const schedules = [
@@ -86,7 +87,7 @@ function createFetchMock({
         params: [],
       },
     ]),
-    "GET /reports/runs": jsonResponse([]),
+    "GET /reports/runs": jsonResponse(auditRuns),
     "GET /reports/schedules": jsonResponse(schedules),
     "GET /auth/users": jsonResponse([]),
   };
@@ -464,6 +465,43 @@ describe("App smoke", () => {
             (options?.method || "GET").toUpperCase() === "PATCH",
         ),
       ).toBe(true);
+    });
+  });
+
+  it("DBA report audit trail defaults to last 3 and can show all", async () => {
+    const runs = [
+      { id: 201, created_at: "2026-05-09T10:00:00", user_email: "dba@example.com", report_key: "audit-run-1", row_count: 2, duration_ms: 7, success: true, error_message: null },
+      { id: 202, created_at: "2026-05-09T09:00:00", user_email: "dba@example.com", report_key: "audit-run-2", row_count: 3, duration_ms: 8, success: true, error_message: null },
+      { id: 203, created_at: "2026-05-09T08:00:00", user_email: "dba@example.com", report_key: "audit-run-3", row_count: 1, duration_ms: 5, success: true, error_message: null },
+      { id: 204, created_at: "2026-05-09T07:00:00", user_email: "dba@example.com", report_key: "audit-run-4", row_count: null, duration_ms: null, success: false, error_message: "failed" },
+    ];
+    vi.stubGlobal("fetch", createFetchMock({ meRole: "DBA", meEmail: "dba@example.com", auditRuns: runs }));
+
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "dba@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "Password123!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Login" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Report audit trail (DBA)" })).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("audit-run-1")).toBeInTheDocument();
+    expect(screen.getByText("audit-run-2")).toBeInTheDocument();
+    expect(screen.getByText("audit-run-3")).toBeInTheDocument();
+    expect(screen.queryByText("audit-run-4")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Audit view"), {
+      target: { value: "all" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("audit-run-4")).toBeInTheDocument();
     });
   });
 
