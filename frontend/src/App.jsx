@@ -1366,17 +1366,21 @@ export default function App() {
     }
     setReportRunsLoading(true);
     setReportRunsStatus("Refreshing audit trail…");
-    const { res, body } = await apiJson("/reports/runs?limit=50");
-    if (!res.ok) {
+    try {
+      const { res, body } = await apiJson("/reports/runs?limit=50");
+      if (!res.ok) {
+        setReportRunsStatus(`Refresh failed (${res.status}).`);
+        return;
+      }
+      const rows = Array.isArray(body) ? body : [];
+      const stamp = new Date().toLocaleTimeString();
+      setReportRuns(rows);
+      setReportRunsStatus(`Loaded ${rows.length} run(s) at ${stamp}.`);
+    } catch {
+      setReportRunsStatus("Refresh failed (network). Please try again.");
+    } finally {
       setReportRunsLoading(false);
-      setReportRunsStatus(`Refresh failed (${res.status}).`);
-      return;
     }
-    const rows = Array.isArray(body) ? body : [];
-    const stamp = new Date().toLocaleTimeString();
-    setReportRuns(rows);
-    setReportRunsLoading(false);
-    setReportRunsStatus(`Loaded ${rows.length} run(s) at ${stamp}.`);
   }
 
   async function loadReportSchedules() {
