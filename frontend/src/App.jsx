@@ -823,20 +823,18 @@ function DashboardBody({
       {canManageUsers ? (
         <section className="panel">
           <h2 className="panel-title">Report audit trail (DBA)</h2>
-          <div className="action-row">
-            <label className="field field--inline" htmlFor="report-audit-view-limit">
-              <span className="field-label">Audit view</span>
-              <select
-                id="report-audit-view-limit"
-                value={reportAuditViewLimit}
-                onChange={(e) => setReportAuditViewLimit(e.target.value)}
-              >
-                <option value="3">Last 3</option>
-                <option value="10">Last 10</option>
-                <option value="25">Last 25</option>
-                <option value="all">Show all</option>
-              </select>
-            </label>
+          <div className="report-audit-controls">
+            <label htmlFor="report-audit-view-limit">Audit view</label>
+            <select
+              id="report-audit-view-limit"
+              value={reportAuditViewLimit}
+              onChange={(e) => setReportAuditViewLimit(e.target.value)}
+            >
+              <option value="3">Last 3</option>
+              <option value="10">Last 10</option>
+              <option value="25">Last 25</option>
+              <option value="all">Show all</option>
+            </select>
             <span className="hint">Showing {visibleReportRuns.length} of {reportRuns.length} run(s)</span>
           </div>
           <p className="panel-sub">Recent whitelisted report executions.</p>
