@@ -51,7 +51,14 @@ body {
     radial-gradient(1200px 600px at 10% -10%, rgba(56, 189, 248, 0.12), transparent),
     radial-gradient(900px 500px at 90% 0%, rgba(129, 140, 248, 0.1), transparent), var(--bg);
   color: var(--text);
-  overflow-x: hidden;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  overflow-y: auto;
 }
 
 #root {
@@ -59,7 +66,7 @@ body {
 }
 
 .app-shell {
-  width: min(1160px, 100%);
+  max-width: 1080px;
   margin: 0 auto;
   padding: clamp(1.25rem, 4vw, 2rem) clamp(1rem, 3vw, 1.5rem) 3rem;
 }
@@ -274,8 +281,6 @@ textarea:focus {
 }
 
 .table-scroll {
-  width: 100%;
-  max-width: 100%;
   overflow-x: auto;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
@@ -292,7 +297,6 @@ table.data-table {
   padding: 0.55rem 0.65rem;
   text-align: left;
   vertical-align: top;
-  overflow-wrap: anywhere;
 }
 
 .data-table thead th {
@@ -371,9 +375,6 @@ table.data-table {
   margin-bottom: 0.8rem;
 }
 
-.incident-filters > * {
-  min-width: 0;
-}
 
 .incident-filters .btn {
   width: 100%;
