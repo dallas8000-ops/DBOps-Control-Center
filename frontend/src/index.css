@@ -58,11 +58,19 @@ body,
 #root {
   width: 100%;
   min-height: 100%;
-  overflow-y: auto;
 }
 
 #root {
+  display: block;
   min-height: 100vh;
+  overflow: visible;
+}
+
+html,
+body {
+  height: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .app-shell {
