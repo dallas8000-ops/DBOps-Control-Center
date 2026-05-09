@@ -4,6 +4,8 @@ import PropTypes from "prop-types";
 const API_URL = String(import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 const CREATE_USER_FETCH_MS = 25_000;
+const REPORT_AUDIT_VIEW_LIMIT_KEY = "dbops_report_audit_view_limit";
+const REPORT_AUDIT_VIEW_LIMIT_OPTIONS = new Set(["3", "10", "25", "all"]);
 
 /** Hosted site (e.g. Render) still pointing at loopback — browser will block or fail the request. */
 function apiUrlMismatchForHostedPage(apiUrl) {
@@ -522,7 +524,12 @@ function DashboardBody({
   canResolve,
   onResolveIncident,
 }) {
-  const [reportAuditViewLimit, setReportAuditViewLimit] = useState("3");
+  const [reportAuditViewLimit, setReportAuditViewLimit] = useState(() => {
+    const store = globalThis.window?.localStorage;
+    if (!store || typeof store.getItem !== "function") return "3";
+    const raw = store.getItem(REPORT_AUDIT_VIEW_LIMIT_KEY) || "3";
+    return REPORT_AUDIT_VIEW_LIMIT_OPTIONS.has(raw) ? raw : "3";
+  });
 
   function renderEditActions(incident) {
     if (!canEditIncidents) return null;
@@ -549,6 +556,12 @@ function DashboardBody({
     reportAuditViewLimit === "all"
       ? reportRuns
       : reportRuns.slice(0, Number.parseInt(reportAuditViewLimit, 10));
+
+  useEffect(() => {
+    const store = globalThis.window?.localStorage;
+    if (!store || typeof store.setItem !== "function") return;
+    store.setItem(REPORT_AUDIT_VIEW_LIMIT_KEY, reportAuditViewLimit);
+  }, [reportAuditViewLimit]);
 
   return (
     <>

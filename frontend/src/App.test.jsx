@@ -15,10 +15,11 @@ function routeKey(method, path) {
   return `${method} ${path}`;
 }
 
-function clearStoredToken() {
+function clearStoredState() {
   const store = globalThis.window?.localStorage;
   if (!store || typeof store.removeItem !== "function") return;
   store.removeItem("dbops_token");
+  store.removeItem("dbops_report_audit_view_limit");
 }
 
 function installLocalStorageMock() {
@@ -185,12 +186,12 @@ function createFetchMock({
 beforeEach(() => {
   vi.stubGlobal("alert", vi.fn());
   installLocalStorageMock();
-  clearStoredToken();
+  clearStoredState();
 });
 
 afterEach(() => {
   cleanup();
-  clearStoredToken();
+  clearStoredState();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
