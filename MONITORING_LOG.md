@@ -23,11 +23,12 @@
 
 | Workflow | Status | Notes | Time |
 |----------|--------|-------|------|
-| Create incident (Analyst) | [ ] | [TIME] |
-| Resolve incident (DBA) | [ ] | [TIME] |
-| Run report | [ ] | [TIME] |
-| Export CSV | [ ] | [TIME] |
-| Create schedule | [ ] | [TIME] |
+| Run report | [✓] | incidents_by_status executed successfully | 21:38:19 |
+| Export CSV | [✓] | incidents_by_status.csv downloaded with headers & data | 21:38 |
+| Report audit logged | [✓] | Entry in Report audit trail: dallas8000@gmail.com ran incidents_by_status | 21:38:19 |
+| Create incident (Analyst) | [⏳] | In progress | — |
+| Resolve incident (DBA) | [ ] | Pending |  |
+| Create schedule | [ ] | Pending |  |
 
 ---
 
