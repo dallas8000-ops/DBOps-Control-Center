@@ -4,7 +4,6 @@ import PropTypes from "prop-types";
 const API_URL = String(import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 const CREATE_USER_FETCH_MS = 25_000;
-const UI_BUILD_MARKER = "audit-dropdown-rollout-2026-05-09";
 const REPORT_AUDIT_VIEW_LIMIT_KEY = "dbops_report_audit_view_limit";
 const REPORT_AUDIT_VIEW_LIMIT_OPTIONS = new Set(["3", "10", "25", "all"]);
 
@@ -836,24 +835,6 @@ function DashboardBody({
       {canManageUsers ? (
         <section className="panel">
           <h2 className="panel-title">Report audit trail (DBA)</h2>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.6rem",
-              flexWrap: "wrap",
-              marginBottom: "0.45rem",
-              padding: "0.45rem 0.55rem",
-              border: "1px dashed rgba(56, 189, 248, 0.45)",
-              borderRadius: "8px",
-              background: "rgba(56, 189, 248, 0.08)",
-            }}
-          >
-            <strong style={{ fontSize: "0.82rem" }}>Audit controls active</strong>
-            <span className="hint" style={{ marginLeft: "auto" }}>
-              build: {UI_BUILD_MARKER}
-            </span>
-          </div>
           <div className="report-audit-controls">
             <label htmlFor="report-audit-view-limit"><strong>Audit view</strong></label>
             <select
@@ -1814,7 +1795,6 @@ export default function App() {
         <p className="page-lede">
           Render-first database operations dashboard (JWT, RBAC, whitelisted SQL reports).
         </p>
-        <p className="hint">UI build marker: {UI_BUILD_MARKER}</p>
       </header>
 
       {token ? (
