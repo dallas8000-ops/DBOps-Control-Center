@@ -93,7 +93,8 @@ def test_dba_can_manage_user_status_and_disabled_user_cannot_login() -> None:
             "/auth/login",
             json={"email": "analyst@example.com", "password": "Password123!"},
         )
-        assert login_resp.status_code == 401
+        assert login_resp.status_code == 403
+        assert login_resp.json()["detail"] == "Your account is disabled. Contact a DBA."
 
 
 def test_viewer_cannot_create_incident() -> None:

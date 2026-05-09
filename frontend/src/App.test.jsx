@@ -19,6 +19,7 @@ function createFetchMock({
   meRole = "Analyst",
   meEmail = "analyst@example.com",
   reportRows = [{ status: "open", total: 1 }],
+  loginResponse = jsonResponse({ access_token: "token-123", token_type: "bearer" }),
 } = {}) {
   const staticResponses = {
     "GET /health": jsonResponse({ status: "ok", database: "reachable" }),
@@ -48,7 +49,7 @@ function createFetchMock({
     if (staticResponses[key]) return staticResponses[key];
 
     if (path === "/auth/login" && method === "POST") {
-      return jsonResponse({ access_token: "token-123", token_type: "bearer" });
+      return loginResponse;
     }
 
     if (path === "/incidents" && method === "GET") {
@@ -151,6 +152,29 @@ describe("App smoke", () => {
     });
     expect(screen.getByText(/analyst@example.com/)).toBeInTheDocument();
     expect(screen.getByText(/Analyst/)).toBeInTheDocument();
+  });
+
+  it("shows a disabled-account message on login failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      createFetchMock({
+        loginResponse: jsonResponse({ detail: "Your account is disabled. Contact a DBA." }, 403),
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "analyst@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "Password123!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Login" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Your account is disabled. Contact a DBA.")).toBeInTheDocument();
+    });
   });
 
   it("submits create incident request", async () => {

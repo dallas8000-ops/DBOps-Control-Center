@@ -112,8 +112,10 @@ def login_json(payload: LoginRequest, request: Request, db: Session = Depends(ge
     if not check_auth_rate_limit(request.client.host if request.client else None, "auth-login"):
         raise HTTPException(status_code=429, detail="Too many auth requests. Please try again shortly.")
     user = db.query(User).filter(User.email == payload.email.lower()).first()
-    if user is None or not user.is_active or not verify_password(payload.password, user.hashed_password):
+    if user is None or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Your account is disabled. Contact a DBA.")
     token = create_access_token(subject=str(user.id), role=user.role)
     return Token(access_token=token)
 
@@ -123,8 +125,10 @@ def login_form(request: Request, form_data: OAuth2PasswordRequestForm = Depends(
     if not check_auth_rate_limit(request.client.host if request.client else None, "auth-token"):
         raise HTTPException(status_code=429, detail="Too many auth requests. Please try again shortly.")
     user = db.query(User).filter(User.email == form_data.username.lower()).first()
-    if user is None or not user.is_active or not verify_password(form_data.password, user.hashed_password):
+    if user is None or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect username or password")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Your account is disabled. Contact a DBA.")
     token = create_access_token(subject=str(user.id), role=user.role)
     return Token(access_token=token)
 
