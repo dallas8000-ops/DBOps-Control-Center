@@ -124,6 +124,28 @@ function reportParamsPayload(spec, reportParams) {
   return paramsPayload;
 }
 
+function csvFilenameFromContentDisposition(contentDisposition, fallbackReportKey) {
+  const fallback = `${fallbackReportKey}.csv`;
+  if (!contentDisposition) return fallback;
+
+  const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(contentDisposition);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]).replace(/[/\\]/g, "_");
+    } catch {
+      return utf8Match[1].replace(/[/\\]/g, "_");
+    }
+  }
+
+  const quotedMatch = /filename="([^"]+)"/i.exec(contentDisposition);
+  if (quotedMatch?.[1]) return quotedMatch[1].replace(/[/\\]/g, "_");
+
+  const bareMatch = /filename=([^;]+)/i.exec(contentDisposition);
+  if (bareMatch?.[1]) return bareMatch[1].trim().replace(/[/\\]/g, "_");
+
+  return fallback;
+}
+
 function HealthConnectionMessages({ health, apiUrl }) {
   switch (health.kind) {
     case "loading":
@@ -502,6 +524,8 @@ function DashboardBody({
   reportParams,
   setReportParams,
   reportError,
+  reportNotice,
+  reportBusy,
   onRunReport,
   onExportReportCsv,
   reportResult,
@@ -632,12 +656,18 @@ function DashboardBody({
                 />
               </label>
             ))}
+            {reportNotice ? <output className="feedback-success">{reportNotice}</output> : null}
             {reportError ? <p className="error-text">{reportError}</p> : null}
             <div className="action-row">
-              <button type="submit" className="btn btn-primary">
-                Run report
+              <button type="submit" className="btn btn-primary" disabled={reportBusy}>
+                {reportBusy ? "Working..." : "Run report"}
               </button>
-              <button type="button" className="btn btn-ghost" disabled={!reportResult} onClick={onExportReportCsv}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={!reportResult || reportBusy}
+                onClick={onExportReportCsv}
+              >
                 Export CSV
               </button>
             </div>
@@ -1072,6 +1102,8 @@ DashboardBody.propTypes = {
   reportParams: PropTypes.object.isRequired,
   setReportParams: PropTypes.func.isRequired,
   reportError: PropTypes.string.isRequired,
+  reportNotice: PropTypes.string.isRequired,
+  reportBusy: PropTypes.bool.isRequired,
   onRunReport: PropTypes.func.isRequired,
   onExportReportCsv: PropTypes.func.isRequired,
   reportResult: PropTypes.object,
@@ -1144,6 +1176,8 @@ export default function App() {
   const [reportRunsStatus, setReportRunsStatus] = useState("");
   const [reportSchedules, setReportSchedules] = useState([]);
   const [reportError, setReportError] = useState("");
+  const [reportNotice, setReportNotice] = useState("");
+  const [reportBusy, setReportBusy] = useState(false);
   const [connectionHealth, setConnectionHealth] = useState({ kind: "loading" });
   const [userCreateFeedback, setUserCreateFeedback] = useState({ kind: "", text: "" });
   const [userCreateBusy, setUserCreateBusy] = useState(false);
@@ -1198,6 +1232,8 @@ export default function App() {
     setReportRunsStatus("");
     setReportSchedules([]);
     setReportError("");
+    setReportNotice("");
+    setReportBusy(false);
     setUserCreateFeedback({ kind: "", text: "" });
     setUserCreateBusy(false);
     setUserActionBusyId(null);
@@ -1636,49 +1672,67 @@ export default function App() {
   async function runReport(e) {
     e.preventDefault();
     setReportError("");
+    setReportNotice("");
+    setReportBusy(true);
     const spec = reportCatalog.find((r) => r.key === selectedReportKey);
     const paramsPayload = reportParamsPayload(spec, reportParams);
-    const { res, body } = await apiJson("/reports/run", {
-      method: "POST",
-      body: { report_key: selectedReportKey, params: paramsPayload },
-    });
-    if (!res.ok) {
-      setReportResult(null);
-      setReportError(typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail) || "Report failed");
-      return;
-    }
-    setReportResult(body);
-    if (me?.role === "DBA") {
-      loadReportRuns();
+    try {
+      const { res, body } = await apiJson("/reports/run", {
+        method: "POST",
+        body: { report_key: selectedReportKey, params: paramsPayload },
+      });
+      if (!res.ok) {
+        setReportResult(null);
+        setReportError(typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail) || "Report failed");
+        return;
+      }
+      setReportResult(body);
+      setReportNotice(`Loaded ${body.row_count} row(s) in ${body.duration_ms} ms.`);
+      if (me?.role === "DBA") {
+        loadReportRuns();
+      }
+    } finally {
+      setReportBusy(false);
     }
   }
 
   async function exportReportCsv() {
     setReportError("");
+    setReportNotice("");
+    setReportBusy(true);
     const spec = reportCatalog.find((r) => r.key === selectedReportKey);
     const paramsPayload = reportParamsPayload(spec, reportParams);
-    const { res } = await apiJson("/reports/export/csv", {
-      method: "POST",
-      body: { report_key: selectedReportKey, params: paramsPayload },
-      parseJson: false,
-    });
-    if (!res.ok) {
-      const body = await parseResponseBody(res);
-      setReportError(typeof body.detail === "string" ? body.detail : "CSV export failed");
-      return;
-    }
-    const csvText = await res.text();
-    const blob = new Blob([csvText], { type: "text/csv;charset=utf-8" });
-    const objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = objectUrl;
-    link.download = `${selectedReportKey}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(objectUrl);
-    if (me?.role === "DBA") {
-      loadReportRuns();
+    try {
+      const { res } = await apiJson("/reports/export/csv", {
+        method: "POST",
+        body: { report_key: selectedReportKey, params: paramsPayload },
+        parseJson: false,
+      });
+      if (!res.ok) {
+        const body = await parseResponseBody(res);
+        setReportError(typeof body.detail === "string" ? body.detail : "CSV export failed");
+        return;
+      }
+      const csvText = await res.text();
+      const filename = csvFilenameFromContentDisposition(
+        res.headers?.get?.("content-disposition") || "",
+        selectedReportKey,
+      );
+      const blob = new Blob([csvText], { type: "text/csv;charset=utf-8" });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+      setReportNotice(`Downloaded ${filename}.`);
+      if (me?.role === "DBA") {
+        loadReportRuns();
+      }
+    } finally {
+      setReportBusy(false);
     }
   }
 
@@ -1858,6 +1912,8 @@ export default function App() {
             reportParams={reportParams}
             setReportParams={setReportParams}
             reportError={reportError}
+            reportNotice={reportNotice}
+            reportBusy={reportBusy}
             onRunReport={runReport}
             onExportReportCsv={exportReportCsv}
             reportResult={reportResult}

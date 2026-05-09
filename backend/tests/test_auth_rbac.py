@@ -1,6 +1,8 @@
 import os
+from csv import reader as csv_reader
 from collections.abc import Generator
 from datetime import datetime, timedelta
+from io import StringIO
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -425,7 +427,7 @@ def test_non_dba_cannot_read_user_admin_audit() -> None:
         assert resp.status_code == 403
 
 
-def test_report_csv_export_returns_headers_and_rows() -> None:
+def test_report_csv_export_returns_headers_rows_and_escaped_values() -> None:
     for client in _client():
         dba_token = _bootstrap_dba(client)
         _create_user(client, dba_token, "analyst@example.com", "Analyst")
@@ -434,7 +436,7 @@ def test_report_csv_export_returns_headers_and_rows() -> None:
         create_resp = client.post(
             "/incidents",
             json={
-                "title": "CSV export smoke",
+                "title": "CSV, \"quoted\" smoke",
                 "description": "Incident used to verify csv export",
                 "severity": "medium",
                 "owner": "analyst@example.com",
@@ -451,9 +453,46 @@ def test_report_csv_export_returns_headers_and_rows() -> None:
         assert csv_resp.status_code == 200
         assert csv_resp.headers["content-type"].startswith("text/csv")
         assert "attachment; filename=\"incidents_recent.csv\"" in csv_resp.headers["content-disposition"]
-        lines = csv_resp.text.strip().splitlines()
-        assert lines[0] == "id,title,status,severity,owner,created_at"
-        assert any("CSV export smoke" in line for line in lines[1:])
+        rows = list(csv_reader(StringIO(csv_resp.text.strip())))
+        assert rows[0] == ["id", "title", "status", "severity", "owner", "created_at"]
+        assert any(r[1] == 'CSV, "quoted" smoke' for r in rows[1:])
+
+
+def test_report_csv_export_supports_all_whitelisted_reports() -> None:
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+        _create_user(client, dba_token, "analyst@example.com", "Analyst")
+        analyst_token = _login_token(client, "analyst@example.com", "Password123!")
+
+        create_resp = client.post(
+            "/incidents",
+            json={
+                "title": "CSV report coverage",
+                "description": "Incident used to validate report exports",
+                "severity": "high",
+                "owner": "analyst@example.com",
+            },
+            headers=_auth_headers(analyst_token),
+        )
+        assert create_resp.status_code == 201
+
+        cases = [
+            ("incidents_recent", {"max_rows": 10}, "id,title,status,severity,owner,created_at"),
+            ("incidents_by_status", {}, "status,incident_count"),
+            ("open_high_severity", {}, "id,title,owner,created_at"),
+        ]
+
+        for report_key, params, expected_header in cases:
+            resp = client.post(
+                "/reports/export/csv",
+                json={"report_key": report_key, "params": params},
+                headers=_auth_headers(analyst_token),
+            )
+            assert resp.status_code == 200
+            assert resp.headers["content-type"].startswith("text/csv")
+            assert f'attachment; filename="{report_key}.csv"' in resp.headers["content-disposition"]
+            first_line = resp.text.strip().splitlines()[0]
+            assert first_line == expected_header
 
 
 def test_report_csv_export_enforces_report_permissions() -> None:

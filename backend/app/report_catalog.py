@@ -9,7 +9,7 @@ REPORTS: dict[str, dict[str, Any]] = {
         "description": "Count of incidents grouped by workflow status.",
         "roles": ("DBA", "Analyst", "Viewer"),
         "sql": """
-            SELECT status, COUNT(*)::bigint AS incident_count
+            SELECT status, COUNT(*) AS incident_count
             FROM incidents
             GROUP BY status
             ORDER BY status
