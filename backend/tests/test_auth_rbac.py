@@ -1,4 +1,6 @@
+import os
 from collections.abc import Generator
+from datetime import datetime, timedelta
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -7,7 +9,9 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_db
 from app.main import app
+from app.models import ReportExecutionLog, ReportSchedule
 from app.rate_limit import configure_auth_rate_limit, reset_auth_rate_limit
+from app.scheduler import process_due_report_schedules
 
 
 def _auth_headers(token: str) -> dict[str, str]:
@@ -55,9 +59,15 @@ def _client() -> Generator[TestClient, None, None]:
     configure_auth_rate_limit(max_requests=1000, window_seconds=60)
     reset_auth_rate_limit()
     app.dependency_overrides[get_db] = override_get_db
+    old_disable_scheduler = os.environ.get("SCHEDULED_REPORTS_DISABLE_LOOP")
+    os.environ["SCHEDULED_REPORTS_DISABLE_LOOP"] = "1"
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+    if old_disable_scheduler is None:
+        os.environ.pop("SCHEDULED_REPORTS_DISABLE_LOOP", None)
+    else:
+        os.environ["SCHEDULED_REPORTS_DISABLE_LOOP"] = old_disable_scheduler
     reset_auth_rate_limit()
     Base.metadata.drop_all(bind=engine)
 
@@ -459,3 +469,171 @@ def test_report_csv_export_enforces_report_permissions() -> None:
         )
         assert resp.status_code == 403
         assert resp.json()["detail"] == "Insufficient permissions for this report"
+
+
+def test_dba_can_create_list_and_disable_report_schedule() -> None:
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+
+        create_resp = client.post(
+            "/reports/schedules",
+            json={
+                "report_key": "incidents_recent",
+                "params": {"max_rows": 25},
+                "cadence": "daily",
+                "run_hour_utc": 6,
+                "run_minute_utc": 30,
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert create_resp.status_code == 201
+        schedule = create_resp.json()
+        assert schedule["report_key"] == "incidents_recent"
+        assert schedule["params"] == {"max_rows": 25}
+        assert schedule["is_enabled"] is True
+
+        list_resp = client.get("/reports/schedules", headers=_auth_headers(dba_token))
+        assert list_resp.status_code == 200
+        rows = list_resp.json()
+        assert len(rows) == 1
+        assert rows[0]["id"] == schedule["id"]
+
+        disable_resp = client.patch(
+            f"/reports/schedules/{schedule['id']}/status",
+            json={"is_enabled": False},
+            headers=_auth_headers(dba_token),
+        )
+        assert disable_resp.status_code == 200
+        assert disable_resp.json()["is_enabled"] is False
+
+
+def test_due_report_schedule_executes_and_logs_result() -> None:
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+
+        create_incident_resp = client.post(
+            "/incidents",
+            json={
+                "title": "Lag spike",
+                "description": "Replica lag exceeded threshold",
+                "severity": "high",
+                "owner": "dba@example.com",
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert create_incident_resp.status_code == 201
+
+        create_schedule_resp = client.post(
+            "/reports/schedules",
+            json={
+                "report_key": "incidents_recent",
+                "params": {"max_rows": 10},
+                "cadence": "daily",
+                "run_hour_utc": 6,
+                "run_minute_utc": 30,
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert create_schedule_resp.status_code == 201
+        schedule_id = create_schedule_resp.json()["id"]
+
+        fixed_now = datetime(2026, 5, 9, 12, 0, 0)
+        db = next(app.dependency_overrides[get_db]())
+        try:
+            schedule = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
+            assert schedule is not None
+            schedule.next_run_at = fixed_now - timedelta(minutes=1)
+            db.add(schedule)
+            db.commit()
+        finally:
+            db.close()
+
+        session_factory = app.dependency_overrides[get_db].__closure__[0].cell_contents
+        processed = process_due_report_schedules(session_factory, now=fixed_now)
+        assert processed == 1
+
+        db = next(app.dependency_overrides[get_db]())
+        try:
+            schedule = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
+            assert schedule is not None
+            assert schedule.last_success_at == fixed_now
+            assert schedule.last_error is None
+            assert schedule.next_run_at > fixed_now
+
+            log = (
+                db.query(ReportExecutionLog)
+                .filter(ReportExecutionLog.scheduled_report_id == schedule_id)
+                .order_by(ReportExecutionLog.created_at.desc())
+                .first()
+            )
+            assert log is not None
+            assert log.success is True
+            assert log.row_count == 1
+        finally:
+            db.close()
+
+
+def test_disabled_schedule_owner_logs_failure() -> None:
+    for client in _client():
+        primary_dba_token = _bootstrap_dba(client)
+        _create_user(client, primary_dba_token, "dba2@example.com", "DBA")
+        secondary_dba_token = _login_token(client, "dba2@example.com", "Password123!")
+
+        create_schedule_resp = client.post(
+            "/reports/schedules",
+            json={
+                "report_key": "incidents_recent",
+                "params": {"max_rows": 10},
+                "cadence": "daily",
+                "run_hour_utc": 6,
+                "run_minute_utc": 30,
+            },
+            headers=_auth_headers(secondary_dba_token),
+        )
+        assert create_schedule_resp.status_code == 201
+        schedule_id = create_schedule_resp.json()["id"]
+
+        users_resp = client.get("/auth/users", headers=_auth_headers(primary_dba_token))
+        assert users_resp.status_code == 200
+        secondary_dba = next(user for user in users_resp.json() if user["email"] == "dba2@example.com")
+
+        disable_resp = client.patch(
+            f"/auth/users/{secondary_dba['id']}/status",
+            json={"is_active": False},
+            headers=_auth_headers(primary_dba_token),
+        )
+        assert disable_resp.status_code == 200
+
+        fixed_now = datetime(2026, 5, 9, 12, 0, 0)
+        db = next(app.dependency_overrides[get_db]())
+        try:
+            schedule = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
+            assert schedule is not None
+            schedule.next_run_at = fixed_now - timedelta(minutes=1)
+            db.add(schedule)
+            db.commit()
+        finally:
+            db.close()
+
+        session_factory = app.dependency_overrides[get_db].__closure__[0].cell_contents
+        processed = process_due_report_schedules(session_factory, now=fixed_now)
+        assert processed == 1
+
+        db = next(app.dependency_overrides[get_db]())
+        try:
+            schedule = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
+            assert schedule is not None
+            assert schedule.last_success_at is None
+            assert schedule.last_error == "Schedule owner is disabled"
+
+            log = (
+                db.query(ReportExecutionLog)
+                .filter(ReportExecutionLog.scheduled_report_id == schedule_id)
+                .order_by(ReportExecutionLog.created_at.desc())
+                .first()
+            )
+            assert log is not None
+            assert log.success is False
+            assert log.error_message == "Schedule owner is disabled"
+        finally:
+            db.close()

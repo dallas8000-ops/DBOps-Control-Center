@@ -91,12 +91,11 @@ def _jsonify_cell(value: Any) -> Any:
     return value
 
 
-def execute_whitelisted_report(
-    db: Session,
+def prepare_report_request(
     user: User,
     report_key: str,
     raw_params: dict[str, Any] | None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     spec = get_report(report_key)
     if spec is None:
         raise ValueError(f"Unknown report: {report_key}")
@@ -106,10 +105,23 @@ def execute_whitelisted_report(
     sql = spec["sql"].strip()
     _validate_sql_read_only(sql)
     bind_params = _coerce_params(spec, raw_params)
+    return spec, bind_params
+
+
+def execute_whitelisted_report(
+    db: Session,
+    user: User,
+    report_key: str,
+    raw_params: dict[str, Any] | None,
+    scheduled_report_id: int | None = None,
+) -> dict[str, Any]:
+    spec, bind_params = prepare_report_request(user, report_key, raw_params)
+    sql = spec["sql"].strip()
 
     started = time.perf_counter()
     log_entry = ReportExecutionLog(
         user_id=user.id,
+        scheduled_report_id=scheduled_report_id,
         report_key=report_key,
         params_json=json.dumps(bind_params, sort_keys=True),
     )

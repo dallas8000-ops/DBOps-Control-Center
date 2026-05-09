@@ -24,6 +24,7 @@ Overall project completion is approximately **75%** toward a production-ready in
   - User lifecycle controls (create, reset password, enable/disable, delete)
   - Incident create/list/resolve workflow
   - Whitelisted report execution + report audit trail
+  - Scheduled report definitions, enable/disable controls, and automatic execution logging
   - Local Docker Compose workflow and Render deployment path
 - **Partially complete**
   - Operational observability (basic health checks are present; deeper metrics/tracing not yet added)
@@ -57,6 +58,7 @@ Overall project completion is approximately **75%** toward a production-ready in
   - Report catalog defined in code (`backend/app/report_catalog.py`)
   - Parameterized, whitelisted, read-only SQL execution
   - Execution logging to `report_execution_logs`
+  - DBA-managed report schedules with daily or weekly UTC run windows
 
 - **Deployment readiness**
   - Alembic migrations on startup
@@ -174,6 +176,18 @@ docker compose exec backend python -m app
   - `POST /reports/run`
   - `POST /reports/export/csv`
   - `GET /reports/runs`
+  - `POST /reports/schedules`
+  - `GET /reports/schedules`
+  - `PATCH /reports/schedules/{schedule_id}/status`
+
+## Scheduled report MVP notes
+
+- Schedules run inside the API process on a simple polling loop.
+- Supported cadences are `daily` and `weekly`, using UTC hour/minute fields.
+- Scheduled executions reuse the same whitelisted report validation and write into `report_execution_logs`.
+- Failures are stored on the schedule (`last_error`) and also logged as failed report executions.
+- Known limitation: this is a single-process scheduler. If you run multiple API instances, each instance can attempt the same due schedule unless you add external coordination.
+- Known limitation: schedules are owned by the creating DBA account. If that user is disabled, the schedule remains enabled but future runs log a failure until the owner is re-enabled or the schedule is replaced.
 
 ## Testing and validation status
 

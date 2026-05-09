@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class Token(BaseModel):
@@ -88,6 +88,7 @@ class ReportExecuteResponse(BaseModel):
 
 class ReportRunRead(BaseModel):
     id: int
+    scheduled_report_id: int | None = None
     report_key: str
     params: dict[str, Any]
     row_count: int | None
@@ -96,6 +97,45 @@ class ReportRunRead(BaseModel):
     error_message: str | None
     created_at: datetime
     user_email: str
+
+
+class ReportScheduleCreate(BaseModel):
+    report_key: str = Field(min_length=1, max_length=120)
+    params: dict[str, Any] | None = None
+    cadence: str = Field(pattern="^(daily|weekly)$")
+    weekday_utc: int | None = Field(default=None, ge=0, le=6)
+    run_hour_utc: int = Field(ge=0, le=23)
+    run_minute_utc: int = Field(ge=0, le=59)
+
+    @model_validator(mode="after")
+    def validate_weekday(self):
+        if self.cadence == "weekly" and self.weekday_utc is None:
+            raise ValueError("weekday_utc is required for weekly schedules")
+        if self.cadence == "daily":
+            self.weekday_utc = None
+        return self
+
+
+class ReportScheduleStatusUpdate(BaseModel):
+    is_enabled: bool
+
+
+class ReportScheduleRead(BaseModel):
+    id: int
+    report_key: str
+    params: dict[str, Any]
+    cadence: str
+    weekday_utc: int | None
+    run_hour_utc: int
+    run_minute_utc: int
+    is_enabled: bool
+    next_run_at: datetime
+    last_run_at: datetime | None
+    last_success_at: datetime | None
+    last_error: str | None
+    created_at: datetime
+    created_by_user_id: int
+    created_by_email: str
 
 
 class UserPasswordReset(BaseModel):

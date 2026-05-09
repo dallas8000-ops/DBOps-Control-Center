@@ -1,3 +1,5 @@
+import asyncio
+from contextlib import asynccontextmanager
 import json
 import os
 from csv import DictWriter
@@ -5,8 +7,8 @@ from datetime import date, datetime, time, timedelta
 from io import StringIO
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import case, or_, text
 from sqlalchemy.orm import Session
@@ -14,10 +16,11 @@ from sqlalchemy.orm import Session
 from .auth_utils import create_access_token, hash_password, verify_password
 from .db import engine, get_db
 from .deps import get_current_user, require_roles
-from .models import Incident, ReportExecutionLog, User, UserAdminAuditLog
+from .models import Incident, ReportExecutionLog, ReportSchedule, User, UserAdminAuditLog
 from .report_catalog import REPORTS
 from .rate_limit import check_auth_rate_limit
-from .report_runner import execute_whitelisted_report
+from .report_runner import execute_whitelisted_report, prepare_report_request
+from .scheduler import compute_next_run_at, run_scheduler_loop
 from .schemas import (
     IncidentCreate,
     IncidentRead,
@@ -28,6 +31,9 @@ from .schemas import (
     ReportExecuteResponse,
     ReportParamSpec,
     ReportRunRead,
+    ReportScheduleCreate,
+    ReportScheduleRead,
+    ReportScheduleStatusUpdate,
     Token,
     UserAdminAuditRead,
     UserCreate,
@@ -36,7 +42,22 @@ from .schemas import (
     UserStatusUpdate,
 )
 
-app = FastAPI(title="DBOps Control Center API", version="0.3.1")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    stop_event = asyncio.Event()
+    task = None
+    if os.getenv("SCHEDULED_REPORTS_DISABLE_LOOP", "").lower() not in ("1", "true", "yes"):
+        task = asyncio.create_task(run_scheduler_loop(stop_event))
+    try:
+        yield
+    finally:
+        if task is not None:
+            stop_event.set()
+            await task
+
+
+app = FastAPI(title="DBOps Control Center API", version="0.4.0", lifespan=lifespan)
 
 
 def _log_user_admin_action(
@@ -65,6 +86,30 @@ def _csv_text(columns: list[str], rows: list[dict]) -> str:
     writer.writeheader()
     writer.writerows(rows)
     return buf.getvalue()
+
+
+def _report_schedule_read(schedule: ReportSchedule, created_by_email: str) -> ReportScheduleRead:
+    try:
+        params = json.loads(schedule.params_json)
+    except json.JSONDecodeError:
+        params = {}
+    return ReportScheduleRead(
+        id=schedule.id,
+        report_key=schedule.report_key,
+        params=params,
+        cadence=schedule.cadence,
+        weekday_utc=schedule.weekday_utc,
+        run_hour_utc=schedule.run_hour_utc,
+        run_minute_utc=schedule.run_minute_utc,
+        is_enabled=schedule.is_enabled,
+        next_run_at=schedule.next_run_at,
+        last_run_at=schedule.last_run_at,
+        last_success_at=schedule.last_success_at,
+        last_error=schedule.last_error,
+        created_at=schedule.created_at,
+        created_by_user_id=schedule.created_by_user_id,
+        created_by_email=created_by_email,
+    )
 
 
 def _parse_cors_origins(raw: str | None) -> list[str]:
@@ -506,6 +551,7 @@ def list_report_runs(
         out.append(
             ReportRunRead(
                 id=log.id,
+                scheduled_report_id=log.scheduled_report_id,
                 report_key=log.report_key,
                 params=params,
                 row_count=log.row_count,
@@ -517,6 +563,89 @@ def list_report_runs(
             )
         )
     return out
+
+
+@app.post("/reports/schedules", response_model=ReportScheduleRead, status_code=201)
+def create_report_schedule(
+    body: ReportScheduleCreate,
+    db: Session = Depends(get_db),
+    current: User = Depends(require_roles("DBA")),
+):
+    try:
+        _, bind_params = prepare_report_request(current, body.report_key, body.params)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Insufficient permissions for this report")
+    except ValueError as exc:
+        msg = str(exc)
+        code = 404 if msg.startswith("Unknown report:") else 400
+        raise HTTPException(status_code=code, detail=msg)
+
+    schedule = ReportSchedule(
+        created_by_user_id=current.id,
+        report_key=body.report_key,
+        params_json=json.dumps(bind_params, sort_keys=True),
+        cadence=body.cadence,
+        weekday_utc=body.weekday_utc,
+        run_hour_utc=body.run_hour_utc,
+        run_minute_utc=body.run_minute_utc,
+        is_enabled=True,
+        next_run_at=compute_next_run_at(
+            body.cadence,
+            body.weekday_utc,
+            body.run_hour_utc,
+            body.run_minute_utc,
+            datetime.utcnow(),
+        ),
+    )
+    db.add(schedule)
+    db.commit()
+    db.refresh(schedule)
+    return _report_schedule_read(schedule, current.email)
+
+
+@app.get("/reports/schedules", response_model=list[ReportScheduleRead])
+def list_report_schedules(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("DBA")),
+):
+    rows = (
+        db.query(ReportSchedule, User.email)
+        .join(User, ReportSchedule.created_by_user_id == User.id)
+        .order_by(ReportSchedule.created_at.desc(), ReportSchedule.id.desc())
+        .all()
+    )
+    return [_report_schedule_read(schedule, email) for schedule, email in rows]
+
+
+@app.patch("/reports/schedules/{schedule_id}/status", response_model=ReportScheduleRead)
+def update_report_schedule_status(
+    schedule_id: int,
+    body: ReportScheduleStatusUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("DBA")),
+):
+    row = (
+        db.query(ReportSchedule, User.email)
+        .join(User, ReportSchedule.created_by_user_id == User.id)
+        .filter(ReportSchedule.id == schedule_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Report schedule not found")
+    schedule, email = row
+    schedule.is_enabled = body.is_enabled
+    if body.is_enabled:
+        schedule.next_run_at = compute_next_run_at(
+            schedule.cadence,
+            schedule.weekday_utc,
+            schedule.run_hour_utc,
+            schedule.run_minute_utc,
+            datetime.utcnow(),
+        )
+    db.add(schedule)
+    db.commit()
+    db.refresh(schedule)
+    return _report_schedule_read(schedule, email)
 
 
 @app.get("/reports/summary")

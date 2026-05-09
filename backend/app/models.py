@@ -28,11 +28,41 @@ class Incident(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class ReportSchedule(Base):
+    __tablename__ = "report_schedules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    created_by_user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    report_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    params_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    cadence: Mapped[str] = mapped_column(String(20), nullable=False)
+    weekday_utc: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    run_hour_utc: Mapped[int] = mapped_column(Integer, nullable=False)
+    run_minute_utc: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    next_run_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class ReportExecutionLog(Base):
     __tablename__ = "report_execution_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    scheduled_report_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("report_schedules.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     report_key: Mapped[str] = mapped_column(String(120), nullable=False)
     params_json: Mapped[str] = mapped_column(Text, nullable=False)
     row_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
