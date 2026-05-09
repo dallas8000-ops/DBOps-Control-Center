@@ -10,19 +10,19 @@
 
   "users": [
     {
-      "email": "barney@dbops.local",
+      "email": "barney@example.com",
       "role": "DBA",
       "password_env": "SEED_DBA_PASSWORD",
       "note": "You — lead DBA. Password set via env var or derived from SEED_PASSWORD_SALT."
     },
     {
-      "email": "analyst@dbops.local",
+      "email": "analyst@example.com",
       "role": "Analyst",
       "password_env": "SEED_ANALYST_PASSWORD",
       "note": "Analyst role — report runner, incident creator."
     },
     {
-      "email": "viewer@dbops.local",
+      "email": "viewer@example.com",
       "role": "Viewer",
       "password_env": "SEED_VIEWER_PASSWORD",
       "note": "Read-only viewer."
@@ -35,56 +35,56 @@
       "description": "Implemented idempotent python -m app seed command. Loads users, incidents, and report logs from seed_data.json. Volume-mounted for live edits without container rebuild. Verified in Docker Compose.",
       "status": "resolved",
       "severity": "medium",
-      "owner": "barney@dbops.local",
+      "owner": "barney@example.com",
       "created_at": "2026-05-08T09:00:00"
     }
   ],
 
   "report_logs": [
     {
-      "user_email": "barney@dbops.local",
+      "user_email": "barney@example.com",
       "report_key": "incidents_by_status",
       "params": {},
       "run_at": "2026-04-25T10:00:00"
     },
     {
-      "user_email": "analyst@dbops.local",
+      "user_email": "analyst@example.com",
       "report_key": "incidents_recent",
       "params": { "max_rows": 20 },
       "run_at": "2026-04-26T11:30:00"
     },
     {
-      "user_email": "barney@dbops.local",
+      "user_email": "barney@example.com",
       "report_key": "open_high_severity",
       "params": {},
       "run_at": "2026-04-28T08:15:00"
     },
     {
-      "user_email": "viewer@dbops.local",
+      "user_email": "viewer@example.com",
       "report_key": "incidents_by_status",
       "params": {},
       "run_at": "2026-04-30T14:00:00"
     },
     {
-      "user_email": "analyst@dbops.local",
+      "user_email": "analyst@example.com",
       "report_key": "incidents_recent",
       "params": { "max_rows": 50 },
       "run_at": "2026-05-01T09:45:00"
     },
     {
-      "user_email": "barney@dbops.local",
+      "user_email": "barney@example.com",
       "report_key": "incidents_by_status",
       "params": {},
       "run_at": "2026-05-05T16:20:00"
     },
     {
-      "user_email": "analyst@dbops.local",
+      "user_email": "analyst@example.com",
       "report_key": "open_high_severity",
       "params": {},
       "run_at": "2026-05-06T10:00:00"
     },
     {
-      "user_email": "viewer@dbops.local",
+      "user_email": "viewer@example.com",
       "report_key": "incidents_recent",
       "params": { "max_rows": 10 },
       "run_at": "2026-05-07T09:00:00"

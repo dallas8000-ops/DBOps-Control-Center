@@ -138,6 +138,12 @@ What gets seeded on each run:
 - 15 incidents with varied severity/status/owner
 - 12 report execution logs (`incidents_by_status`, `incidents_recent`, `open_high_severity`)
 
+Seeded default user emails:
+
+- `barney@example.com` (DBA)
+- `analyst@example.com` (Analyst)
+- `viewer@example.com` (Viewer)
+
 The seeder is idempotent, so rerunning it updates the same demo records instead of creating duplicates.
 
 Run in Docker Compose:
