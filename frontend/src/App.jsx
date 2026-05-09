@@ -666,7 +666,7 @@ function DashboardBody({
           <h2 className="panel-title">Scheduled reports (DBA)</h2>
           <p className="panel-sub">Run approved reports automatically and route completion/failure notifications.</p>
 
-          <form className="form-grid" onSubmit={onCreateSchedule}>
+          <form className="form-grid schedule-form" onSubmit={onCreateSchedule}>
             <label className="field">
               <span className="field-label">Report</span>
               <select
@@ -748,23 +748,25 @@ function DashboardBody({
                 />
               </label>
             ) : null}
-            <label className="field field--inline">
-              <input
-                type="checkbox"
-                checked={scheduleForm.notify_on_success}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, notify_on_success: e.target.checked })}
-              />
-              <span className="field-label">Notify on success</span>
-            </label>
-            <label className="field field--inline">
-              <input
-                type="checkbox"
-                checked={scheduleForm.notify_on_failure}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, notify_on_failure: e.target.checked })}
-              />
-              <span className="field-label">Notify on failure</span>
-            </label>
-            <button type="submit" className="btn btn-primary" disabled={scheduleBusy}>
+            <div className="schedule-toggle-row">
+              <label className="field field--inline">
+                <input
+                  type="checkbox"
+                  checked={scheduleForm.notify_on_success}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, notify_on_success: e.target.checked })}
+                />
+                <span className="field-label">Notify on success</span>
+              </label>
+              <label className="field field--inline">
+                <input
+                  type="checkbox"
+                  checked={scheduleForm.notify_on_failure}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, notify_on_failure: e.target.checked })}
+                />
+                <span className="field-label">Notify on failure</span>
+              </label>
+            </div>
+            <button type="submit" className="btn btn-primary schedule-submit" disabled={scheduleBusy}>
               {scheduleBusy ? "Saving…" : "Create schedule"}
             </button>
           </form>
