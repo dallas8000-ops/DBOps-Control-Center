@@ -177,6 +177,66 @@ describe("App smoke", () => {
     });
   });
 
+  it("shows a friendly rate-limit message on login", async () => {
+    vi.stubGlobal(
+      "fetch",
+      createFetchMock({
+        loginResponse: jsonResponse({ detail: "Too many auth requests. Please try again shortly." }, 429),
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "analyst@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "Password123!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Login" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Too many auth requests. Please try again shortly.")).toBeInTheDocument();
+    });
+  });
+
+  it("shows a friendly bootstrap-complete message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url, options = {}) => {
+        const method = (options.method || "GET").toUpperCase();
+        const path = new URL(String(url)).pathname;
+
+        if (path === "/health" && method === "GET") {
+          return jsonResponse({ status: "ok", database: "reachable" });
+        }
+
+        if (path === "/auth/register" && method === "POST") {
+          return jsonResponse({ detail: "Bootstrap complete. Use POST /auth/users with a DBA token." }, 403);
+        }
+
+        return jsonResponse({ detail: `Unhandled route ${method} ${path}` }, 500);
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("Admin email"), {
+      target: { value: "dba@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password (min 8 characters)"), {
+      target: { value: "Password123!" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Confirm password"), {
+      target: { value: "Password123!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create first DBA" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Setup is already complete. Sign in with an existing DBA account.")).toBeInTheDocument();
+    });
+  });
+
   it("submits create incident request", async () => {
     const fetchMock = createFetchMock();
     vi.stubGlobal("fetch", fetchMock);

@@ -63,6 +63,22 @@ function sessionErrorMessage(detailText = "") {
   return "Your session is no longer valid. Please sign in again.";
 }
 
+function authErrorMessage(status, body, fallback) {
+  const detail = formatApiDetail(body);
+  const detailLower = detail.toLowerCase();
+
+  if (detailLower.includes("disabled")) return "Your account is disabled. Contact a DBA.";
+  if (status === 429) return "Too many auth requests. Please try again shortly.";
+  if (status === 401) return "Incorrect email or password.";
+  if (status === 403 && detailLower.includes("bootstrap complete")) {
+    return "Setup is already complete. Sign in with an existing DBA account.";
+  }
+  if (status === 409 && detailLower.includes("already registered")) {
+    return "That email is already registered.";
+  }
+  return detail && detail !== "Request failed" ? detail : fallback;
+}
+
 async function parseResponseBody(res) {
   return res.json().catch(() => ({}));
 }
@@ -1148,24 +1164,24 @@ export default function App() {
   async function login(e) {
     e.preventDefault();
     setAuthError("");
-    const res = await fetch(`${API_URL}/auth/login`, {
-      method: "POST",
-      headers: headers("", true),
-      body: JSON.stringify(loginForm),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      const detail = typeof body.detail === "string" ? body.detail : "";
-      if (detail.toLowerCase().includes("disabled")) {
-        setAuthError("Your account is disabled. Contact a DBA.");
-      } else {
-        setAuthError(detail || "Login failed");
+    try {
+      const res = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        headers: headers("", true),
+        body: JSON.stringify(loginForm),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setAuthError(authErrorMessage(res.status, body, "Login failed."));
+        return;
       }
-      return;
+
+      const data = await res.json();
+      setToken(data.access_token);
+      setLoginForm({ email: "", password: "" });
+    } catch {
+      setAuthError(`Could not reach the API (${API_URL}). Check your connection and deployed API URL.`);
     }
-    const data = await res.json();
-    setToken(data.access_token);
-    setLoginForm({ email: "", password: "" });
   }
 
   async function bootstrapRegister(e) {
@@ -1175,23 +1191,28 @@ export default function App() {
       setAuthError("Passwords do not match");
       return;
     }
-    const res = await fetch(`${API_URL}/auth/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: bootstrapForm.email,
-        password: bootstrapForm.password,
-        role: "DBA",
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      setAuthError(typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail) || "Registration failed");
-      return;
+    try {
+      const res = await fetch(`${API_URL}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: bootstrapForm.email,
+          password: bootstrapForm.password,
+          role: "DBA",
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setAuthError(authErrorMessage(res.status, body, "Registration failed."));
+        return;
+      }
+
+      setBootstrapForm({ email: "", password: "", confirm: "" });
+      setAuthError("");
+      alert("Admin created. Sign in below.");
+    } catch {
+      setAuthError(`Could not reach the API (${API_URL}). Check your connection and deployed API URL.`);
     }
-    setBootstrapForm({ email: "", password: "", confirm: "" });
-    setAuthError("");
-    alert("Admin created. Sign in below.");
   }
 
   async function createUser(e) {
