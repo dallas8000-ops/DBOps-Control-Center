@@ -469,13 +469,17 @@ describe("App smoke", () => {
     });
   });
 
-  it("DBA report audit trail defaults to last 3 and can show all", async () => {
-    const runs = [
-      { id: 201, created_at: "2026-05-09T10:00:00", user_email: "dba@example.com", report_key: "audit-run-1", row_count: 2, duration_ms: 7, success: true, error_message: null },
-      { id: 202, created_at: "2026-05-09T09:00:00", user_email: "dba@example.com", report_key: "audit-run-2", row_count: 3, duration_ms: 8, success: true, error_message: null },
-      { id: 203, created_at: "2026-05-09T08:00:00", user_email: "dba@example.com", report_key: "audit-run-3", row_count: 1, duration_ms: 5, success: true, error_message: null },
-      { id: 204, created_at: "2026-05-09T07:00:00", user_email: "dba@example.com", report_key: "audit-run-4", row_count: null, duration_ms: null, success: false, error_message: "failed" },
-    ];
+  it("DBA report audit trail updates for 10, 25, all, and refresh", async () => {
+    const runs = Array.from({ length: 12 }, (_, idx) => ({
+      id: 201 + idx,
+      created_at: `2026-05-09T${String(23 - idx).padStart(2, "0")}:00:00`,
+      user_email: "dba@example.com",
+      report_key: `audit-run-${idx + 1}`,
+      row_count: idx + 1,
+      duration_ms: 5 + idx,
+      success: idx !== 11,
+      error_message: idx === 11 ? "failed" : null,
+    }));
     vi.stubGlobal("fetch", createFetchMock({ meRole: "DBA", meEmail: "dba@example.com", auditRuns: runs }));
 
     render(<App />);
@@ -496,13 +500,40 @@ describe("App smoke", () => {
     expect(screen.getByText("audit-run-2")).toBeInTheDocument();
     expect(screen.getByText("audit-run-3")).toBeInTheDocument();
     expect(screen.queryByText("audit-run-4")).not.toBeInTheDocument();
+    expect(screen.getByText("Showing the latest 3 of 12 run(s).")) .toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Audit view"), {
+      target: { value: "10" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("audit-run-10")).toBeInTheDocument();
+      expect(screen.queryByText("audit-run-11")).not.toBeInTheDocument();
+      expect(screen.getByText("Showing the latest 10 of 12 run(s).")) .toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("Audit view"), {
+      target: { value: "25" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("audit-run-12")).toBeInTheDocument();
+      expect(screen.getByText("Showing all 12 available run(s).")) .toBeInTheDocument();
+    });
 
     fireEvent.change(screen.getByLabelText("Audit view"), {
       target: { value: "all" },
     });
 
     await waitFor(() => {
-      expect(screen.getByText("audit-run-4")).toBeInTheDocument();
+      expect(screen.getByText("audit-run-12")).toBeInTheDocument();
+      expect(screen.getByText("Showing all 12 run(s).")) .toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("row").length).toBeGreaterThan(1);
     });
   });
 

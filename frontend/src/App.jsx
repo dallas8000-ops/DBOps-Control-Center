@@ -54,6 +54,15 @@ function userAuditDetailsPreview(details) {
   return parts.length ? parts.join(", ") : "—";
 }
 
+function reportAuditSummary(viewLimit, visibleCount, totalCount) {
+  if (totalCount === 0) return "No runs loaded yet.";
+  if (viewLimit === "all") return `Showing all ${totalCount} run(s).`;
+  const requested = Number.parseInt(viewLimit, 10);
+  if (Number.isNaN(requested)) return `Showing ${visibleCount} of ${totalCount} run(s).`;
+  if (totalCount <= requested) return `Showing all ${totalCount} available run(s).`;
+  return `Showing the latest ${visibleCount} of ${totalCount} run(s).`;
+}
+
 /** Stable React key for JSON-serializable report rows from the API */
 function reportRowKey(row) {
   return JSON.stringify(row);
@@ -506,6 +515,7 @@ function DashboardBody({
   scheduleActionBusyId,
   onCreateSchedule,
   onToggleSchedule,
+  onRefreshReportRuns,
   canCreateIncident,
   form,
   setForm,
@@ -857,7 +867,10 @@ function DashboardBody({
               <option value="25">Last 25</option>
               <option value="all">Show all</option>
             </select>
-            <span className="hint">Showing {visibleReportRuns.length} of {reportRuns.length} run(s)</span>
+            <button type="button" className="btn btn-ghost" onClick={onRefreshReportRuns}>
+              Refresh
+            </button>
+            <span className="hint">{reportAuditSummary(reportAuditViewLimit, visibleReportRuns.length, reportRuns.length)}</span>
           </div>
           <p className="panel-sub">Recent whitelisted report executions.</p>
           {reportRuns.length === 0 ? (
@@ -1086,6 +1099,7 @@ DashboardBody.propTypes = {
   scheduleActionBusyId: PropTypes.oneOfType([PropTypes.number, PropTypes.oneOf([null])]),
   onCreateSchedule: PropTypes.func.isRequired,
   onToggleSchedule: PropTypes.func.isRequired,
+  onRefreshReportRuns: PropTypes.func.isRequired,
   canCreateIncident: PropTypes.bool.isRequired,
   form: PropTypes.object.isRequired,
   setForm: PropTypes.func.isRequired,
@@ -1854,6 +1868,7 @@ export default function App() {
             scheduleActionBusyId={scheduleActionBusyId}
             onCreateSchedule={createReportSchedule}
             onToggleSchedule={toggleReportSchedule}
+            onRefreshReportRuns={loadReportRuns}
             canCreateIncident={canCreateIncident}
             form={form}
             setForm={setForm}
