@@ -127,9 +127,17 @@ def _parse_cors_origins(raw: str | None) -> list[str]:
     return out
 
 
-_frontend_origins = os.getenv("FRONTEND_ORIGINS", "http://localhost:5173").strip()
+_frontend_origins = os.getenv(
+    "FRONTEND_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174",
+).strip()
 _parsed_origins = _parse_cors_origins(_frontend_origins)
-allow_origins = _parsed_origins if _parsed_origins else ["http://localhost:5173"]
+allow_origins = _parsed_origins if _parsed_origins else [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+]
 
 _cors_kw: dict = {
     "allow_origins": allow_origins,

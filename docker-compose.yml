@@ -23,7 +23,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://dbops:dbops@db:5432/dbops
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-change-me-use-a-long-random-secret-for-production}
-      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:5173}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174}
     ports:
       - "8000:8000"
     volumes:
