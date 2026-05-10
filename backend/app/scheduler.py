@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from contextlib import suppress
 from datetime import datetime, timedelta
 from urllib import error as urlerror
@@ -14,6 +15,26 @@ from .models import ReportExecutionLog, ReportSchedule, User
 from .report_runner import execute_whitelisted_report, prepare_report_request
 
 logger = logging.getLogger(__name__)
+
+_runtime_status = {
+    "last_iteration_started_at": None,
+    "last_iteration_completed_at": None,
+    "last_iteration_processed": 0,
+    "last_iteration_error": None,
+    "consecutive_failures": 0,
+}
+
+
+def get_scheduler_runtime_status() -> dict:
+    return dict(_runtime_status)
+
+
+def _retry_env_int(name: str, default: int, minimum: int = 0) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        value = default
+    return max(value, minimum)
 
 
 def compute_next_run_at(
@@ -85,6 +106,64 @@ def _send_webhook_notification(target_url: str, payload: dict) -> None:
             raise RuntimeError(f"Webhook returned HTTP {res.status}")
 
 
+def _send_webhook_notification_with_retry(target_url: str, payload: dict) -> None:
+    attempts = _retry_env_int("SCHEDULED_REPORTS_WEBHOOK_ATTEMPTS", 2, minimum=1)
+    backoff_ms = _retry_env_int("SCHEDULED_REPORTS_WEBHOOK_BACKOFF_MS", 250, minimum=0)
+    for attempt in range(1, attempts + 1):
+        try:
+            _send_webhook_notification(target_url, payload)
+            return
+        except (urlerror.URLError, RuntimeError, ValueError) as exc:
+            if attempt >= attempts:
+                raise
+            logger.warning(
+                "Webhook delivery attempt %s/%s failed for %s: %s",
+                attempt,
+                attempts,
+                target_url,
+                str(exc),
+            )
+            if backoff_ms:
+                time.sleep((backoff_ms * attempt) / 1000)
+
+
+def _run_schedule_report_with_retry(db, owner: User, schedule: ReportSchedule) -> str | None:
+    attempts = _retry_env_int("SCHEDULED_REPORTS_EXECUTION_ATTEMPTS", 2, minimum=1)
+    backoff_ms = _retry_env_int("SCHEDULED_REPORTS_EXECUTION_BACKOFF_MS", 300, minimum=0)
+
+    try:
+        params = json.loads(schedule.params_json)
+    except json.JSONDecodeError:
+        return "Schedule parameters are invalid JSON"
+
+    for attempt in range(1, attempts + 1):
+        try:
+            prepare_report_request(owner, schedule.report_key, params)
+            execute_whitelisted_report(
+                db,
+                owner,
+                schedule.report_key,
+                params,
+                scheduled_report_id=schedule.id,
+            )
+            return None
+        except (PermissionError, ValueError) as exc:
+            return str(exc)
+        except Exception as exc:
+            if attempt >= attempts:
+                return f"{exc.__class__.__name__}: {str(exc)}"
+            logger.warning(
+                "Schedule %s run attempt %s/%s failed: %s",
+                schedule.id,
+                attempt,
+                attempts,
+                str(exc),
+            )
+            if backoff_ms:
+                time.sleep((backoff_ms * attempt) / 1000)
+    return "Unknown schedule execution failure"
+
+
 def _dispatch_notification_hook(
     schedule: ReportSchedule,
     *,
@@ -107,7 +186,7 @@ def _dispatch_notification_hook(
             logger.warning("Schedule %s configured for webhook with empty target", schedule.id)
             return
         try:
-            _send_webhook_notification(schedule.delivery_target, payload)
+            _send_webhook_notification_with_retry(schedule.delivery_target, payload)
         except (urlerror.URLError, RuntimeError, ValueError) as exc:
             logger.warning("Webhook delivery failed for schedule %s: %s", schedule.id, str(exc))
         return
@@ -142,25 +221,7 @@ def process_due_report_schedules(session_factory: sessionmaker = SessionLocal, n
             elif not owner.is_active:
                 error_message = "Schedule owner is disabled"
             else:
-                try:
-                    params = json.loads(schedule.params_json)
-                except json.JSONDecodeError:
-                    params = {}
-                    error_message = "Schedule parameters are invalid JSON"
-                if error_message is None:
-                    try:
-                        prepare_report_request(owner, schedule.report_key, params)
-                        execute_whitelisted_report(
-                            db,
-                            owner,
-                            schedule.report_key,
-                            params,
-                            scheduled_report_id=schedule.id,
-                        )
-                    except (PermissionError, ValueError) as exc:
-                        error_message = str(exc)
-                    except Exception as exc:
-                        error_message = str(exc)
+                error_message = _run_schedule_report_with_retry(db, owner, schedule)
 
             schedule.last_run_at = run_at
             schedule.next_run_at = next_run_at
@@ -183,9 +244,17 @@ def process_due_report_schedules(session_factory: sessionmaker = SessionLocal, n
 async def run_scheduler_loop(stop_event: asyncio.Event) -> None:
     poll_seconds = max(int(os.getenv("SCHEDULED_REPORTS_POLL_SECONDS", "60")), 5)
     while not stop_event.is_set():
+        _runtime_status["last_iteration_started_at"] = datetime.utcnow().isoformat()
         try:
-            process_due_report_schedules()
-        except Exception:
+            processed = process_due_report_schedules()
+            _runtime_status["last_iteration_processed"] = processed
+            _runtime_status["last_iteration_error"] = None
+            _runtime_status["consecutive_failures"] = 0
+        except Exception as exc:
             logger.exception("Scheduled report loop iteration failed")
+            _runtime_status["last_iteration_error"] = f"{exc.__class__.__name__}: {str(exc)}"
+            _runtime_status["consecutive_failures"] = int(_runtime_status["consecutive_failures"] or 0) + 1
+        finally:
+            _runtime_status["last_iteration_completed_at"] = datetime.utcnow().isoformat()
         with suppress(asyncio.TimeoutError):
             await asyncio.wait_for(stop_event.wait(), timeout=poll_seconds)

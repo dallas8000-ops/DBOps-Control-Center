@@ -157,6 +157,32 @@ function csvFilenameFromContentDisposition(contentDisposition, fallbackReportKey
   return fallback;
 }
 
+function utcWallClockToLocalPreview(hourUtc, minuteUtc) {
+  const safeHour = Number.isFinite(hourUtc) ? hourUtc : 0;
+  const safeMinute = Number.isFinite(minuteUtc) ? minuteUtc : 0;
+  const fixedUtc = new Date(Date.UTC(2030, 0, 1, safeHour, safeMinute, 0));
+  return fixedUtc.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+}
+
+function formatUtcIsoAsLocal(isoValue) {
+  if (!isoValue) return "—";
+  const date = new Date(isoValue);
+  if (Number.isNaN(date.getTime())) return isoValue;
+  return date.toLocaleString([], {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    timeZoneName: "short",
+  });
+}
+
 function HealthConnectionMessages({ health, apiUrl }) {
   switch (health.kind) {
     case "loading":
@@ -604,6 +630,10 @@ function DashboardBody({
     reportAuditViewLimit === "all"
       ? reportRuns
       : reportRuns.slice(0, Number.parseInt(reportAuditViewLimit, 10));
+  const scheduleLocalPreview = utcWallClockToLocalPreview(
+    Number(scheduleForm.run_hour_utc),
+    Number(scheduleForm.run_minute_utc),
+  );
 
   useEffect(() => {
     const store = globalThis.window?.localStorage;
@@ -778,6 +808,9 @@ function DashboardBody({
                 onChange={(e) => setScheduleForm({ ...scheduleForm, run_minute_utc: Number(e.target.value) })}
               />
             </label>
+            <p className="hint schedule-local-preview">
+              Local time preview: {scheduleLocalPreview} (stored and executed in UTC)
+            </p>
             <label className="field">
               <span className="field-label">Delivery</span>
               <select
@@ -850,7 +883,10 @@ function DashboardBody({
                         {schedule.cadence === "weekly" ? ` (${WEEKDAY_LABELS[schedule.weekday_utc ?? 0]})` : ""}
                         {` @ ${String(schedule.run_hour_utc).padStart(2, "0")}:${String(schedule.run_minute_utc).padStart(2, "0")} UTC`}
                       </td>
-                      <td className="hint">{schedule.next_run_at}</td>
+                      <td className="hint">
+                        <div>{schedule.next_run_at}</div>
+                        <div className="hint">Local: {formatUtcIsoAsLocal(schedule.next_run_at)}</div>
+                      </td>
                       <td>
                         {schedule.delivery_kind}
                         {schedule.delivery_target ? `: ${schedule.delivery_target}` : ""}

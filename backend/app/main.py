@@ -20,7 +20,7 @@ from .models import Incident, ReportExecutionLog, ReportSchedule, User, UserAdmi
 from .report_catalog import REPORTS
 from .rate_limit import check_auth_rate_limit
 from .report_runner import execute_whitelisted_report, prepare_report_request
-from .scheduler import compute_next_run_at, run_scheduler_loop
+from .scheduler import compute_next_run_at, get_scheduler_runtime_status, run_scheduler_loop
 from .schemas import (
     IncidentCreate,
     IncidentRead,
@@ -162,6 +162,20 @@ def health(response: Response):
         response.status_code = 503
         return {"status": "degraded", "database": "unreachable"}
     return {"status": "ok", "database": "reachable"}
+
+
+@app.get("/health/scheduler")
+def health_scheduler():
+    disabled = os.getenv("SCHEDULED_REPORTS_DISABLE_LOOP", "").lower() in ("1", "true", "yes")
+    poll_seconds = max(int(os.getenv("SCHEDULED_REPORTS_POLL_SECONDS", "60")), 5)
+    return {
+        "status": "ok",
+        "scheduler": {
+            "loop_enabled": not disabled,
+            "poll_seconds": poll_seconds,
+            **get_scheduler_runtime_status(),
+        },
+    }
 
 
 @app.post("/auth/login", response_model=Token)

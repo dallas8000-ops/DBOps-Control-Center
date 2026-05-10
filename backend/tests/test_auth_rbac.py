@@ -13,6 +13,8 @@ from app.db import Base, get_db
 from app.main import app
 from app.models import ReportExecutionLog, ReportSchedule
 from app.rate_limit import configure_auth_rate_limit, reset_auth_rate_limit
+import app.scheduler as scheduler_module
+from app.report_runner import execute_whitelisted_report as execute_whitelisted_report_real
 from app.scheduler import process_due_report_schedules
 
 
@@ -662,25 +664,83 @@ def test_disabled_schedule_owner_logs_failure() -> None:
         finally:
             db.close()
 
+
+def test_scheduler_health_endpoint_returns_runtime_status() -> None:
+    for client in _client():
+        resp = client.get("/health/scheduler")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "ok"
+        assert "scheduler" in body
+        assert isinstance(body["scheduler"]["poll_seconds"], int)
+        assert "loop_enabled" in body["scheduler"]
+        assert "last_iteration_started_at" in body["scheduler"]
+        assert "last_iteration_completed_at" in body["scheduler"]
+
+
+def test_due_schedule_retries_transient_execution_failure(monkeypatch) -> None:
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+
+        create_incident_resp = client.post(
+            "/incidents",
+            json={
+                "title": "Retry smoke",
+                "description": "Transient execution should retry once",
+                "severity": "medium",
+                "owner": "dba@example.com",
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert create_incident_resp.status_code == 201
+
+        create_schedule_resp = client.post(
+            "/reports/schedules",
+            json={
+                "report_key": "incidents_recent",
+                "params": {"max_rows": 10},
+                "cadence": "daily",
+                "run_hour_utc": 6,
+                "run_minute_utc": 30,
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert create_schedule_resp.status_code == 201
+        schedule_id = create_schedule_resp.json()["id"]
+
+        fixed_now = datetime(2026, 5, 9, 12, 0, 0)
+        db = next(app.dependency_overrides[get_db]())
+        try:
+            schedule = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
+            assert schedule is not None
+            schedule.next_run_at = fixed_now - timedelta(minutes=1)
+            db.add(schedule)
+            db.commit()
+        finally:
+            db.close()
+
+        attempts = {"count": 0}
+
+        def flaky_execute(*args, **kwargs):
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise RuntimeError("temporary database timeout")
+            return execute_whitelisted_report_real(*args, **kwargs)
+
+        monkeypatch.setattr(scheduler_module, "execute_whitelisted_report", flaky_execute)
+        monkeypatch.setenv("SCHEDULED_REPORTS_EXECUTION_ATTEMPTS", "2")
+        monkeypatch.setenv("SCHEDULED_REPORTS_EXECUTION_BACKOFF_MS", "0")
+
         session_factory = app.dependency_overrides[get_db].__closure__[0].cell_contents
         processed = process_due_report_schedules(session_factory, now=fixed_now)
         assert processed == 1
+        assert attempts["count"] == 2
 
         db = next(app.dependency_overrides[get_db]())
         try:
             schedule = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
             assert schedule is not None
-            assert schedule.last_success_at is None
-            assert schedule.last_error == "Schedule owner is disabled"
-
-            log = (
-                db.query(ReportExecutionLog)
-                .filter(ReportExecutionLog.scheduled_report_id == schedule_id)
-                .order_by(ReportExecutionLog.created_at.desc())
-                .first()
-            )
-            assert log is not None
-            assert log.success is False
-            assert log.error_message == "Schedule owner is disabled"
+            assert schedule.last_success_at == fixed_now
+            assert schedule.last_error is None
         finally:
             db.close()

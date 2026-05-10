@@ -377,6 +377,11 @@ table.data-table {
   grid-column: 1 / -1;
 }
 
+.schedule-local-preview {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .schedule-submit {
   grid-column: 1 / -1;
 }

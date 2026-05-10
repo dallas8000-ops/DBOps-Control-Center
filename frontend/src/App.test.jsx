@@ -438,6 +438,8 @@ describe("App smoke", () => {
       expect(screen.getByRole("heading", { name: "Scheduled reports (DBA)" })).toBeInTheDocument();
     });
 
+    expect(screen.getByText(/Local time preview:/i)).toBeInTheDocument();
+
     fireEvent.change(screen.getByDisplayValue("none"), {
       target: { value: "email" },
     });
