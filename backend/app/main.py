@@ -1,10 +1,12 @@
 import asyncio
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 import json
 import os
 from csv import DictWriter
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from io import StringIO
+from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,12 +18,17 @@ from sqlalchemy.orm import Session
 from .auth_utils import create_access_token, hash_password, verify_password
 from .db import engine, get_db
 from .deps import get_current_user, require_roles
-from .models import Incident, ReportExecutionLog, ReportSchedule, User, UserAdminAuditLog
+from .models import BillingSettings, Incident, OnboardingEvent, ReportExecutionLog, ReportSchedule, User, UserAdminAuditLog
 from .report_catalog import REPORTS
 from .rate_limit import check_auth_rate_limit
 from .report_runner import execute_whitelisted_report, prepare_report_request
 from .scheduler import compute_next_run_at, get_scheduler_runtime_status, run_scheduler_loop
 from .schemas import (
+    ActivityTrendPointRead,
+    AdminMetricsRead,
+    AdminOverviewRead,
+    BillingSettingsRead,
+    BillingSettingsUpdate,
     IncidentCreate,
     IncidentRead,
     IncidentUpdate,
@@ -35,6 +42,8 @@ from .schemas import (
     ReportScheduleRead,
     ReportScheduleStatusUpdate,
     Token,
+    OnboardingItemRead,
+    PlanUsageRead,
     UserAdminAuditRead,
     UserCreate,
     UserPasswordReset,
@@ -58,6 +67,57 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="DBOps Control Center API", version="0.4.0", lifespan=lifespan)
+
+AUTH_RATE_LIMIT_DETAIL = "Too many auth requests. Please try again shortly."
+ACCOUNT_DISABLED_DETAIL = "Your account is disabled. Contact a DBA."
+USER_NOT_FOUND_DETAIL = "User not found"
+INCIDENT_NOT_FOUND_DETAIL = "Incident not found"
+REPORT_PERMISSION_DETAIL = "Insufficient permissions for this report"
+UNKNOWN_REPORT_PREFIX = "Unknown report:"
+
+ERROR_RESPONSES_AUTH_LOGIN = {
+    401: {"description": "Incorrect credentials"},
+    403: {"description": "Account disabled"},
+    429: {"description": "Auth rate limit exceeded"},
+}
+ERROR_RESPONSES_AUTH_REGISTER = {
+    400: {"description": "Invalid bootstrap request"},
+    403: {"description": "Bootstrap unavailable or plan limit reached"},
+    409: {"description": "Email already exists"},
+    429: {"description": "Auth rate limit exceeded"},
+}
+ERROR_RESPONSES_DBA_ONLY = {403: {"description": "DBA role required"}}
+ERROR_RESPONSES_USER_MUTATION = {
+    400: {"description": "Invalid user mutation"},
+    403: {"description": "DBA role required"},
+    404: {"description": "User not found"},
+}
+ERROR_RESPONSES_INCIDENT_MUTATION = {
+    403: {"description": "Insufficient role"},
+    404: {"description": INCIDENT_NOT_FOUND_DETAIL},
+}
+ERROR_RESPONSES_REPORT_EXECUTION = {
+    400: {"description": "Invalid report request"},
+    403: {"description": "Insufficient permissions for report"},
+    404: {"description": "Unknown report"},
+}
+ERROR_RESPONSES_SCHEDULE_MUTATION = {
+    400: {"description": "Invalid schedule request"},
+    403: {"description": "DBA role required or plan limit reached"},
+    404: {"description": "Unknown report or schedule not found"},
+}
+
+DbDep = Annotated[Session, Depends(get_db)]
+CurrentUserDep = Annotated[User, Depends(get_current_user)]
+DbaUserDep = Annotated[User, Depends(require_roles("DBA"))]
+RoleUserDep = Callable[..., User]
+
+ONBOARDING_STEPS: list[tuple[str, str]] = [
+    ("first_user_created", "Create first team member"),
+    ("first_incident_created", "Create first incident"),
+    ("first_report_run", "Run first report"),
+    ("first_schedule_created", "Create first schedule"),
+]
 
 
 def _log_user_admin_action(
@@ -113,6 +173,116 @@ def _report_schedule_read(schedule: ReportSchedule, created_by_email: str) -> Re
         created_at=schedule.created_at,
         created_by_user_id=schedule.created_by_user_id,
         created_by_email=created_by_email,
+    )
+
+
+def _get_or_create_billing_settings(db: Session) -> BillingSettings:
+    settings = db.query(BillingSettings).filter(BillingSettings.id == 1).first()
+    if settings is not None:
+        return settings
+    settings = BillingSettings(id=1)
+    db.add(settings)
+    db.flush()
+    return settings
+
+
+def _enforce_plan_limit(db: Session, *, metric: str, current_count: int) -> None:
+    settings = _get_or_create_billing_settings(db)
+    limit = settings.max_users if metric == "users" else settings.max_schedules
+    if current_count >= limit:
+        label = "users" if metric == "users" else "schedules"
+        raise HTTPException(status_code=403, detail=f"Plan limit reached: max {label} is {limit} for the current plan.")
+
+
+def _record_onboarding_event(db: Session, *, event_key: str, actor_user_id: int | None, details: dict | None = None) -> None:
+    exists = db.query(OnboardingEvent).filter(OnboardingEvent.event_key == event_key).first()
+    if exists is not None:
+        return
+    db.add(
+        OnboardingEvent(
+            event_key=event_key,
+            actor_user_id=actor_user_id,
+            details_json=json.dumps(details or {}, sort_keys=True),
+        )
+    )
+
+
+def _build_onboarding_read(db: Session) -> list[OnboardingItemRead]:
+    existing = {row.event_key: row for row in db.query(OnboardingEvent).all()}
+    return [
+        OnboardingItemRead(
+            key=key,
+            label=label,
+            completed=key in existing,
+            completed_at=existing[key].created_at if key in existing else None,
+        )
+        for key, label in ONBOARDING_STEPS
+    ]
+
+
+def _build_admin_metrics(db: Session) -> AdminMetricsRead:
+    now = datetime.now(UTC).replace(tzinfo=None)
+    window_start = now - timedelta(hours=24)
+    recent_runs = db.query(ReportExecutionLog).filter(ReportExecutionLog.created_at >= window_start)
+    completed_steps = db.query(OnboardingEvent).count()
+    return AdminMetricsRead(
+        total_users=db.query(User).count(),
+        active_users=db.query(User).filter(User.is_active.is_(True)).count(),
+        open_incidents=db.query(Incident).filter(Incident.status == "open").count(),
+        resolved_incidents=db.query(Incident).filter(Incident.status == "resolved").count(),
+        enabled_schedules=db.query(ReportSchedule).filter(ReportSchedule.is_enabled.is_(True)).count(),
+        report_runs_last_24h=recent_runs.count(),
+        successful_report_runs_last_24h=recent_runs.filter(ReportExecutionLog.success.is_(True)).count(),
+        onboarding_completed_steps=min(completed_steps, len(ONBOARDING_STEPS)),
+        onboarding_total_steps=len(ONBOARDING_STEPS),
+    )
+
+
+def _build_plan_usage(db: Session, settings: BillingSettings) -> PlanUsageRead:
+    user_slots_used = db.query(User).count()
+    schedule_slots_used = db.query(ReportSchedule).count()
+    return PlanUsageRead(
+        user_slots_used=user_slots_used,
+        user_slots_remaining=max(settings.max_users - user_slots_used, 0),
+        users_at_limit=user_slots_used >= settings.max_users,
+        schedule_slots_used=schedule_slots_used,
+        schedule_slots_remaining=max(settings.max_schedules - schedule_slots_used, 0),
+        schedules_at_limit=schedule_slots_used >= settings.max_schedules,
+    )
+
+
+def _build_activity_trend(db: Session) -> list[ActivityTrendPointRead]:
+    today = datetime.now(UTC).date()
+    points: list[ActivityTrendPointRead] = []
+    for days_ago in range(6, -1, -1):
+        day = today - timedelta(days=days_ago)
+        start = datetime.combine(day, time.min)
+        end = start + timedelta(days=1)
+        points.append(
+            ActivityTrendPointRead(
+                day=day.isoformat(),
+                label=day.strftime("%a"),
+                incidents_created=db.query(Incident).filter(Incident.created_at >= start, Incident.created_at < end).count(),
+                report_runs=db.query(ReportExecutionLog)
+                .filter(ReportExecutionLog.created_at >= start, ReportExecutionLog.created_at < end)
+                .count(),
+                schedules_created=db.query(ReportSchedule)
+                .filter(ReportSchedule.created_at >= start, ReportSchedule.created_at < end)
+                .count(),
+            )
+        )
+    return points
+
+
+def _build_admin_overview(db: Session) -> AdminOverviewRead:
+    settings = _get_or_create_billing_settings(db)
+    db.flush()
+    return AdminOverviewRead(
+        metrics=_build_admin_metrics(db),
+        billing=BillingSettingsRead.model_validate(settings),
+        plan_usage=_build_plan_usage(db, settings),
+        onboarding=_build_onboarding_read(db),
+        activity_trend=_build_activity_trend(db),
     )
 
 
@@ -178,42 +348,76 @@ def health_scheduler():
     }
 
 
-@app.post("/auth/login", response_model=Token)
-def login_json(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
+@app.get("/admin/overview", response_model=AdminOverviewRead)
+def admin_overview(
+    db: DbDep,
+    _: DbaUserDep,
+):
+    overview = _build_admin_overview(db)
+    db.commit()
+    return overview
+
+
+@app.put("/admin/billing", response_model=BillingSettingsRead, responses=ERROR_RESPONSES_DBA_ONLY)
+def update_billing_settings(
+    payload: BillingSettingsUpdate,
+    db: DbDep,
+    _: DbaUserDep,
+):
+    settings = _get_or_create_billing_settings(db)
+    settings.plan_key = payload.plan_key
+    settings.billing_status = payload.billing_status
+    settings.monthly_price_cents = payload.monthly_price_cents
+    settings.max_users = payload.max_users
+    settings.max_schedules = payload.max_schedules
+    settings.stripe_customer_id = payload.stripe_customer_id
+    settings.stripe_subscription_id = payload.stripe_subscription_id
+    db.add(settings)
+    db.commit()
+    db.refresh(settings)
+    return settings
+
+
+@app.post("/auth/login", response_model=Token, responses=ERROR_RESPONSES_AUTH_LOGIN)
+def login_json(payload: LoginRequest, request: Request, db: DbDep):
     if not check_auth_rate_limit(request.client.host if request.client else None, "auth-login"):
-        raise HTTPException(status_code=429, detail="Too many auth requests. Please try again shortly.")
+        raise HTTPException(status_code=429, detail=AUTH_RATE_LIMIT_DETAIL)
     user = db.query(User).filter(User.email == payload.email.lower()).first()
     if user is None or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     if not user.is_active:
-        raise HTTPException(status_code=403, detail="Your account is disabled. Contact a DBA.")
+        raise HTTPException(status_code=403, detail=ACCOUNT_DISABLED_DETAIL)
     token = create_access_token(subject=str(user.id), role=user.role)
     return Token(access_token=token)
 
 
-@app.post("/auth/token", response_model=Token)
-def login_form(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+@app.post("/auth/token", response_model=Token, responses=ERROR_RESPONSES_AUTH_LOGIN)
+def login_form(
+    request: Request,
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    db: DbDep,
+):
     if not check_auth_rate_limit(request.client.host if request.client else None, "auth-token"):
-        raise HTTPException(status_code=429, detail="Too many auth requests. Please try again shortly.")
+        raise HTTPException(status_code=429, detail=AUTH_RATE_LIMIT_DETAIL)
     user = db.query(User).filter(User.email == form_data.username.lower()).first()
     if user is None or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect username or password")
     if not user.is_active:
-        raise HTTPException(status_code=403, detail="Your account is disabled. Contact a DBA.")
+        raise HTTPException(status_code=403, detail=ACCOUNT_DISABLED_DETAIL)
     token = create_access_token(subject=str(user.id), role=user.role)
     return Token(access_token=token)
 
 
 @app.get("/auth/me", response_model=UserRead)
-def me(current: User = Depends(get_current_user)):
+def me(current: CurrentUserDep):
     return current
 
 
-@app.post("/auth/register", response_model=UserRead, status_code=201)
-def register_bootstrap(payload: UserCreate, request: Request, db: Session = Depends(get_db)):
+@app.post("/auth/register", response_model=UserRead, status_code=201, responses=ERROR_RESPONSES_AUTH_REGISTER)
+def register_bootstrap(payload: UserCreate, request: Request, db: DbDep):
     """First user only (role must be DBA). Further accounts use POST /auth/users as DBA."""
     if not check_auth_rate_limit(request.client.host if request.client else None, "auth-register"):
-        raise HTTPException(status_code=429, detail="Too many auth requests. Please try again shortly.")
+        raise HTTPException(status_code=429, detail=AUTH_RATE_LIMIT_DETAIL)
     user_count = db.query(User).count()
     if user_count > 0:
         raise HTTPException(
@@ -240,14 +444,15 @@ def register_bootstrap(payload: UserCreate, request: Request, db: Session = Depe
     return user
 
 
-@app.post("/auth/users", response_model=UserRead, status_code=201)
+@app.post("/auth/users", response_model=UserRead, status_code=201, responses=ERROR_RESPONSES_AUTH_REGISTER)
 def register_as_dba(
     payload: UserCreate,
-    db: Session = Depends(get_db),
-    current: User = Depends(require_roles("DBA")),
+    db: DbDep,
+    current: DbaUserDep,
 ):
     if db.query(User).filter(User.email == payload.email.lower()).first():
         raise HTTPException(status_code=409, detail="Email already registered")
+    _enforce_plan_limit(db, metric="users", current_count=db.query(User).count())
     user = User(
         email=payload.email.lower(),
         hashed_password=hash_password(payload.password),
@@ -263,6 +468,12 @@ def register_as_dba(
         action="create_user",
         details={"role": user.role},
     )
+    _record_onboarding_event(
+        db,
+        event_key="first_user_created",
+        actor_user_id=current.id,
+        details={"created_email": user.email},
+    )
     db.commit()
     db.refresh(user)
     return user
@@ -270,8 +481,8 @@ def register_as_dba(
 
 @app.get("/auth/users", response_model=list[UserRead])
 def list_users(
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles("DBA")),
+    db: DbDep,
+    _: DbaUserDep,
 ):
     """So DBAs can confirm accounts and avoid duplicate-email surprises."""
     return db.query(User).order_by(User.id.asc()).all()
@@ -279,8 +490,8 @@ def list_users(
 
 @app.get("/auth/users/audit", response_model=list[UserAdminAuditRead])
 def list_user_admin_audit(
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles("DBA")),
+    db: DbDep,
+    _: DbaUserDep,
     limit: int = 100,
 ):
     limit = min(max(limit, 1), 500)
@@ -316,16 +527,16 @@ def list_user_admin_audit(
     return out
 
 
-@app.patch("/auth/users/{user_id}/password", response_model=UserRead)
+@app.patch("/auth/users/{user_id}/password", response_model=UserRead, responses=ERROR_RESPONSES_USER_MUTATION)
 def reset_user_password(
     user_id: int,
     payload: UserPasswordReset,
-    db: Session = Depends(get_db),
-    current: User = Depends(require_roles("DBA")),
+    db: DbDep,
+    current: DbaUserDep,
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND_DETAIL)
     user.hashed_password = hash_password(payload.password)
     _log_user_admin_action(
         db,
@@ -340,16 +551,16 @@ def reset_user_password(
     return user
 
 
-@app.patch("/auth/users/{user_id}/status", response_model=UserRead)
+@app.patch("/auth/users/{user_id}/status", response_model=UserRead, responses=ERROR_RESPONSES_USER_MUTATION)
 def set_user_status(
     user_id: int,
     payload: UserStatusUpdate,
-    db: Session = Depends(get_db),
-    current: User = Depends(require_roles("DBA")),
+    db: DbDep,
+    current: DbaUserDep,
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND_DETAIL)
     if current.id == user.id and not payload.is_active:
         raise HTTPException(status_code=400, detail="You cannot disable your own account")
     user.is_active = payload.is_active
@@ -366,15 +577,15 @@ def set_user_status(
     return user
 
 
-@app.delete("/auth/users/{user_id}", status_code=204)
+@app.delete("/auth/users/{user_id}", status_code=204, responses=ERROR_RESPONSES_USER_MUTATION)
 def delete_user(
     user_id: int,
-    db: Session = Depends(get_db),
-    current: User = Depends(require_roles("DBA")),
+    db: DbDep,
+    current: DbaUserDep,
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND_DETAIL)
     if current.id == user.id:
         raise HTTPException(status_code=400, detail="You cannot delete your own account")
     target_id = user.id
@@ -391,17 +602,26 @@ def delete_user(
     db.commit()
 
 
+IncidentStatusQuery = Annotated[str | None, Query()]
+IncidentSeverityQuery = Annotated[str | None, Query()]
+IncidentOwnerQuery = Annotated[str | None, Query()]
+IncidentSearchQuery = Annotated[str | None, Query(min_length=1, max_length=120)]
+IncidentStartDateQuery = Annotated[date | None, Query()]
+IncidentEndDateQuery = Annotated[date | None, Query()]
+IncidentSortQuery = Annotated[str, Query(pattern="^(newest|oldest|severity)$")]
+
+
 @app.get("/incidents", response_model=list[IncidentRead])
 def list_incidents(
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles("DBA", "Analyst", "Viewer")),
-    status: str | None = Query(default=None),
-    severity: str | None = Query(default=None),
-    owner: str | None = Query(default=None),
-    search: str | None = Query(default=None, min_length=1, max_length=120),
-    start_date: date | None = Query(default=None),
-    end_date: date | None = Query(default=None),
-    sort: str = Query(default="newest", pattern="^(newest|oldest|severity)$"),
+    db: DbDep,
+    _: Annotated[User, Depends(require_roles("DBA", "Analyst", "Viewer"))],
+    status: IncidentStatusQuery = None,
+    severity: IncidentSeverityQuery = None,
+    owner: IncidentOwnerQuery = None,
+    search: IncidentSearchQuery = None,
+    start_date: IncidentStartDateQuery = None,
+    end_date: IncidentEndDateQuery = None,
+    sort: IncidentSortQuery = "newest",
 ):
     query = db.query(Incident)
 
@@ -441,11 +661,11 @@ def list_incidents(
     return query.all()
 
 
-@app.post("/incidents", response_model=IncidentRead, status_code=201)
+@app.post("/incidents", response_model=IncidentRead, status_code=201, responses={403: {"description": "Insufficient role"}})
 def create_incident(
     payload: IncidentCreate,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles("DBA", "Analyst")),
+    db: DbDep,
+    current: Annotated[User, Depends(require_roles("DBA", "Analyst"))],
 ):
     incident = Incident(
         title=payload.title,
@@ -455,21 +675,28 @@ def create_incident(
         status="open",
     )
     db.add(incident)
+    db.flush()
+    _record_onboarding_event(
+        db,
+        event_key="first_incident_created",
+        actor_user_id=current.id,
+        details={"incident_id": incident.id},
+    )
     db.commit()
     db.refresh(incident)
     return incident
 
 
-@app.patch("/incidents/{incident_id}", response_model=IncidentRead)
+@app.patch("/incidents/{incident_id}", response_model=IncidentRead, responses=ERROR_RESPONSES_INCIDENT_MUTATION)
 def update_incident(
     incident_id: int,
     payload: IncidentUpdate,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles("DBA", "Analyst")),
+    db: DbDep,
+    _: Annotated[User, Depends(require_roles("DBA", "Analyst"))],
 ):
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
-        raise HTTPException(status_code=404, detail="Incident not found")
+        raise HTTPException(status_code=404, detail=INCIDENT_NOT_FOUND_DETAIL)
 
     if payload.title is not None:
         incident.title = payload.title
@@ -485,15 +712,15 @@ def update_incident(
     return incident
 
 
-@app.patch("/incidents/{incident_id}/resolve", response_model=IncidentRead)
+@app.patch("/incidents/{incident_id}/resolve", response_model=IncidentRead, responses=ERROR_RESPONSES_INCIDENT_MUTATION)
 def resolve_incident(
     incident_id: int,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles("DBA")),
+    db: DbDep,
+    _: DbaUserDep,
 ):
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
-        raise HTTPException(status_code=404, detail="Incident not found")
+        raise HTTPException(status_code=404, detail=INCIDENT_NOT_FOUND_DETAIL)
     incident.status = "resolved"
     db.commit()
     db.refresh(incident)
@@ -501,7 +728,7 @@ def resolve_incident(
 
 
 @app.get("/reports/catalog", response_model=list[ReportCatalogEntry])
-def report_catalog(current: User = Depends(get_current_user)):
+def report_catalog(current: CurrentUserDep):
     entries: list[ReportCatalogEntry] = []
     for key, spec in REPORTS.items():
         if current.role not in spec["roles"]:
@@ -517,28 +744,35 @@ def report_catalog(current: User = Depends(get_current_user)):
     return entries
 
 
-@app.post("/reports/run", response_model=ReportExecuteResponse)
+@app.post("/reports/run", response_model=ReportExecuteResponse, responses=ERROR_RESPONSES_REPORT_EXECUTION)
 def run_report(
     body: ReportExecuteRequest,
-    db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    db: DbDep,
+    current: CurrentUserDep,
 ):
     try:
         data = execute_whitelisted_report(db, current, body.report_key, body.params)
+        _record_onboarding_event(
+            db,
+            event_key="first_report_run",
+            actor_user_id=current.id,
+            details={"report_key": body.report_key},
+        )
+        db.commit()
         return ReportExecuteResponse.model_validate(data)
     except PermissionError:
-        raise HTTPException(status_code=403, detail="Insufficient permissions for this report")
+        raise HTTPException(status_code=403, detail=REPORT_PERMISSION_DETAIL)
     except ValueError as exc:
         msg = str(exc)
-        code = 404 if msg.startswith("Unknown report:") else 400
+        code = 404 if msg.startswith(UNKNOWN_REPORT_PREFIX) else 400
         raise HTTPException(status_code=code, detail=msg)
 
 
-@app.post("/reports/export/csv", response_class=PlainTextResponse)
+@app.post("/reports/export/csv", response_class=PlainTextResponse, responses=ERROR_RESPONSES_REPORT_EXECUTION)
 def export_report_csv(
     body: ReportExecuteRequest,
-    db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    db: DbDep,
+    current: CurrentUserDep,
 ):
     try:
         data = execute_whitelisted_report(db, current, body.report_key, body.params)
@@ -547,17 +781,17 @@ def export_report_csv(
         response.headers["Content-Disposition"] = f'attachment; filename="{body.report_key}.csv"'
         return response
     except PermissionError:
-        raise HTTPException(status_code=403, detail="Insufficient permissions for this report")
+        raise HTTPException(status_code=403, detail=REPORT_PERMISSION_DETAIL)
     except ValueError as exc:
         msg = str(exc)
-        code = 404 if msg.startswith("Unknown report:") else 400
+        code = 404 if msg.startswith(UNKNOWN_REPORT_PREFIX) else 400
         raise HTTPException(status_code=code, detail=msg)
 
 
 @app.get("/reports/runs", response_model=list[ReportRunRead])
 def list_report_runs(
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles("DBA")),
+    db: DbDep,
+    _: DbaUserDep,
     limit: int = 100,
 ):
     limit = min(max(limit, 1), 500)
@@ -591,20 +825,22 @@ def list_report_runs(
     return out
 
 
-@app.post("/reports/schedules", response_model=ReportScheduleRead, status_code=201)
+@app.post("/reports/schedules", response_model=ReportScheduleRead, status_code=201, responses=ERROR_RESPONSES_SCHEDULE_MUTATION)
 def create_report_schedule(
     body: ReportScheduleCreate,
-    db: Session = Depends(get_db),
-    current: User = Depends(require_roles("DBA")),
+    db: DbDep,
+    current: DbaUserDep,
 ):
     try:
         _, bind_params = prepare_report_request(current, body.report_key, body.params)
     except PermissionError:
-        raise HTTPException(status_code=403, detail="Insufficient permissions for this report")
+        raise HTTPException(status_code=403, detail=REPORT_PERMISSION_DETAIL)
     except ValueError as exc:
         msg = str(exc)
-        code = 404 if msg.startswith("Unknown report:") else 400
+        code = 404 if msg.startswith(UNKNOWN_REPORT_PREFIX) else 400
         raise HTTPException(status_code=code, detail=msg)
+
+    _enforce_plan_limit(db, metric="schedules", current_count=db.query(ReportSchedule).count())
 
     schedule = ReportSchedule(
         created_by_user_id=current.id,
@@ -624,10 +860,17 @@ def create_report_schedule(
             body.weekday_utc,
             body.run_hour_utc,
             body.run_minute_utc,
-            datetime.utcnow(),
+            datetime.now(UTC).replace(tzinfo=None),
         ),
     )
     db.add(schedule)
+    db.flush()
+    _record_onboarding_event(
+        db,
+        event_key="first_schedule_created",
+        actor_user_id=current.id,
+        details={"schedule_id": schedule.id, "report_key": schedule.report_key},
+    )
     db.commit()
     db.refresh(schedule)
     return _report_schedule_read(schedule, current.email)
@@ -635,8 +878,8 @@ def create_report_schedule(
 
 @app.get("/reports/schedules", response_model=list[ReportScheduleRead])
 def list_report_schedules(
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles("DBA")),
+    db: DbDep,
+    _: DbaUserDep,
 ):
     rows = (
         db.query(ReportSchedule, User.email)
@@ -647,12 +890,12 @@ def list_report_schedules(
     return [_report_schedule_read(schedule, email) for schedule, email in rows]
 
 
-@app.patch("/reports/schedules/{schedule_id}/status", response_model=ReportScheduleRead)
+@app.patch("/reports/schedules/{schedule_id}/status", response_model=ReportScheduleRead, responses=ERROR_RESPONSES_SCHEDULE_MUTATION)
 def update_report_schedule_status(
     schedule_id: int,
     body: ReportScheduleStatusUpdate,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles("DBA")),
+    db: DbDep,
+    _: DbaUserDep,
 ):
     row = (
         db.query(ReportSchedule, User.email)
@@ -670,7 +913,7 @@ def update_report_schedule_status(
             schedule.weekday_utc,
             schedule.run_hour_utc,
             schedule.run_minute_utc,
-            datetime.utcnow(),
+            datetime.now(UTC).replace(tzinfo=None),
         )
     db.add(schedule)
     db.commit()
@@ -680,8 +923,8 @@ def update_report_schedule_status(
 
 @app.get("/reports/summary")
 def report_summary(
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles("DBA", "Analyst", "Viewer")),
+    db: DbDep,
+    _: Annotated[User, Depends(require_roles("DBA", "Analyst", "Viewer"))],
 ):
     incidents = db.query(Incident).all()
     total = len(incidents)

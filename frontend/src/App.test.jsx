@@ -85,6 +85,54 @@ function createFetchMock({
         consecutive_failures: 0,
       },
     }),
+    "GET /admin/overview": jsonResponse({
+      metrics: {
+        total_users: 3,
+        active_users: 3,
+        open_incidents: 1,
+        resolved_incidents: 0,
+        enabled_schedules: 1,
+        report_runs_last_24h: 4,
+        successful_report_runs_last_24h: 4,
+        onboarding_completed_steps: 2,
+        onboarding_total_steps: 4,
+      },
+      billing: {
+        id: 1,
+        plan_key: "starter",
+        billing_status: "trialing",
+        monthly_price_cents: 14900,
+        max_users: 10,
+        max_schedules: 10,
+        stripe_customer_id: null,
+        stripe_subscription_id: null,
+        created_at: "2026-05-10T12:00:00",
+        updated_at: "2026-05-10T12:00:00",
+      },
+      plan_usage: {
+        user_slots_used: 3,
+        user_slots_remaining: 7,
+        users_at_limit: false,
+        schedule_slots_used: 1,
+        schedule_slots_remaining: 9,
+        schedules_at_limit: false,
+      },
+      onboarding: [
+        { key: "first_user_created", label: "Create first team member", completed: true, completed_at: "2026-05-10T12:00:00" },
+        { key: "first_incident_created", label: "Create first incident", completed: true, completed_at: "2026-05-10T12:05:00" },
+        { key: "first_report_run", label: "Run first report", completed: false, completed_at: null },
+        { key: "first_schedule_created", label: "Create first schedule", completed: false, completed_at: null },
+      ],
+      activity_trend: [
+        { day: "2026-05-04", label: "Mon", incidents_created: 0, report_runs: 0, schedules_created: 0 },
+        { day: "2026-05-05", label: "Tue", incidents_created: 1, report_runs: 0, schedules_created: 0 },
+        { day: "2026-05-06", label: "Wed", incidents_created: 0, report_runs: 2, schedules_created: 0 },
+        { day: "2026-05-07", label: "Thu", incidents_created: 1, report_runs: 1, schedules_created: 0 },
+        { day: "2026-05-08", label: "Fri", incidents_created: 0, report_runs: 0, schedules_created: 1 },
+        { day: "2026-05-09", label: "Sat", incidents_created: 0, report_runs: 1, schedules_created: 0 },
+        { day: "2026-05-10", label: "Sun", incidents_created: 0, report_runs: 0, schedules_created: 0 },
+      ],
+    }),
     "GET /auth/me": jsonResponse({ id: 2, email: meEmail, role: meRole, is_active: true }),
     "GET /reports/summary": jsonResponse({
       total_incidents: 1,
@@ -105,91 +153,121 @@ function createFetchMock({
     "GET /auth/users": jsonResponse([]),
   };
 
+  const dynamicHandlers = [
+    {
+      match: (path, method) => path === "/auth/login" && method === "POST",
+      respond: () => loginResponse,
+    },
+    {
+      match: (path, method) => path === "/incidents" && method === "GET",
+      respond: () =>
+        jsonResponse([
+          {
+            id: 1,
+            title: "Replication lag",
+            description: "Lag exceeded threshold",
+            severity: "high",
+            owner: "ops",
+            status: "open",
+            created_at: "2026-05-08T10:00:00",
+          },
+        ]),
+    },
+    {
+      match: (path, method) => path === "/incidents" && method === "POST",
+      respond: () =>
+        jsonResponse(
+          {
+            id: 2,
+            title: "Created from smoke test",
+            description: "desc",
+            severity: "medium",
+            owner: "analyst@example.com",
+            status: "open",
+            created_at: "2026-05-08T10:05:00",
+          },
+          201,
+        ),
+    },
+    {
+      match: (path, method) => path === "/reports/run" && method === "POST",
+      respond: () =>
+        jsonResponse({
+          report_key: "incidents_by_status",
+          columns: ["status", "total"],
+          rows: reportRows,
+          row_count: reportRows.length,
+          truncated: false,
+          duration_ms: 7,
+        }),
+    },
+    {
+      match: (path, method) => path === "/reports/export/csv" && method === "POST",
+      respond: () => ({
+        ok: true,
+        status: 200,
+        text: async () => "status,incident_count\nopen,1\n",
+      }),
+    },
+    {
+      match: (path, method) => path === "/reports/schedules" && method === "POST",
+      respond: () =>
+        jsonResponse(
+          {
+            ...schedules[0],
+            id: 2,
+            delivery_kind: "email",
+            delivery_target: "ops@example.com",
+          },
+          201,
+        ),
+    },
+    {
+      match: (path, method) => path === "/admin/billing" && method === "PUT",
+      respond: () =>
+        jsonResponse(
+          {
+            id: 1,
+            plan_key: "starter",
+            billing_status: "trialing",
+            monthly_price_cents: 14900,
+            max_users: 10,
+            max_schedules: 10,
+            stripe_customer_id: null,
+            stripe_subscription_id: null,
+            created_at: "2026-05-10T12:00:00",
+            updated_at: "2026-05-10T12:01:00",
+          },
+          200,
+        ),
+    },
+    {
+      match: (path, method) => path.startsWith("/reports/schedules/") && path.endsWith("/status") && method === "PATCH",
+      respond: () => jsonResponse({ ...schedules[0], is_enabled: false }),
+    },
+    {
+      match: (path, method) => path.endsWith("/resolve") && method === "PATCH",
+      respond: () =>
+        jsonResponse({
+          id: 1,
+          title: "Replication lag",
+          description: "Lag exceeded threshold",
+          severity: "high",
+          owner: "ops",
+          status: "resolved",
+          created_at: "2026-05-08T10:00:00",
+        }),
+    },
+  ];
+
   return vi.fn(async (url, options = {}) => {
     const method = (options.method || "GET").toUpperCase();
     const path = new URL(String(url)).pathname;
     const key = routeKey(method, path);
     if (staticResponses[key]) return staticResponses[key];
 
-    if (path === "/auth/login" && method === "POST") {
-      return loginResponse;
-    }
-
-    if (path === "/incidents" && method === "GET") {
-      return jsonResponse([
-        {
-          id: 1,
-          title: "Replication lag",
-          description: "Lag exceeded threshold",
-          severity: "high",
-          owner: "ops",
-          status: "open",
-          created_at: "2026-05-08T10:00:00",
-        },
-      ]);
-    }
-
-    if (path === "/incidents" && method === "POST") {
-      return jsonResponse(
-        {
-          id: 2,
-          title: "Created from smoke test",
-          description: "desc",
-          severity: "medium",
-          owner: "analyst@example.com",
-          status: "open",
-          created_at: "2026-05-08T10:05:00",
-        },
-        201,
-      );
-    }
-
-    if (path === "/reports/run" && method === "POST") {
-      return jsonResponse({
-        report_key: "incidents_by_status",
-        columns: ["status", "total"],
-        rows: reportRows,
-        row_count: reportRows.length,
-        truncated: false,
-        duration_ms: 7,
-      });
-    }
-
-    if (path === "/reports/export/csv" && method === "POST") {
-      return {
-        ok: true,
-        status: 200,
-        text: async () => "status,incident_count\nopen,1\n",
-      };
-    }
-
-    if (path === "/reports/schedules" && method === "POST") {
-      return jsonResponse(
-        {
-          ...schedules[0],
-          id: 2,
-          delivery_kind: "email",
-          delivery_target: "ops@example.com",
-        },
-        201,
-      );
-    }
-
-    if (path.startsWith("/reports/schedules/") && path.endsWith("/status") && method === "PATCH") {
-      return jsonResponse({ ...schedules[0], is_enabled: false });
-    }
-
-    if (path.endsWith("/resolve") && method === "PATCH") {
-      return jsonResponse({
-        id: 1,
-        title: "Replication lag",
-        description: "Lag exceeded threshold",
-        severity: "high",
-        owner: "ops",
-        status: "resolved",
-        created_at: "2026-05-08T10:00:00",
-      });
-    }
+    const handler = dynamicHandlers.find((candidate) => candidate.match(path, method));
+    if (handler) return handler.respond();
 
     return jsonResponse({ detail: `Unhandled route ${method} ${path}` }, 500);
   });
@@ -450,10 +528,28 @@ describe("App smoke", () => {
       expect(screen.getByRole("heading", { name: "Scheduled reports (DBA)" })).toBeInTheDocument();
     });
 
+    expect(screen.getByRole("heading", { name: "Business Metrics (DBA)" })).toBeInTheDocument();
+    expect(screen.getByText(/Create first team member/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue("starter")).toBeInTheDocument();
+    expect(screen.getByText(/7 remaining/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Activity trend/i })).toBeInTheDocument();
+
     expect(screen.getByRole("heading", { name: "Scheduler Health (DBA)" })).toBeInTheDocument();
     expect(screen.getByText(/Processed last iteration:/i)).toBeInTheDocument();
 
     expect(screen.getByText(/Local time preview:/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save billing settings" }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, options]) =>
+            String(url).includes("/admin/billing") &&
+            (options?.method || "GET").toUpperCase() === "PUT",
+        ),
+      ).toBe(true);
+    });
 
     fireEvent.change(screen.getByDisplayValue("none"), {
       target: { value: "email" },

@@ -139,20 +139,22 @@ function csvFilenameFromContentDisposition(contentDisposition, fallbackReportKey
   const fallback = `${fallbackReportKey}.csv`;
   if (!contentDisposition) return fallback;
 
+  const sanitizeFilename = (value) => value.replaceAll("/", "_").replaceAll("\\", "_");
+
   const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(contentDisposition);
   if (utf8Match?.[1]) {
     try {
-      return decodeURIComponent(utf8Match[1]).replace(/[/\\]/g, "_");
+      return sanitizeFilename(decodeURIComponent(utf8Match[1]));
     } catch {
-      return utf8Match[1].replace(/[/\\]/g, "_");
+      return sanitizeFilename(utf8Match[1]);
     }
   }
 
   const quotedMatch = /filename="([^"]+)"/i.exec(contentDisposition);
-  if (quotedMatch?.[1]) return quotedMatch[1].replace(/[/\\]/g, "_");
+  if (quotedMatch?.[1]) return sanitizeFilename(quotedMatch[1]);
 
   const bareMatch = /filename=([^;]+)/i.exec(contentDisposition);
-  if (bareMatch?.[1]) return bareMatch[1].trim().replace(/[/\\]/g, "_");
+  if (bareMatch?.[1]) return sanitizeFilename(bareMatch[1].trim());
 
   return fallback;
 }
@@ -195,6 +197,14 @@ function formatSchedulerStamp(isoValue) {
     day: "2-digit",
     timeZoneName: "short",
   });
+}
+
+function formatCurrencyFromCents(cents) {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format((Number(cents) || 0) / 100);
 }
 
 function HealthConnectionMessages({ health, apiUrl }) {
@@ -367,6 +377,86 @@ Card.propTypes = {
   value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
 };
 
+function PlanUsageBanner({ billing, planUsage, kind }) {
+  if (!billing || !planUsage) return null;
+
+  const isUserKind = kind === "users";
+  const used = isUserKind ? planUsage.user_slots_used : planUsage.schedule_slots_used;
+  const remaining = isUserKind ? planUsage.user_slots_remaining : planUsage.schedule_slots_remaining;
+  const atLimit = isUserKind ? planUsage.users_at_limit : planUsage.schedules_at_limit;
+  const limit = isUserKind ? billing.max_users : billing.max_schedules;
+  const noun = isUserKind ? "user seats" : "schedules";
+  const klass = atLimit ? "health-strip health-strip--warn" : "health-strip health-strip--ok";
+
+  return (
+    <div className={klass}>
+      <strong>{billing.plan_key}</strong> · {billing.billing_status} · {used}/{limit} {noun} used · {remaining} remaining
+      {atLimit ? ` · Limit reached for ${noun}` : ""}
+    </div>
+  );
+}
+
+PlanUsageBanner.propTypes = {
+  billing: PropTypes.shape({
+    plan_key: PropTypes.string.isRequired,
+    billing_status: PropTypes.string.isRequired,
+    max_users: PropTypes.number,
+    max_schedules: PropTypes.number,
+  }),
+  planUsage: PropTypes.shape({
+    user_slots_used: PropTypes.number.isRequired,
+    user_slots_remaining: PropTypes.number.isRequired,
+    users_at_limit: PropTypes.bool.isRequired,
+    schedule_slots_used: PropTypes.number.isRequired,
+    schedule_slots_remaining: PropTypes.number.isRequired,
+    schedules_at_limit: PropTypes.bool.isRequired,
+  }),
+  kind: PropTypes.oneOf(["users", "schedules"]).isRequired,
+};
+
+function ActivityTrendChart({ points }) {
+  if (!points || points.length === 0) {
+    return <p className="empty-state">Activity trend will appear once live usage starts accumulating.</p>;
+  }
+
+  const maxValue = Math.max(
+    1,
+    ...points.flatMap((point) => [point.incidents_created, point.report_runs, point.schedules_created]),
+  );
+
+  return (
+    <div className="activity-trend">
+      {points.map((point) => (
+        <div key={point.day} className="activity-trend__day">
+          <div className="activity-trend__bars" aria-label={`${point.label}: ${point.report_runs} runs, ${point.incidents_created} incidents, ${point.schedules_created} schedules`}>
+            <span className="activity-trend__bar activity-trend__bar--runs" style={{ height: `${(point.report_runs / maxValue) * 100}%` }} />
+            <span className="activity-trend__bar activity-trend__bar--incidents" style={{ height: `${(point.incidents_created / maxValue) * 100}%` }} />
+            <span className="activity-trend__bar activity-trend__bar--schedules" style={{ height: `${(point.schedules_created / maxValue) * 100}%` }} />
+          </div>
+          <span className="hint activity-trend__label">{point.label}</span>
+        </div>
+      ))}
+      <div className="activity-trend__legend hint">
+        <span className="activity-trend__legend-item"><i className="activity-trend__dot activity-trend__dot--runs" /> Report runs</span>
+        <span className="activity-trend__legend-item"><i className="activity-trend__dot activity-trend__dot--incidents" /> Incidents</span>
+        <span className="activity-trend__legend-item"><i className="activity-trend__dot activity-trend__dot--schedules" /> Schedules</span>
+      </div>
+    </div>
+  );
+}
+
+ActivityTrendChart.propTypes = {
+  points: PropTypes.arrayOf(
+    PropTypes.shape({
+      day: PropTypes.string.isRequired,
+      label: PropTypes.string.isRequired,
+      incidents_created: PropTypes.number.isRequired,
+      report_runs: PropTypes.number.isRequired,
+      schedules_created: PropTypes.number.isRequired,
+    }),
+  ).isRequired,
+};
+
 function CreateUserSection({
   apiBaseUrl,
   existingUsers,
@@ -383,8 +473,44 @@ function CreateUserSection({
   onDeleteUser,
   userAuditLogs,
   userAuditLoading,
+  billing,
+  planUsage,
 }) {
   const configBroken = apiUrlMismatchForHostedPage(apiBaseUrl);
+  let userAuditContent = null;
+
+  if (userAuditLoading) {
+    userAuditContent = <p className="hint">Loading user admin audit…</p>;
+  } else if (userAuditLogs.length === 0) {
+    userAuditContent = <p className="empty-state">No user admin actions logged yet.</p>;
+  } else {
+    userAuditContent = (
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Actor</th>
+              <th>Action</th>
+              <th>Target</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            {userAuditLogs.map((item) => (
+              <tr key={item.id}>
+                <td className="hint">{item.created_at}</td>
+                <td>{item.actor_email || "deleted user"}</td>
+                <td>{item.action}</td>
+                <td>{item.target_email}</td>
+                <td className="hint">{userAuditDetailsPreview(item.details)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
 
   return (
     <section className="panel">
@@ -402,6 +528,7 @@ function CreateUserSection({
         New accounts need a <strong>unique email</strong> (not your own). Password at least 8 characters. Roles{" "}
         <strong>Viewer</strong>, Analyst, and DBA are all allowed here.
       </p>
+      <PlanUsageBanner billing={billing} planUsage={planUsage} kind="users" />
       {configBroken ? (
         <p className="error-text" role="alert">
           This page is not running on localhost, but the app is still configured to call{" "}
@@ -478,36 +605,7 @@ function CreateUserSection({
       </p>
 
       <h3 className="section-lede">User admin audit trail</h3>
-      {userAuditLoading ? (
-        <p className="hint">Loading user admin audit…</p>
-      ) : userAuditLogs.length === 0 ? (
-        <p className="empty-state">No user admin actions logged yet.</p>
-      ) : (
-        <div className="table-scroll">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Actor</th>
-                <th>Action</th>
-                <th>Target</th>
-                <th>Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {userAuditLogs.map((item) => (
-                <tr key={item.id}>
-                  <td className="hint">{item.created_at}</td>
-                  <td>{item.actor_email || "deleted user"}</td>
-                  <td>{item.action}</td>
-                  <td>{item.target_email}</td>
-                  <td className="hint">{userAuditDetailsPreview(item.details)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {userAuditContent}
 
       <form className="form-grid form-grid--narrow" onSubmit={onSubmit}>
         <input
@@ -530,10 +628,11 @@ function CreateUserSection({
           <option value="Analyst">Analyst</option>
           <option value="DBA">DBA</option>
         </select>
-        <button type="submit" className="btn btn-primary" disabled={busy}>
+        <button type="submit" className="btn btn-primary" disabled={busy || Boolean(planUsage?.users_at_limit)}>
           {busy ? "Creating…" : "Create user"}
         </button>
       </form>
+      {planUsage?.users_at_limit ? <p className="error-text">Increase max users in Billing scaffold before creating another account.</p> : null}
     </section>
   );
 }
@@ -576,6 +675,804 @@ SchedulerHealthPanel.propTypes = {
   }),
 };
 
+/* eslint-disable react/prop-types */
+function SqlReportsSection({
+  reportCatalog,
+  selectedReportKey,
+  setSelectedReportKey,
+  selectedReport,
+  reportParams,
+  setReportParams,
+  reportNotice,
+  reportError,
+  reportBusy,
+  onRunReport,
+  onExportReportCsv,
+  reportResult,
+}) {
+  return (
+    <section className="panel">
+      <h2 className="panel-title">SQL reports (read-only)</h2>
+      <p className="panel-sub">
+        Pre-approved SELECT queries with bound parameters. Executions are audited (DBA can view history).
+      </p>
+      {reportCatalog.length === 0 ? (
+        <p className="empty-state">Loading catalog...</p>
+      ) : (
+        <form className="form-grid" onSubmit={onRunReport}>
+          <label className="field">
+            <span className="field-label">Report</span>
+            <select value={selectedReportKey} onChange={(e) => setSelectedReportKey(e.target.value)}>
+              {reportCatalog.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          {selectedReport?.description ? <p className="hint">{selectedReport.description}</p> : null}
+          {(selectedReport?.params || []).map((p) => (
+            <label key={p.name} className="field">
+              <span className="field-label">
+                {p.name}
+                {p.min != null || p.max != null ? ` (${p.min ?? "?"}–${p.max ?? "?"})` : ""}
+              </span>
+              <input
+                type="number"
+                value={reportParams[p.name] ?? ""}
+                onChange={(e) =>
+                  setReportParams({
+                    ...reportParams,
+                    [p.name]: e.target.value === "" ? "" : Number(e.target.value),
+                  })
+                }
+                min={p.min ?? undefined}
+                max={p.max ?? undefined}
+              />
+            </label>
+          ))}
+          {reportNotice ? <output className="feedback-success">{reportNotice}</output> : null}
+          {reportError ? <p className="error-text">{reportError}</p> : null}
+          <div className="action-row">
+            <button type="submit" className="btn btn-primary" disabled={reportBusy}>
+              {reportBusy ? "Working..." : "Run report"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={!reportResult || reportBusy}
+              onClick={onExportReportCsv}
+            >
+              Export CSV
+            </button>
+          </div>
+        </form>
+      )}
+      {reportResult ? (
+        <div className="stack-gap">
+          <p className="report-meta">
+            {reportResult.row_count} row(s) in {reportResult.duration_ms} ms
+            {reportResult.truncated ? " (truncated to 500 rows)" : ""}
+          </p>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  {(reportResult.columns || []).map((col) => (
+                    <th key={col}>{col}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(reportResult.rows || []).map((row) => (
+                  <tr key={reportRowKey(row)}>
+                    {(reportResult.columns || []).map((col) => (
+                      <td key={col}>{row[col] == null ? "" : String(row[col])}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+SqlReportsSection.propTypes = {
+  reportCatalog: PropTypes.arrayOf(
+    PropTypes.shape({
+      key: PropTypes.string.isRequired,
+      title: PropTypes.string.isRequired,
+    }),
+  ).isRequired,
+  selectedReportKey: PropTypes.string.isRequired,
+  setSelectedReportKey: PropTypes.func.isRequired,
+  selectedReport: PropTypes.shape({
+    description: PropTypes.string,
+    params: PropTypes.arrayOf(
+      PropTypes.shape({
+        name: PropTypes.string.isRequired,
+        min: PropTypes.number,
+        max: PropTypes.number,
+      }),
+    ),
+  }),
+  reportParams: PropTypes.object.isRequired,
+  setReportParams: PropTypes.func.isRequired,
+  reportNotice: PropTypes.string.isRequired,
+  reportError: PropTypes.string.isRequired,
+  reportBusy: PropTypes.bool.isRequired,
+  onRunReport: PropTypes.func.isRequired,
+  onExportReportCsv: PropTypes.func.isRequired,
+  reportResult: PropTypes.shape({
+    row_count: PropTypes.number.isRequired,
+    duration_ms: PropTypes.number.isRequired,
+    truncated: PropTypes.bool.isRequired,
+    columns: PropTypes.arrayOf(PropTypes.string).isRequired,
+    rows: PropTypes.arrayOf(PropTypes.object).isRequired,
+  }),
+};
+
+function ScheduledReportsSection({
+  reportCatalog,
+  scheduleForm,
+  setScheduleForm,
+  scheduleLocalPreview,
+  onCreateSchedule,
+  scheduleBusy,
+  scheduleFeedback,
+  reportSchedules,
+  scheduleActionBusyId,
+  onToggleSchedule,
+  billing,
+  planUsage,
+}) {
+  const hasDeliveryTarget = scheduleForm.delivery_kind === "email" || scheduleForm.delivery_kind === "webhook";
+
+  return (
+    <section className="panel">
+      <h2 className="panel-title">Scheduled reports (DBA)</h2>
+      <p className="panel-sub">Run approved reports automatically and route completion/failure notifications.</p>
+      <PlanUsageBanner billing={billing} planUsage={planUsage} kind="schedules" />
+
+      <form className="form-grid schedule-form" onSubmit={onCreateSchedule}>
+        <label className="field">
+          <span className="field-label">Report</span>
+          <select value={scheduleForm.report_key} onChange={(e) => setScheduleForm({ ...scheduleForm, report_key: e.target.value })}>
+            {reportCatalog.map((r) => (
+              <option key={r.key} value={r.key}>
+                {r.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span className="field-label">Cadence</span>
+          <select value={scheduleForm.cadence} onChange={(e) => setScheduleForm({ ...scheduleForm, cadence: e.target.value })}>
+            <option value="daily">daily</option>
+            <option value="weekly">weekly</option>
+          </select>
+        </label>
+        {scheduleForm.cadence === "weekly" ? (
+          <label className="field">
+            <span className="field-label">Weekday (UTC)</span>
+            <select
+              value={String(scheduleForm.weekday_utc)}
+              onChange={(e) => setScheduleForm({ ...scheduleForm, weekday_utc: Number(e.target.value) })}
+            >
+              {WEEKDAY_LABELS.map((label, idx) => (
+                <option key={label} value={idx}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        <label className="field">
+          <span className="field-label">Hour (UTC)</span>
+          <input
+            type="number"
+            min="0"
+            max="23"
+            value={scheduleForm.run_hour_utc}
+            onChange={(e) => setScheduleForm({ ...scheduleForm, run_hour_utc: Number(e.target.value) })}
+          />
+        </label>
+        <label className="field">
+          <span className="field-label">Minute (UTC)</span>
+          <input
+            type="number"
+            min="0"
+            max="59"
+            value={scheduleForm.run_minute_utc}
+            onChange={(e) => setScheduleForm({ ...scheduleForm, run_minute_utc: Number(e.target.value) })}
+          />
+        </label>
+        <p className="hint schedule-local-preview">
+          Local time preview: {scheduleLocalPreview} (stored and executed in UTC)
+        </p>
+        <label className="field">
+          <span className="field-label">Delivery</span>
+          <select
+            value={scheduleForm.delivery_kind}
+            onChange={(e) => setScheduleForm({ ...scheduleForm, delivery_kind: e.target.value })}
+          >
+            <option value="none">none</option>
+            <option value="email">email</option>
+            <option value="webhook">webhook</option>
+          </select>
+        </label>
+        {hasDeliveryTarget ? (
+          <label className="field">
+            <span className="field-label">Delivery target</span>
+            <input
+              type="text"
+              required
+              placeholder={scheduleForm.delivery_kind === "email" ? "ops@example.com" : "https://example.com/hook"}
+              value={scheduleForm.delivery_target}
+              onChange={(e) => setScheduleForm({ ...scheduleForm, delivery_target: e.target.value })}
+            />
+          </label>
+        ) : null}
+        <div className="schedule-toggle-row">
+          <label className="field field--inline">
+            <input
+              type="checkbox"
+              checked={scheduleForm.notify_on_success}
+              onChange={(e) => setScheduleForm({ ...scheduleForm, notify_on_success: e.target.checked })}
+            />
+            <span className="field-label">Notify on success</span>
+          </label>
+          <label className="field field--inline">
+            <input
+              type="checkbox"
+              checked={scheduleForm.notify_on_failure}
+              onChange={(e) => setScheduleForm({ ...scheduleForm, notify_on_failure: e.target.checked })}
+            />
+            <span className="field-label">Notify on failure</span>
+          </label>
+        </div>
+        <button
+          type="submit"
+          className="btn btn-primary schedule-submit"
+          disabled={scheduleBusy || Boolean(planUsage?.schedules_at_limit)}
+        >
+          {scheduleBusy ? "Saving…" : "Create schedule"}
+        </button>
+      </form>
+      {scheduleFeedback ? <p className="hint">{scheduleFeedback}</p> : null}
+      {planUsage?.schedules_at_limit ? <p className="error-text">Increase max schedules in Billing scaffold before adding another schedule.</p> : null}
+
+      {reportSchedules.length === 0 ? (
+        <p className="empty-state">No schedules created yet.</p>
+      ) : (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Report</th>
+                <th>Cadence</th>
+                <th>Next run</th>
+                <th>Delivery</th>
+                <th>Last result</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reportSchedules.map((schedule) => (
+                <tr key={schedule.id}>
+                  <td>{schedule.report_key}</td>
+                  <td>
+                    {schedule.cadence}
+                    {schedule.cadence === "weekly" ? ` (${WEEKDAY_LABELS[schedule.weekday_utc ?? 0]})` : ""}
+                    {` @ ${String(schedule.run_hour_utc).padStart(2, "0")}:${String(schedule.run_minute_utc).padStart(2, "0")} UTC`}
+                  </td>
+                  <td className="hint">
+                    <div>{schedule.next_run_at}</div>
+                    <div className="hint">Local: {formatUtcIsoAsLocal(schedule.next_run_at)}</div>
+                  </td>
+                  <td>
+                    {schedule.delivery_kind}
+                    {schedule.delivery_target ? `: ${schedule.delivery_target}` : ""}
+                  </td>
+                  <td className="hint">{schedule.last_error || (schedule.last_success_at ? "ok" : "—")}</td>
+                  <td>{schedule.is_enabled ? "enabled" : "disabled"}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      disabled={scheduleActionBusyId === schedule.id}
+                      onClick={() => onToggleSchedule(schedule)}
+                    >
+                      {schedule.is_enabled ? "Disable" : "Enable"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+ScheduledReportsSection.propTypes = {
+  reportCatalog: PropTypes.arrayOf(
+    PropTypes.shape({
+      key: PropTypes.string.isRequired,
+      title: PropTypes.string.isRequired,
+    }),
+  ).isRequired,
+  scheduleForm: PropTypes.shape({
+    report_key: PropTypes.string.isRequired,
+    cadence: PropTypes.string.isRequired,
+    weekday_utc: PropTypes.number,
+    run_hour_utc: PropTypes.number.isRequired,
+    run_minute_utc: PropTypes.number.isRequired,
+    delivery_kind: PropTypes.string.isRequired,
+    delivery_target: PropTypes.string.isRequired,
+    notify_on_success: PropTypes.bool.isRequired,
+    notify_on_failure: PropTypes.bool.isRequired,
+  }).isRequired,
+  setScheduleForm: PropTypes.func.isRequired,
+  scheduleLocalPreview: PropTypes.string.isRequired,
+  onCreateSchedule: PropTypes.func.isRequired,
+  scheduleBusy: PropTypes.bool.isRequired,
+  scheduleFeedback: PropTypes.string.isRequired,
+  reportSchedules: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.number.isRequired,
+      report_key: PropTypes.string.isRequired,
+      cadence: PropTypes.string.isRequired,
+      weekday_utc: PropTypes.number,
+      run_hour_utc: PropTypes.number.isRequired,
+      run_minute_utc: PropTypes.number.isRequired,
+      next_run_at: PropTypes.string,
+      delivery_kind: PropTypes.string.isRequired,
+      delivery_target: PropTypes.string,
+      last_error: PropTypes.string,
+      last_success_at: PropTypes.string,
+      is_enabled: PropTypes.bool.isRequired,
+    }),
+  ).isRequired,
+  scheduleActionBusyId: PropTypes.oneOfType([PropTypes.number, PropTypes.oneOf([null])]),
+  onToggleSchedule: PropTypes.func.isRequired,
+  billing: PropTypes.object,
+  planUsage: PropTypes.object,
+};
+
+function ReportAuditSection({
+  reportAuditViewLimit,
+  setReportAuditViewLimit,
+  onRefreshReportRuns,
+  reportRunsLoading,
+  visibleReportRuns,
+  reportRuns,
+  reportRunsStatus,
+}) {
+  return (
+    <section className="panel">
+      <h2 className="panel-title">Report audit trail (DBA)</h2>
+      <div className="report-audit-controls">
+        <label htmlFor="report-audit-view-limit"><strong>Audit view</strong></label>
+        <select
+          id="report-audit-view-limit"
+          data-testid="report-audit-view-limit"
+          value={reportAuditViewLimit}
+          onChange={(e) => setReportAuditViewLimit(e.target.value)}
+        >
+          <option value="3">Last 3</option>
+          <option value="10">Last 10</option>
+          <option value="25">Last 25</option>
+          <option value="all">Show all</option>
+        </select>
+        <button type="button" className="btn btn-ghost" onClick={onRefreshReportRuns} disabled={reportRunsLoading}>
+          {reportRunsLoading ? "Refreshing…" : "Refresh"}
+        </button>
+        <span className="hint">
+          {reportAuditSummary(reportAuditViewLimit, visibleReportRuns.length, reportRuns.length, reportRunsStatus)}
+        </span>
+      </div>
+      <p className="panel-sub">Recent whitelisted report executions.</p>
+      {reportRuns.length === 0 ? (
+        <p className="empty-state">No executions logged yet.</p>
+      ) : (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>User</th>
+                <th>Report</th>
+                <th>Rows</th>
+                <th>ms</th>
+                <th>OK</th>
+                <th>Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleReportRuns.map((run) => (
+                <tr key={run.id}>
+                  <td className="hint">{run.created_at}</td>
+                  <td>{run.user_email}</td>
+                  <td>{run.report_key}</td>
+                  <td>{run.row_count ?? "—"}</td>
+                  <td>{run.duration_ms ?? "—"}</td>
+                  <td>{run.success ? "yes" : "no"}</td>
+                  <td className="hint" title={run.error_message || ""}>
+                    {auditErrorPreview(run.error_message)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+ReportAuditSection.propTypes = {
+  reportAuditViewLimit: PropTypes.string.isRequired,
+  setReportAuditViewLimit: PropTypes.func.isRequired,
+  onRefreshReportRuns: PropTypes.func.isRequired,
+  reportRunsLoading: PropTypes.bool.isRequired,
+  visibleReportRuns: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.number.isRequired,
+      created_at: PropTypes.string.isRequired,
+      user_email: PropTypes.string.isRequired,
+      report_key: PropTypes.string.isRequired,
+      row_count: PropTypes.number,
+      duration_ms: PropTypes.number,
+      success: PropTypes.bool.isRequired,
+      error_message: PropTypes.string,
+    }),
+  ).isRequired,
+  reportRuns: PropTypes.arrayOf(PropTypes.object).isRequired,
+  reportRunsStatus: PropTypes.string.isRequired,
+};
+
+function IncidentsSection({
+  incidents,
+  incidentFilters,
+  onIncidentFilterChange,
+  onClearIncidentFilters,
+  canEditIncidents,
+  editingIncidentId,
+  incidentEditForm,
+  incidentEditError,
+  onStartIncidentEdit,
+  onChangeIncidentEditField,
+  onSaveIncidentEdit,
+  onCancelIncidentEdit,
+  canResolve,
+  onResolveIncident,
+}) {
+  function renderEditActions(incident) {
+    if (!canEditIncidents) return null;
+    if (editingIncidentId !== incident.id) {
+      return (
+        <button type="button" className="btn btn-ghost" onClick={() => onStartIncidentEdit(incident)}>
+          Edit
+        </button>
+      );
+    }
+    return (
+      <>
+        <button type="button" className="btn btn-primary" onClick={() => onSaveIncidentEdit(incident.id)}>
+          Save
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={onCancelIncidentEdit}>
+          Cancel
+        </button>
+      </>
+    );
+  }
+
+  return (
+    <section className="stack-gap">
+      <h2 className="panel-title">Incidents</h2>
+      <div className="incident-filters">
+        <input
+          type="text"
+          placeholder="Search title, description, owner"
+          value={incidentFilters.search}
+          onChange={(e) => onIncidentFilterChange("search", e.target.value)}
+        />
+        <select value={incidentFilters.status} onChange={(e) => onIncidentFilterChange("status", e.target.value)}>
+          <option value="">All status</option>
+          <option value="open">open</option>
+          <option value="resolved">resolved</option>
+        </select>
+        <select value={incidentFilters.severity} onChange={(e) => onIncidentFilterChange("severity", e.target.value)}>
+          <option value="">All severity</option>
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+        </select>
+        <input
+          type="text"
+          placeholder="Owner contains"
+          value={incidentFilters.owner}
+          onChange={(e) => onIncidentFilterChange("owner", e.target.value)}
+        />
+        <input
+          type="date"
+          value={incidentFilters.startDate}
+          onChange={(e) => onIncidentFilterChange("startDate", e.target.value)}
+        />
+        <input
+          type="date"
+          value={incidentFilters.endDate}
+          onChange={(e) => onIncidentFilterChange("endDate", e.target.value)}
+        />
+        <select value={incidentFilters.sort} onChange={(e) => onIncidentFilterChange("sort", e.target.value)}>
+          <option value="newest">Sort: newest</option>
+          <option value="oldest">Sort: oldest</option>
+          <option value="severity">Sort: severity</option>
+        </select>
+        <button type="button" className="btn btn-ghost" onClick={onClearIncidentFilters}>
+          Clear filters
+        </button>
+      </div>
+      {incidents.length === 0 ? (
+        <p className="empty-state">No incidents yet.</p>
+      ) : (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Description</th>
+                <th>Severity</th>
+                <th>Owner</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {incidents.map((incident) => (
+                <tr key={incident.id}>
+                  <td>
+                    {editingIncidentId === incident.id ? (
+                      <input
+                        className="inline-input"
+                        value={incidentEditForm.title}
+                        onChange={(e) => onChangeIncidentEditField("title", e.target.value)}
+                      />
+                    ) : (
+                      incident.title
+                    )}
+                  </td>
+                  <td>
+                    {editingIncidentId === incident.id ? (
+                      <input
+                        className="inline-input"
+                        value={incidentEditForm.description}
+                        onChange={(e) => onChangeIncidentEditField("description", e.target.value)}
+                      />
+                    ) : (
+                      incident.description
+                    )}
+                  </td>
+                  <td>
+                    {editingIncidentId === incident.id ? (
+                      <select
+                        className="inline-input"
+                        value={incidentEditForm.severity}
+                        onChange={(e) => onChangeIncidentEditField("severity", e.target.value)}
+                      >
+                        <option value="low">low</option>
+                        <option value="medium">medium</option>
+                        <option value="high">high</option>
+                      </select>
+                    ) : (
+                      incident.severity
+                    )}
+                  </td>
+                  <td>
+                    {editingIncidentId === incident.id ? (
+                      <input
+                        className="inline-input"
+                        value={incidentEditForm.owner}
+                        onChange={(e) => onChangeIncidentEditField("owner", e.target.value)}
+                      />
+                    ) : (
+                      incident.owner
+                    )}
+                  </td>
+                  <td>{incident.status}</td>
+                  <td>
+                    <div className="action-row">
+                      <IncidentResolveCell incident={incident} canResolve={canResolve} onResolve={onResolveIncident} />
+                      {renderEditActions(incident)}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {incidentEditError ? <p className="error-text">{incidentEditError}</p> : null}
+    </section>
+  );
+}
+
+IncidentsSection.propTypes = {
+  incidents: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.number.isRequired,
+      title: PropTypes.string.isRequired,
+      description: PropTypes.string.isRequired,
+      severity: PropTypes.string.isRequired,
+      owner: PropTypes.string.isRequired,
+      status: PropTypes.string.isRequired,
+    }),
+  ).isRequired,
+  incidentFilters: PropTypes.shape({
+    search: PropTypes.string.isRequired,
+    status: PropTypes.string.isRequired,
+    severity: PropTypes.string.isRequired,
+    owner: PropTypes.string.isRequired,
+    startDate: PropTypes.string.isRequired,
+    endDate: PropTypes.string.isRequired,
+    sort: PropTypes.string.isRequired,
+  }).isRequired,
+  onIncidentFilterChange: PropTypes.func.isRequired,
+  onClearIncidentFilters: PropTypes.func.isRequired,
+  canEditIncidents: PropTypes.bool.isRequired,
+  editingIncidentId: PropTypes.oneOfType([PropTypes.number, PropTypes.oneOf([null])]),
+  incidentEditForm: PropTypes.shape({
+    title: PropTypes.string.isRequired,
+    description: PropTypes.string.isRequired,
+    severity: PropTypes.string.isRequired,
+    owner: PropTypes.string.isRequired,
+  }).isRequired,
+  incidentEditError: PropTypes.string.isRequired,
+  onStartIncidentEdit: PropTypes.func.isRequired,
+  onChangeIncidentEditField: PropTypes.func.isRequired,
+  onSaveIncidentEdit: PropTypes.func.isRequired,
+  onCancelIncidentEdit: PropTypes.func.isRequired,
+  canResolve: PropTypes.bool.isRequired,
+  onResolveIncident: PropTypes.func.isRequired,
+};
+/* eslint-enable react/prop-types */
+
+function BusinessOpsPanel({ adminOverview, billingForm, setBillingForm, billingBusy, billingFeedback, onSaveBilling }) {
+  if (!adminOverview) {
+    return (
+      <section className="panel">
+        <h2 className="panel-title">Business Metrics (DBA)</h2>
+        <p className="empty-state">Loading business metrics...</p>
+      </section>
+    );
+  }
+
+  const { metrics, onboarding, plan_usage: planUsage, activity_trend: activityTrend } = adminOverview;
+
+  return (
+    <section className="panel">
+      <h2 className="panel-title">Business Metrics (DBA)</h2>
+      <div className="summary-grid summary-grid--compact">
+        <Card label="Active Users" value={`${metrics.active_users}/${metrics.total_users}`} />
+        <Card label="Open Incidents" value={metrics.open_incidents} />
+        <Card label="Enabled Schedules" value={metrics.enabled_schedules} />
+        <Card label="Runs (24h)" value={metrics.report_runs_last_24h} />
+      </div>
+      <div className="summary-grid summary-grid--compact">
+        <Card label="Successful Runs (24h)" value={metrics.successful_report_runs_last_24h} />
+        <Card
+          label="Onboarding"
+          value={`${metrics.onboarding_completed_steps}/${metrics.onboarding_total_steps}`}
+        />
+        <Card label="Plan" value={billingForm.plan_key || "starter"} />
+        <Card label="MRR Scaffold" value={formatCurrencyFromCents(billingForm.monthly_price_cents)} />
+      </div>
+      <div className="summary-grid summary-grid--compact">
+        <Card label="User Seats Left" value={planUsage.user_slots_remaining} />
+        <Card label="Schedule Slots Left" value={planUsage.schedule_slots_remaining} />
+        <Card label="Billing Status" value={billingForm.billing_status} />
+        <Card label="Plan Price" value={formatCurrencyFromCents(billingForm.monthly_price_cents)} />
+      </div>
+
+      <h3 className="section-lede">Billing scaffold</h3>
+      <form className="form-grid schedule-form" onSubmit={onSaveBilling}>
+        <label className="field">
+          <span className="field-label">Plan key</span>
+          <input
+            type="text"
+            value={billingForm.plan_key}
+            onChange={(e) => setBillingForm({ ...billingForm, plan_key: e.target.value })}
+          />
+        </label>
+        <label className="field">
+          <span className="field-label">Billing status</span>
+          <input
+            type="text"
+            value={billingForm.billing_status}
+            onChange={(e) => setBillingForm({ ...billingForm, billing_status: e.target.value })}
+          />
+        </label>
+        <label className="field">
+          <span className="field-label">Monthly price (cents)</span>
+          <input
+            type="number"
+            min="0"
+            value={billingForm.monthly_price_cents}
+            onChange={(e) => setBillingForm({ ...billingForm, monthly_price_cents: Number(e.target.value) })}
+          />
+        </label>
+        <label className="field">
+          <span className="field-label">Max users</span>
+          <input
+            type="number"
+            min="1"
+            value={billingForm.max_users}
+            onChange={(e) => setBillingForm({ ...billingForm, max_users: Number(e.target.value) })}
+          />
+        </label>
+        <label className="field">
+          <span className="field-label">Max schedules</span>
+          <input
+            type="number"
+            min="1"
+            value={billingForm.max_schedules}
+            onChange={(e) => setBillingForm({ ...billingForm, max_schedules: Number(e.target.value) })}
+          />
+        </label>
+        <label className="field">
+          <span className="field-label">Stripe customer ID</span>
+          <input
+            type="text"
+            value={billingForm.stripe_customer_id}
+            onChange={(e) => setBillingForm({ ...billingForm, stripe_customer_id: e.target.value })}
+          />
+        </label>
+        <label className="field">
+          <span className="field-label">Stripe subscription ID</span>
+          <input
+            type="text"
+            value={billingForm.stripe_subscription_id}
+            onChange={(e) => setBillingForm({ ...billingForm, stripe_subscription_id: e.target.value })}
+          />
+        </label>
+        <button type="submit" className="btn btn-primary schedule-submit" disabled={billingBusy}>
+          {billingBusy ? "Saving…" : "Save billing settings"}
+        </button>
+      </form>
+      {billingFeedback ? <p className="hint">{billingFeedback}</p> : null}
+
+      <h3 className="section-lede">Activity trend (last 7 days)</h3>
+      <ActivityTrendChart points={activityTrend} />
+
+      <h3 className="section-lede">Onboarding progress</h3>
+      <div className="onboarding-list">
+        {onboarding.map((item) => (
+          <div key={item.key} className={`onboarding-item ${item.completed ? "onboarding-item--done" : ""}`}>
+            <strong>{item.completed ? "Done" : "Pending"}</strong> {item.label}
+            {item.completed_at ? <span className="hint"> · {formatUtcIsoAsLocal(item.completed_at)}</span> : null}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+BusinessOpsPanel.propTypes = {
+  adminOverview: PropTypes.object,
+  billingForm: PropTypes.object.isRequired,
+  setBillingForm: PropTypes.func.isRequired,
+  billingBusy: PropTypes.bool.isRequired,
+  billingFeedback: PropTypes.string.isRequired,
+  onSaveBilling: PropTypes.func.isRequired,
+};
+
 CreateUserSection.propTypes = {
   apiBaseUrl: PropTypes.string.isRequired,
   existingUsers: PropTypes.arrayOf(
@@ -602,11 +1499,14 @@ CreateUserSection.propTypes = {
   onDeleteUser: PropTypes.func.isRequired,
   userAuditLogs: PropTypes.arrayOf(PropTypes.object).isRequired,
   userAuditLoading: PropTypes.bool.isRequired,
+  billing: PropTypes.object,
+  planUsage: PropTypes.object,
 };
 
 function DashboardBody({
   summary,
   schedulerHealth,
+  adminOverview,
   reportCatalog,
   selectedReportKey,
   setSelectedReportKey,
@@ -658,27 +1558,6 @@ function DashboardBody({
     return REPORT_AUDIT_VIEW_LIMIT_OPTIONS.has(raw) ? raw : "3";
   });
 
-  function renderEditActions(incident) {
-    if (!canEditIncidents) return null;
-    if (editingIncidentId !== incident.id) {
-      return (
-        <button type="button" className="btn btn-ghost" onClick={() => onStartIncidentEdit(incident)}>
-          Edit
-        </button>
-      );
-    }
-    return (
-      <>
-        <button type="button" className="btn btn-primary" onClick={() => onSaveIncidentEdit(incident.id)}>
-          Save
-        </button>
-        <button type="button" className="btn btn-ghost" onClick={onCancelIncidentEdit}>
-          Cancel
-        </button>
-      </>
-    );
-  }
-
   const visibleReportRuns =
     reportAuditViewLimit === "all"
       ? reportRuns
@@ -711,321 +1590,48 @@ function DashboardBody({
       </section>
 
       {canManageUsers ? <SchedulerHealthPanel schedulerHealth={schedulerHealth} /> : null}
-
-      <section className="panel">
-        <h2 className="panel-title">SQL reports (read-only)</h2>
-        <p className="panel-sub">
-          Pre-approved SELECT queries with bound parameters. Executions are audited (DBA can view history).
-        </p>
-        {reportCatalog.length === 0 ? (
-          <p className="empty-state">Loading catalog...</p>
-        ) : (
-          <form className="form-grid" onSubmit={onRunReport}>
-            <label className="field">
-              <span className="field-label">Report</span>
-              <select value={selectedReportKey} onChange={(e) => setSelectedReportKey(e.target.value)}>
-                {reportCatalog.map((r) => (
-                  <option key={r.key} value={r.key}>
-                    {r.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {selectedReport?.description ? <p className="hint">{selectedReport.description}</p> : null}
-            {(selectedReport?.params || []).map((p) => (
-              <label key={p.name} className="field">
-                <span className="field-label">
-                  {p.name}
-                  {p.min != null || p.max != null ? ` (${p.min ?? "?"}–${p.max ?? "?"})` : ""}
-                </span>
-                <input
-                  type="number"
-                  value={reportParams[p.name] ?? ""}
-                  onChange={(e) =>
-                    setReportParams({
-                      ...reportParams,
-                      [p.name]: e.target.value === "" ? "" : Number(e.target.value),
-                    })
-                  }
-                  min={p.min ?? undefined}
-                  max={p.max ?? undefined}
-                />
-              </label>
-            ))}
-            {reportNotice ? <output className="feedback-success">{reportNotice}</output> : null}
-            {reportError ? <p className="error-text">{reportError}</p> : null}
-            <div className="action-row">
-              <button type="submit" className="btn btn-primary" disabled={reportBusy}>
-                {reportBusy ? "Working..." : "Run report"}
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                disabled={!reportResult || reportBusy}
-                onClick={onExportReportCsv}
-              >
-                Export CSV
-              </button>
-            </div>
-          </form>
-        )}
-        {reportResult ? (
-          <div className="stack-gap">
-            <p className="report-meta">
-              {reportResult.row_count} row(s) in {reportResult.duration_ms} ms
-              {reportResult.truncated ? " (truncated to 500 rows)" : ""}
-            </p>
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    {(reportResult.columns || []).map((col) => (
-                      <th key={col}>{col}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {(reportResult.rows || []).map((row) => (
-                    <tr key={reportRowKey(row)}>
-                      {(reportResult.columns || []).map((col) => (
-                        <td key={col}>{row[col] == null ? "" : String(row[col])}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ) : null}
-      </section>
+      <SqlReportsSection
+        reportCatalog={reportCatalog}
+        selectedReportKey={selectedReportKey}
+        setSelectedReportKey={setSelectedReportKey}
+        selectedReport={selectedReport}
+        reportParams={reportParams}
+        setReportParams={setReportParams}
+        reportNotice={reportNotice}
+        reportError={reportError}
+        reportBusy={reportBusy}
+        onRunReport={onRunReport}
+        onExportReportCsv={onExportReportCsv}
+        reportResult={reportResult}
+      />
 
       {canManageUsers ? (
-        <section className="panel">
-          <h2 className="panel-title">Scheduled reports (DBA)</h2>
-          <p className="panel-sub">Run approved reports automatically and route completion/failure notifications.</p>
-
-          <form className="form-grid schedule-form" onSubmit={onCreateSchedule}>
-            <label className="field">
-              <span className="field-label">Report</span>
-              <select
-                value={scheduleForm.report_key}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, report_key: e.target.value })}
-              >
-                {reportCatalog.map((r) => (
-                  <option key={r.key} value={r.key}>
-                    {r.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span className="field-label">Cadence</span>
-              <select
-                value={scheduleForm.cadence}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, cadence: e.target.value })}
-              >
-                <option value="daily">daily</option>
-                <option value="weekly">weekly</option>
-              </select>
-            </label>
-            {scheduleForm.cadence === "weekly" ? (
-              <label className="field">
-                <span className="field-label">Weekday (UTC)</span>
-                <select
-                  value={String(scheduleForm.weekday_utc)}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, weekday_utc: Number(e.target.value) })}
-                >
-                  {WEEKDAY_LABELS.map((label, idx) => (
-                    <option key={label} value={idx}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            <label className="field">
-              <span className="field-label">Hour (UTC)</span>
-              <input
-                type="number"
-                min="0"
-                max="23"
-                value={scheduleForm.run_hour_utc}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, run_hour_utc: Number(e.target.value) })}
-              />
-            </label>
-            <label className="field">
-              <span className="field-label">Minute (UTC)</span>
-              <input
-                type="number"
-                min="0"
-                max="59"
-                value={scheduleForm.run_minute_utc}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, run_minute_utc: Number(e.target.value) })}
-              />
-            </label>
-            <p className="hint schedule-local-preview">
-              Local time preview: {scheduleLocalPreview} (stored and executed in UTC)
-            </p>
-            <label className="field">
-              <span className="field-label">Delivery</span>
-              <select
-                value={scheduleForm.delivery_kind}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, delivery_kind: e.target.value })}
-              >
-                <option value="none">none</option>
-                <option value="email">email</option>
-                <option value="webhook">webhook</option>
-              </select>
-            </label>
-            {scheduleForm.delivery_kind !== "none" ? (
-              <label className="field">
-                <span className="field-label">Delivery target</span>
-                <input
-                  type="text"
-                  required
-                  placeholder={scheduleForm.delivery_kind === "email" ? "ops@example.com" : "https://example.com/hook"}
-                  value={scheduleForm.delivery_target}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, delivery_target: e.target.value })}
-                />
-              </label>
-            ) : null}
-            <div className="schedule-toggle-row">
-              <label className="field field--inline">
-                <input
-                  type="checkbox"
-                  checked={scheduleForm.notify_on_success}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, notify_on_success: e.target.checked })}
-                />
-                <span className="field-label">Notify on success</span>
-              </label>
-              <label className="field field--inline">
-                <input
-                  type="checkbox"
-                  checked={scheduleForm.notify_on_failure}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, notify_on_failure: e.target.checked })}
-                />
-                <span className="field-label">Notify on failure</span>
-              </label>
-            </div>
-            <button type="submit" className="btn btn-primary schedule-submit" disabled={scheduleBusy}>
-              {scheduleBusy ? "Saving…" : "Create schedule"}
-            </button>
-          </form>
-          {scheduleFeedback ? <p className="hint">{scheduleFeedback}</p> : null}
-
-          {reportSchedules.length === 0 ? (
-            <p className="empty-state">No schedules created yet.</p>
-          ) : (
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Report</th>
-                    <th>Cadence</th>
-                    <th>Next run</th>
-                    <th>Delivery</th>
-                    <th>Last result</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reportSchedules.map((schedule) => (
-                    <tr key={schedule.id}>
-                      <td>{schedule.report_key}</td>
-                      <td>
-                        {schedule.cadence}
-                        {schedule.cadence === "weekly" ? ` (${WEEKDAY_LABELS[schedule.weekday_utc ?? 0]})` : ""}
-                        {` @ ${String(schedule.run_hour_utc).padStart(2, "0")}:${String(schedule.run_minute_utc).padStart(2, "0")} UTC`}
-                      </td>
-                      <td className="hint">
-                        <div>{schedule.next_run_at}</div>
-                        <div className="hint">Local: {formatUtcIsoAsLocal(schedule.next_run_at)}</div>
-                      </td>
-                      <td>
-                        {schedule.delivery_kind}
-                        {schedule.delivery_target ? `: ${schedule.delivery_target}` : ""}
-                      </td>
-                      <td className="hint">{schedule.last_error || (schedule.last_success_at ? "ok" : "—")}</td>
-                      <td>{schedule.is_enabled ? "enabled" : "disabled"}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          disabled={scheduleActionBusyId === schedule.id}
-                          onClick={() => onToggleSchedule(schedule)}
-                        >
-                          {schedule.is_enabled ? "Disable" : "Enable"}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+        <ScheduledReportsSection
+          reportCatalog={reportCatalog}
+          scheduleForm={scheduleForm}
+          setScheduleForm={setScheduleForm}
+          scheduleLocalPreview={scheduleLocalPreview}
+          onCreateSchedule={onCreateSchedule}
+          scheduleBusy={scheduleBusy}
+          scheduleFeedback={scheduleFeedback}
+          reportSchedules={reportSchedules}
+          scheduleActionBusyId={scheduleActionBusyId}
+          onToggleSchedule={onToggleSchedule}
+          billing={adminOverview?.billing}
+          planUsage={adminOverview?.plan_usage}
+        />
       ) : null}
 
       {canManageUsers ? (
-        <section className="panel">
-          <h2 className="panel-title">Report audit trail (DBA)</h2>
-          <div className="report-audit-controls">
-            <label htmlFor="report-audit-view-limit"><strong>Audit view</strong></label>
-            <select
-              id="report-audit-view-limit"
-              data-testid="report-audit-view-limit"
-              value={reportAuditViewLimit}
-              onChange={(e) => setReportAuditViewLimit(e.target.value)}
-            >
-              <option value="3">Last 3</option>
-              <option value="10">Last 10</option>
-              <option value="25">Last 25</option>
-              <option value="all">Show all</option>
-            </select>
-            <button type="button" className="btn btn-ghost" onClick={onRefreshReportRuns} disabled={reportRunsLoading}>
-              {reportRunsLoading ? "Refreshing…" : "Refresh"}
-            </button>
-            <span className="hint">
-              {reportAuditSummary(reportAuditViewLimit, visibleReportRuns.length, reportRuns.length, reportRunsStatus)}
-            </span>
-          </div>
-          <p className="panel-sub">Recent whitelisted report executions.</p>
-          {reportRuns.length === 0 ? (
-            <p className="empty-state">No executions logged yet.</p>
-          ) : (
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>User</th>
-                    <th>Report</th>
-                    <th>Rows</th>
-                    <th>ms</th>
-                    <th>OK</th>
-                    <th>Error</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleReportRuns.map((run) => (
-                    <tr key={run.id}>
-                      <td className="hint">{run.created_at}</td>
-                      <td>{run.user_email}</td>
-                      <td>{run.report_key}</td>
-                      <td>{run.row_count ?? "—"}</td>
-                      <td>{run.duration_ms ?? "—"}</td>
-                      <td>{run.success ? "yes" : "no"}</td>
-                      <td className="hint" title={run.error_message || ""}>
-                        {auditErrorPreview(run.error_message)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+        <ReportAuditSection
+          reportAuditViewLimit={reportAuditViewLimit}
+          setReportAuditViewLimit={setReportAuditViewLimit}
+          onRefreshReportRuns={onRefreshReportRuns}
+          reportRunsLoading={reportRunsLoading}
+          visibleReportRuns={visibleReportRuns}
+          reportRuns={reportRuns}
+          reportRunsStatus={reportRunsStatus}
+        />
       ) : null}
 
       {canCreateIncident ? (
@@ -1065,132 +1671,22 @@ function DashboardBody({
         </p>
       )}
 
-      <section className="stack-gap">
-        <h2 className="panel-title">Incidents</h2>
-        <div className="incident-filters">
-          <input
-            type="text"
-            placeholder="Search title, description, owner"
-            value={incidentFilters.search}
-            onChange={(e) => onIncidentFilterChange("search", e.target.value)}
-          />
-          <select value={incidentFilters.status} onChange={(e) => onIncidentFilterChange("status", e.target.value)}>
-            <option value="">All status</option>
-            <option value="open">open</option>
-            <option value="resolved">resolved</option>
-          </select>
-          <select value={incidentFilters.severity} onChange={(e) => onIncidentFilterChange("severity", e.target.value)}>
-            <option value="">All severity</option>
-            <option value="low">low</option>
-            <option value="medium">medium</option>
-            <option value="high">high</option>
-          </select>
-          <input
-            type="text"
-            placeholder="Owner contains"
-            value={incidentFilters.owner}
-            onChange={(e) => onIncidentFilterChange("owner", e.target.value)}
-          />
-          <input
-            type="date"
-            value={incidentFilters.startDate}
-            onChange={(e) => onIncidentFilterChange("startDate", e.target.value)}
-          />
-          <input
-            type="date"
-            value={incidentFilters.endDate}
-            onChange={(e) => onIncidentFilterChange("endDate", e.target.value)}
-          />
-          <select value={incidentFilters.sort} onChange={(e) => onIncidentFilterChange("sort", e.target.value)}>
-            <option value="newest">Sort: newest</option>
-            <option value="oldest">Sort: oldest</option>
-            <option value="severity">Sort: severity</option>
-          </select>
-          <button type="button" className="btn btn-ghost" onClick={onClearIncidentFilters}>
-            Clear filters
-          </button>
-        </div>
-        {incidents.length === 0 ? (
-          <p className="empty-state">No incidents yet.</p>
-        ) : (
-          <div className="table-scroll">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Title</th>
-                  <th>Description</th>
-                  <th>Severity</th>
-                  <th>Owner</th>
-                  <th>Status</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {incidents.map((incident) => (
-                  <tr key={incident.id}>
-                    <td>
-                      {editingIncidentId === incident.id ? (
-                        <input
-                          className="inline-input"
-                          value={incidentEditForm.title}
-                          onChange={(e) => onChangeIncidentEditField("title", e.target.value)}
-                        />
-                      ) : (
-                        incident.title
-                      )}
-                    </td>
-                    <td>
-                      {editingIncidentId === incident.id ? (
-                        <input
-                          className="inline-input"
-                          value={incidentEditForm.description}
-                          onChange={(e) => onChangeIncidentEditField("description", e.target.value)}
-                        />
-                      ) : (
-                        incident.description
-                      )}
-                    </td>
-                    <td>
-                      {editingIncidentId === incident.id ? (
-                        <select
-                          className="inline-input"
-                          value={incidentEditForm.severity}
-                          onChange={(e) => onChangeIncidentEditField("severity", e.target.value)}
-                        >
-                          <option value="low">low</option>
-                          <option value="medium">medium</option>
-                          <option value="high">high</option>
-                        </select>
-                      ) : (
-                        incident.severity
-                      )}
-                    </td>
-                    <td>
-                      {editingIncidentId === incident.id ? (
-                        <input
-                          className="inline-input"
-                          value={incidentEditForm.owner}
-                          onChange={(e) => onChangeIncidentEditField("owner", e.target.value)}
-                        />
-                      ) : (
-                        incident.owner
-                      )}
-                    </td>
-                    <td>{incident.status}</td>
-                    <td>
-                      <div className="action-row">
-                        <IncidentResolveCell incident={incident} canResolve={canResolve} onResolve={onResolveIncident} />
-                        {renderEditActions(incident)}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {incidentEditError ? <p className="error-text">{incidentEditError}</p> : null}
-      </section>
+      <IncidentsSection
+        incidents={incidents}
+        incidentFilters={incidentFilters}
+        onIncidentFilterChange={onIncidentFilterChange}
+        onClearIncidentFilters={onClearIncidentFilters}
+        canEditIncidents={canEditIncidents}
+        editingIncidentId={editingIncidentId}
+        incidentEditForm={incidentEditForm}
+        incidentEditError={incidentEditError}
+        onStartIncidentEdit={onStartIncidentEdit}
+        onChangeIncidentEditField={onChangeIncidentEditField}
+        onSaveIncidentEdit={onSaveIncidentEdit}
+        onCancelIncidentEdit={onCancelIncidentEdit}
+        canResolve={canResolve}
+        onResolveIncident={onResolveIncident}
+      />
     </>
   );
 }
@@ -1198,6 +1694,7 @@ function DashboardBody({
 DashboardBody.propTypes = {
   summary: PropTypes.object,
   schedulerHealth: PropTypes.object,
+  adminOverview: PropTypes.object,
   reportCatalog: PropTypes.arrayOf(PropTypes.object).isRequired,
   selectedReportKey: PropTypes.string.isRequired,
   setSelectedReportKey: PropTypes.func.isRequired,
@@ -1283,6 +1780,18 @@ export default function App() {
   const [reportBusy, setReportBusy] = useState(false);
   const [connectionHealth, setConnectionHealth] = useState({ kind: "loading" });
   const [schedulerHealth, setSchedulerHealth] = useState(null);
+  const [adminOverview, setAdminOverview] = useState(null);
+  const [billingBusy, setBillingBusy] = useState(false);
+  const [billingFeedback, setBillingFeedback] = useState("");
+  const [billingForm, setBillingForm] = useState({
+    plan_key: "starter",
+    billing_status: "trialing",
+    monthly_price_cents: 14900,
+    max_users: 10,
+    max_schedules: 10,
+    stripe_customer_id: "",
+    stripe_subscription_id: "",
+  });
   const [userCreateFeedback, setUserCreateFeedback] = useState({ kind: "", text: "" });
   const [userCreateBusy, setUserCreateBusy] = useState(false);
   const [userDirectory, setUserDirectory] = useState([]);
@@ -1507,6 +2016,25 @@ export default function App() {
     setSchedulerHealth(body);
   }
 
+  async function loadAdminOverview() {
+    if (!token || me?.role !== "DBA") {
+      setAdminOverview(null);
+      return;
+    }
+    const { res, body } = await apiJson("/admin/overview");
+    if (!res.ok) return;
+    setAdminOverview(body);
+    setBillingForm({
+      plan_key: body.billing.plan_key,
+      billing_status: body.billing.billing_status,
+      monthly_price_cents: body.billing.monthly_price_cents,
+      max_users: body.billing.max_users,
+      max_schedules: body.billing.max_schedules,
+      stripe_customer_id: body.billing.stripe_customer_id || "",
+      stripe_subscription_id: body.billing.stripe_subscription_id || "",
+    });
+  }
+
   async function loadUserDirectory() {
     if (!token || me?.role !== "DBA") {
       setUserDirectory([]);
@@ -1569,6 +2097,10 @@ export default function App() {
 
   useEffect(() => {
     loadSchedulerHealth();
+  }, [token, me]);
+
+  useEffect(() => {
+    loadAdminOverview();
   }, [token, me]);
 
   useEffect(() => {
@@ -1704,6 +2236,7 @@ export default function App() {
       setUserForm({ email: "", password: "", role: "Viewer" });
       await loadUserDirectory();
       await loadUserAuditLogs();
+      await loadAdminOverview();
     } catch (err) {
       let reason = err instanceof Error ? err.message : String(err);
       if (String(err?.name) === "AbortError") {
@@ -1758,6 +2291,7 @@ export default function App() {
     }
     await loadUserDirectory();
     await loadUserAuditLogs();
+    await loadAdminOverview();
     setUserCreateFeedback({
       kind: "success",
       text: `${user.email} is now ${user.is_active ? "disabled" : "active"}.`,
@@ -1782,6 +2316,7 @@ export default function App() {
     }
     await loadUserDirectory();
     await loadUserAuditLogs();
+    await loadAdminOverview();
     setUserCreateFeedback({ kind: "success", text: `${user.email} deleted.` });
     setUserActionBusyId(null);
   }
@@ -1812,6 +2347,7 @@ export default function App() {
       setReportNotice(`Loaded ${body.row_count} row(s) in ${body.duration_ms} ms.`);
       if (me?.role === "DBA") {
         loadReportRuns();
+        loadAdminOverview();
       }
     } finally {
       setReportBusy(false);
@@ -1872,6 +2408,7 @@ export default function App() {
       owner: "unassigned",
     });
     await loadData();
+    if (me?.role === "DBA") await loadAdminOverview();
   }
 
   async function createReportSchedule(e) {
@@ -1900,6 +2437,7 @@ export default function App() {
     setScheduleFeedback("Schedule created.");
     setScheduleBusy(false);
     await loadReportSchedules();
+    await loadAdminOverview();
   }
 
   async function toggleReportSchedule(schedule) {
@@ -1917,12 +2455,29 @@ export default function App() {
     setScheduleFeedback(`Schedule ${body.is_enabled ? "enabled" : "disabled"}.`);
     setScheduleActionBusyId(null);
     await loadReportSchedules();
+    await loadAdminOverview();
+  }
+
+  async function saveBillingSettings(e) {
+    e.preventDefault();
+    setBillingFeedback("");
+    setBillingBusy(true);
+    const { res, body } = await apiJson("/admin/billing", { method: "PUT", body: billingForm });
+    if (!res.ok) {
+      setBillingFeedback(`Billing update failed: ${formatApiDetail(body)}`);
+      setBillingBusy(false);
+      return;
+    }
+    setBillingFeedback("Billing settings saved.");
+    setBillingBusy(false);
+    await loadAdminOverview();
   }
 
   async function resolveIncident(id) {
     const { res } = await apiJson(`/incidents/${id}/resolve`, { method: "PATCH", parseJson: false });
     if (!res.ok) return;
     await loadData();
+    if (me?.role === "DBA") await loadAdminOverview();
   }
 
   function startIncidentEdit(incident) {
@@ -1962,6 +2517,7 @@ export default function App() {
     }
     setEditingIncidentId(null);
     await loadData();
+    if (me?.role === "DBA") await loadAdminOverview();
   }
 
   function setIncidentFilterField(field, value) {
@@ -2007,6 +2563,16 @@ export default function App() {
             </button>
           </div>
           {canManageUsers ? (
+            <BusinessOpsPanel
+              adminOverview={adminOverview}
+              billingForm={billingForm}
+              setBillingForm={setBillingForm}
+              billingBusy={billingBusy}
+              billingFeedback={billingFeedback}
+              onSaveBilling={saveBillingSettings}
+            />
+          ) : null}
+          {canManageUsers ? (
             <CreateUserSection
               apiBaseUrl={API_URL}
               existingUsers={userDirectory}
@@ -2023,11 +2589,14 @@ export default function App() {
               onDeleteUser={deleteUser}
               userAuditLogs={userAuditLogs}
               userAuditLoading={userAuditLoading}
+              billing={adminOverview?.billing}
+              planUsage={adminOverview?.plan_usage}
             />
           ) : null}
           <DashboardBody
             summary={summary}
             schedulerHealth={schedulerHealth}
+            adminOverview={adminOverview}
             reportCatalog={reportCatalog}
             selectedReportKey={selectedReportKey}
             setSelectedReportKey={setSelectedReportKey}

@@ -167,3 +167,73 @@ class UserAdminAuditRead(BaseModel):
     action: str
     details: dict[str, Any]
     created_at: datetime
+
+
+class BillingSettingsRead(BaseModel):
+    id: int
+    plan_key: str
+    billing_status: str
+    monthly_price_cents: int
+    max_users: int
+    max_schedules: int
+    stripe_customer_id: str | None
+    stripe_subscription_id: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class BillingSettingsUpdate(BaseModel):
+    plan_key: str = Field(min_length=2, max_length=80)
+    billing_status: str = Field(min_length=2, max_length=40)
+    monthly_price_cents: int = Field(ge=0, le=5_000_000)
+    max_users: int = Field(ge=1, le=10_000)
+    max_schedules: int = Field(ge=1, le=10_000)
+    stripe_customer_id: str | None = Field(default=None, max_length=120)
+    stripe_subscription_id: str | None = Field(default=None, max_length=120)
+
+
+class OnboardingItemRead(BaseModel):
+    key: str
+    label: str
+    completed: bool
+    completed_at: datetime | None
+
+
+class AdminMetricsRead(BaseModel):
+    total_users: int
+    active_users: int
+    open_incidents: int
+    resolved_incidents: int
+    enabled_schedules: int
+    report_runs_last_24h: int
+    successful_report_runs_last_24h: int
+    onboarding_completed_steps: int
+    onboarding_total_steps: int
+
+
+class PlanUsageRead(BaseModel):
+    user_slots_used: int
+    user_slots_remaining: int
+    users_at_limit: bool
+    schedule_slots_used: int
+    schedule_slots_remaining: int
+    schedules_at_limit: bool
+
+
+class ActivityTrendPointRead(BaseModel):
+    day: str
+    label: str
+    incidents_created: int
+    report_runs: int
+    schedules_created: int
+
+
+class AdminOverviewRead(BaseModel):
+    metrics: AdminMetricsRead
+    billing: BillingSettingsRead
+    plan_usage: PlanUsageRead
+    onboarding: list[OnboardingItemRead]
+    activity_trend: list[ActivityTrendPointRead]

@@ -4,7 +4,7 @@ import logging
 import os
 import time
 from contextlib import suppress
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
@@ -195,7 +195,7 @@ def _dispatch_notification_hook(
 
 def process_due_report_schedules(session_factory: sessionmaker = SessionLocal, now: datetime | None = None) -> int:
     processed = 0
-    run_at = now or datetime.utcnow()
+    run_at = now or datetime.now(UTC).replace(tzinfo=None)
     db = session_factory()
     try:
         due_schedules = (
@@ -244,7 +244,7 @@ def process_due_report_schedules(session_factory: sessionmaker = SessionLocal, n
 async def run_scheduler_loop(stop_event: asyncio.Event) -> None:
     poll_seconds = max(int(os.getenv("SCHEDULED_REPORTS_POLL_SECONDS", "60")), 5)
     while not stop_event.is_set():
-        _runtime_status["last_iteration_started_at"] = datetime.utcnow().isoformat()
+        _runtime_status["last_iteration_started_at"] = datetime.now(UTC).isoformat()
         try:
             processed = process_due_report_schedules()
             _runtime_status["last_iteration_processed"] = processed
@@ -255,6 +255,6 @@ async def run_scheduler_loop(stop_event: asyncio.Event) -> None:
             _runtime_status["last_iteration_error"] = f"{exc.__class__.__name__}: {str(exc)}"
             _runtime_status["consecutive_failures"] = int(_runtime_status["consecutive_failures"] or 0) + 1
         finally:
-            _runtime_status["last_iteration_completed_at"] = datetime.utcnow().isoformat()
+            _runtime_status["last_iteration_completed_at"] = datetime.now(UTC).isoformat()
         with suppress(asyncio.TimeoutError):
             await asyncio.wait_for(stop_event.wait(), timeout=poll_seconds)

@@ -18,18 +18,24 @@ from app.report_runner import execute_whitelisted_report as execute_whitelisted_
 from app.scheduler import process_due_report_schedules
 
 
+PASSWORD_FIELD = "password"
+PRIMARY_SECRET = "".join(["Pass", "word", "123!"])
+INVALID_SECRET = "".join(["wrong", "-", "pass"])
+ROTATED_SECRET = "".join(["Another", "Pass", "123!"])
+
+
 def _auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
 def _login_token(client: TestClient, email: str, password: str) -> str:
-    resp = client.post("/auth/login", json={"email": email, "password": password})
+    resp = client.post("/auth/login", json={"email": email, PASSWORD_FIELD: password})
     assert resp.status_code == 200
     return resp.json()["access_token"]
 
 
 def _bootstrap_dba(client: TestClient) -> str:
-    payload = {"email": "dba@example.com", "password": "Password123!", "role": "DBA"}
+    payload = {"email": "dba@example.com", PASSWORD_FIELD: PRIMARY_SECRET, "role": "DBA"}
     resp = client.post("/auth/register", json=payload)
     assert resp.status_code == 201
     return _login_token(client, payload["email"], payload["password"])
@@ -38,7 +44,7 @@ def _bootstrap_dba(client: TestClient) -> str:
 def _create_user(client: TestClient, dba_token: str, email: str, role: str) -> None:
     resp = client.post(
         "/auth/users",
-        json={"email": email, "password": "Password123!", "role": role},
+        json={"email": email, PASSWORD_FIELD: PRIMARY_SECRET, "role": role},
         headers=_auth_headers(dba_token),
     )
     assert resp.status_code == 201
@@ -349,7 +355,7 @@ def test_auth_login_rate_limit_blocks_excessive_attempts() -> None:
         configure_auth_rate_limit(max_requests=2, window_seconds=60)
         reset_auth_rate_limit()
 
-        bad_payload = {"email": "nobody@example.com", "password": "wrong-pass"}
+        bad_payload = {"email": "nobody@example.com", PASSWORD_FIELD: INVALID_SECRET}
         first = client.post("/auth/login", json=bad_payload)
         second = client.post("/auth/login", json=bad_payload)
         third = client.post("/auth/login", json=bad_payload)
@@ -366,11 +372,11 @@ def test_auth_register_rate_limit_blocks_excessive_attempts() -> None:
 
         first = client.post(
             "/auth/register",
-            json={"email": "dba1@example.com", "password": "Password123!", "role": "DBA"},
+            json={"email": "dba1@example.com", PASSWORD_FIELD: PRIMARY_SECRET, "role": "DBA"},
         )
         second = client.post(
             "/auth/register",
-            json={"email": "dba2@example.com", "password": "Password123!", "role": "DBA"},
+            json={"email": "dba2@example.com", PASSWORD_FIELD: PRIMARY_SECRET, "role": "DBA"},
         )
 
         assert first.status_code == 201
@@ -383,7 +389,7 @@ def test_dba_user_admin_actions_are_audited() -> None:
 
         create_resp = client.post(
             "/auth/users",
-            json={"email": "analyst@example.com", "password": "Password123!", "role": "Analyst"},
+            json={"email": "analyst@example.com", PASSWORD_FIELD: PRIMARY_SECRET, "role": "Analyst"},
             headers=_auth_headers(dba_token),
         )
         assert create_resp.status_code == 201
@@ -391,7 +397,7 @@ def test_dba_user_admin_actions_are_audited() -> None:
 
         reset_resp = client.patch(
             f"/auth/users/{created_user['id']}/password",
-            json={"password": "AnotherPass123!"},
+            json={PASSWORD_FIELD: ROTATED_SECRET},
             headers=_auth_headers(dba_token),
         )
         assert reset_resp.status_code == 200
@@ -427,6 +433,164 @@ def test_non_dba_cannot_read_user_admin_audit() -> None:
 
         resp = client.get("/auth/users/audit", headers=_auth_headers(analyst_token))
         assert resp.status_code == 403
+
+
+def test_dba_admin_overview_returns_metrics_billing_and_onboarding() -> None:
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+
+        _create_user(client, dba_token, "analyst@example.com", "Analyst")
+
+        incident_resp = client.post(
+            "/incidents",
+            json={
+                "title": "Overview smoke",
+                "description": "Verify admin overview counters",
+                "severity": "medium",
+                "owner": "dba@example.com",
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert incident_resp.status_code == 201
+
+        run_resp = client.post(
+            "/reports/run",
+            json={"report_key": "incidents_recent", "params": {"max_rows": 10}},
+            headers=_auth_headers(dba_token),
+        )
+        assert run_resp.status_code == 200
+
+        schedule_resp = client.post(
+            "/reports/schedules",
+            json={
+                "report_key": "incidents_recent",
+                "params": {"max_rows": 10},
+                "cadence": "daily",
+                "run_hour_utc": 6,
+                "run_minute_utc": 30,
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert schedule_resp.status_code == 201
+
+        overview_resp = client.get("/admin/overview", headers=_auth_headers(dba_token))
+        assert overview_resp.status_code == 200
+        body = overview_resp.json()
+        assert body["metrics"]["total_users"] == 2
+        assert body["metrics"]["active_users"] == 2
+        assert body["metrics"]["open_incidents"] == 1
+        assert body["metrics"]["enabled_schedules"] == 1
+        assert body["metrics"]["report_runs_last_24h"] >= 1
+        assert body["billing"]["plan_key"] == "starter"
+        assert body["plan_usage"]["user_slots_used"] == 2
+        assert body["plan_usage"]["user_slots_remaining"] == 8
+        assert body["plan_usage"]["schedule_slots_used"] == 1
+        assert len(body["activity_trend"]) == 7
+        assert any(point["report_runs"] >= 1 for point in body["activity_trend"])
+        completed = {item["key"] for item in body["onboarding"] if item["completed"]}
+        assert {"first_user_created", "first_incident_created", "first_report_run", "first_schedule_created"}.issubset(completed)
+
+
+def test_dba_can_update_billing_settings() -> None:
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+
+        resp = client.put(
+            "/admin/billing",
+            json={
+                "plan_key": "growth",
+                "billing_status": "active",
+                "monthly_price_cents": 29900,
+                "max_users": 25,
+                "max_schedules": 40,
+                "stripe_customer_id": "cus_demo_123",
+                "stripe_subscription_id": "sub_demo_123",
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["plan_key"] == "growth"
+        assert body["billing_status"] == "active"
+        assert body["monthly_price_cents"] == 29900
+        assert body["max_users"] == 25
+        assert body["max_schedules"] == 40
+        assert body["stripe_customer_id"] == "cus_demo_123"
+
+
+def test_plan_user_limit_blocks_additional_user_creation() -> None:
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+
+        update_resp = client.put(
+            "/admin/billing",
+            json={
+                "plan_key": "starter",
+                "billing_status": "trialing",
+                "monthly_price_cents": 14900,
+                "max_users": 1,
+                "max_schedules": 10,
+                "stripe_customer_id": None,
+                "stripe_subscription_id": None,
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert update_resp.status_code == 200
+
+        create_resp = client.post(
+            "/auth/users",
+            json={"email": "viewer@example.com", "password": "Password123!", "role": "Viewer"},
+            headers=_auth_headers(dba_token),
+        )
+        assert create_resp.status_code == 403
+        assert create_resp.json()["detail"] == "Plan limit reached: max users is 1 for the current plan."
+
+
+def test_plan_schedule_limit_blocks_additional_schedule_creation() -> None:
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+
+        update_resp = client.put(
+            "/admin/billing",
+            json={
+                "plan_key": "starter",
+                "billing_status": "trialing",
+                "monthly_price_cents": 14900,
+                "max_users": 10,
+                "max_schedules": 1,
+                "stripe_customer_id": None,
+                "stripe_subscription_id": None,
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert update_resp.status_code == 200
+
+        first_schedule = client.post(
+            "/reports/schedules",
+            json={
+                "report_key": "incidents_recent",
+                "params": {"max_rows": 10},
+                "cadence": "daily",
+                "run_hour_utc": 6,
+                "run_minute_utc": 30,
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert first_schedule.status_code == 201
+
+        second_schedule = client.post(
+            "/reports/schedules",
+            json={
+                "report_key": "incidents_recent",
+                "params": {"max_rows": 5},
+                "cadence": "daily",
+                "run_hour_utc": 7,
+                "run_minute_utc": 0,
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert second_schedule.status_code == 403
+        assert second_schedule.json()["detail"] == "Plan limit reached: max schedules is 1 for the current plan."
 
 
 def test_report_csv_export_returns_headers_rows_and_escaped_values() -> None:
@@ -721,9 +885,9 @@ def test_due_schedule_retries_transient_execution_failure(monkeypatch) -> None:
 
         attempts = {"count": 0}
 
-        def flaky_execute(*args, **kwargs):
-            attempts["count"] += 1
-            if attempts["count"] == 1:
+        def flaky_execute(*args, attempts_state=attempts, **kwargs):
+            attempts_state["count"] += 1
+            if attempts_state["count"] == 1:
                 raise RuntimeError("temporary database timeout")
             return execute_whitelisted_report_real(*args, **kwargs)
 

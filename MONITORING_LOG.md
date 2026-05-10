@@ -30,7 +30,7 @@
 | Create incident (DBA) | [✓] | Test CRUD incident is visible in Incidents list (Create + Read confirmed) | [TIME] |
 | Update incident (DBA) | [✓] | Edited incident fields and saved successfully (Update confirmed) | [TIME] |
 | Resolve incident (DBA) | [✓] | Incident status changed to closed/resolved in UI | [TIME] |
-| Create schedule | [ ] | Pending |  |
+| Create schedule | [✓] | Two schedules created successfully for daily runs | [TIME] |
 
 ---
 
