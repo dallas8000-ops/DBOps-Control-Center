@@ -2,6 +2,36 @@
 
 ---
 
+## 🚀 Current Batch — Week 6 (Started May 10, 2026)
+
+### Issue 10 — FEATURE: Stripe billing integration wiring
+**Labels:** `backend` `frontend` `high-priority`
+
+**Description:**
+Wire billing scaffolding to Stripe checkout + webhook lifecycle so plan state can move from manual updates to event-driven updates.
+
+**Checklist:**
+- [x] Create feature branch from `main`: `feature/stripe-billing-wiring`
+- [x] Add backend endpoint `POST /billing/checkout/session` (DBA)
+- [x] Add backend endpoint `POST /billing/webhook` with Stripe signature verification
+- [x] Persist Stripe customer/subscription IDs into `billing_settings`
+- [x] Add backend tests for checkout session + webhook updates
+- [ ] Add frontend billing action to launch Stripe Checkout
+- [ ] Configure Render env vars (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_STARTER`)
+- [ ] Add Stripe webhook endpoint in dashboard and validate event delivery
+
+---
+
+## ✅ Release Validation Update — May 10, 2026
+
+- Live API build: `6ff1c18` (`Add billing and onboarding productization`)
+- Migration verified in Render logs: `006_sched_delivery_targets -> 007_billing_onboarding`
+- Health check: `GET /health` returns `{"status":"ok","database":"reachable"}`
+- Authenticated validation: `/auth/me` and `/admin/overview` successful as DBA
+- Production smoke pass (API-level): login, create/delete user, create/resolve incident, run report, create/disable schedule — all passed
+
+---
+
 ## 📋 Backlog
 
 | # | Title | Labels |
