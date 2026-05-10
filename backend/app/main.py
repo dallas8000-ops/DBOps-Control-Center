@@ -231,6 +231,47 @@ def _stripe_event_object(event: Any) -> Any:
     return _stripe_get(data, "object")
 
 
+def _resolve_stripe_checkout_price_id(stripe_client: Any, raw_id: str) -> str:
+    candidate = (raw_id or "").strip()
+    if not candidate:
+        raise HTTPException(status_code=400, detail="Missing Stripe price identifier")
+    if candidate.startswith("price_"):
+        return candidate
+    if candidate.startswith("prod_"):
+        try:
+            product = stripe_client.Product.retrieve(candidate)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Stripe product lookup failed: {str(exc)}")
+
+        default_price = _stripe_get(product, "default_price")
+        if isinstance(default_price, str) and default_price.startswith("price_"):
+            return default_price
+        if isinstance(default_price, dict):
+            default_price_id = _stripe_get(default_price, "id")
+            if isinstance(default_price_id, str) and default_price_id.startswith("price_"):
+                return default_price_id
+
+        try:
+            prices = stripe_client.Price.list(product=candidate, active=True, limit=1)
+            rows = _stripe_get(prices, "data") or []
+            if rows:
+                first_id = _stripe_get(rows[0], "id")
+                if isinstance(first_id, str) and first_id.startswith("price_"):
+                    return first_id
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Stripe price lookup failed: {str(exc)}")
+
+        raise HTTPException(
+            status_code=400,
+            detail="Provided Stripe product has no active/default price. Create a recurring price in Stripe first.",
+        )
+
+    raise HTTPException(
+        status_code=400,
+        detail="Invalid Stripe ID. Use a price_... ID (or prod_... with default/active price).",
+    )
+
+
 def _apply_checkout_completed_event(settings: BillingSettings, event_object: Any) -> None:
     customer_id = _stripe_get(event_object, "customer")
     subscription_id = _stripe_get(event_object, "subscription")
@@ -461,14 +502,17 @@ def create_billing_checkout_session(
         raise HTTPException(status_code=503, detail=str(exc))
     settings = _get_or_create_billing_settings(db)
     try:
-        price_id = payload.price_id or _stripe_required_setting("STRIPE_PRICE_ID_STARTER")
+        configured_price_or_product = payload.price_id or _stripe_required_setting("STRIPE_PRICE_ID_STARTER")
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 
+    price_id = _resolve_stripe_checkout_price_id(stripe_client, configured_price_or_product)
+
     try:
         session = stripe_client.checkout.Session.create(
-            mode="subscription",
+            payment_method_types=["card"],
             line_items=[{"price": price_id, "quantity": 1}],
+            mode="subscription",
             success_url=payload.success_url,
             cancel_url=payload.cancel_url,
             customer=settings.stripe_customer_id or None,
