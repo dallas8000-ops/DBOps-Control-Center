@@ -3,6 +3,7 @@ from csv import reader as csv_reader
 from collections.abc import Generator
 from datetime import datetime, timedelta
 from io import StringIO
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -80,6 +81,19 @@ def _client() -> Generator[TestClient, None, None]:
         os.environ["SCHEDULED_REPORTS_DISABLE_LOOP"] = old_disable_scheduler
     reset_auth_rate_limit()
     Base.metadata.drop_all(bind=engine)
+
+
+def _fake_stripe_module(*, session_payload: dict | None = None, event_payload: dict | None = None):
+    payload = session_payload or {"id": "cs_test_123", "url": "https://checkout.stripe.test/session/cs_test_123"}
+    event = event_payload or {
+        "type": "checkout.session.completed",
+        "data": {"object": {"customer": "cus_test_123", "subscription": "sub_test_123"}},
+    }
+    return SimpleNamespace(
+        api_key=None,
+        checkout=SimpleNamespace(Session=SimpleNamespace(create=lambda **kwargs: payload)),
+        Webhook=SimpleNamespace(construct_event=lambda **kwargs: event),
+    )
 
 
 def test_bootstrap_requires_first_user_to_be_dba() -> None:
@@ -516,6 +530,64 @@ def test_dba_can_update_billing_settings() -> None:
         assert body["max_users"] == 25
         assert body["max_schedules"] == 40
         assert body["stripe_customer_id"] == "cus_demo_123"
+
+
+def test_dba_can_create_stripe_checkout_session(monkeypatch) -> None:
+    fake_stripe = _fake_stripe_module(
+        session_payload={"id": "cs_test_checkout", "url": "https://checkout.stripe.test/session/cs_test_checkout"}
+    )
+    monkeypatch.setattr("app.main.stripe", fake_stripe)
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_123")
+
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+
+        resp = client.post(
+            "/billing/checkout/session",
+            json={
+                "price_id": "price_test_starter",
+                "plan_key": "starter",
+                "success_url": "https://dbops-web.onrender.com/billing/success",
+                "cancel_url": "https://dbops-web.onrender.com/billing/cancel",
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["session_id"] == "cs_test_checkout"
+        assert body["url"].startswith("https://checkout.stripe.test/session/")
+
+
+def test_stripe_webhook_updates_billing_settings(monkeypatch) -> None:
+    fake_event = {
+        "type": "checkout.session.completed",
+        "data": {"object": {"customer": "cus_live_001", "subscription": "sub_live_001"}},
+    }
+    fake_stripe = _fake_stripe_module(event_payload=fake_event)
+    monkeypatch.setattr("app.main.stripe", fake_stripe)
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_123")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test_123")
+
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+
+        webhook_resp = client.post(
+            "/billing/webhook",
+            content="{}",
+            headers={"Stripe-Signature": "t=1,v1=testsig"},
+        )
+        assert webhook_resp.status_code == 200
+        body = webhook_resp.json()
+        assert body["received"] is True
+        assert body["event_type"] == "checkout.session.completed"
+        assert body["billing_status"] == "active"
+
+        overview = client.get("/admin/overview", headers=_auth_headers(dba_token))
+        assert overview.status_code == 200
+        billing = overview.json()["billing"]
+        assert billing["stripe_customer_id"] == "cus_live_001"
+        assert billing["stripe_subscription_id"] == "sub_live_001"
+        assert billing["billing_status"] == "active"
 
 
 def test_plan_user_limit_blocks_additional_user_creation() -> None:

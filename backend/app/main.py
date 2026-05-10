@@ -8,12 +8,17 @@ from datetime import UTC, date, datetime, time, timedelta
 from io import StringIO
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import case, or_, text
 from sqlalchemy.orm import Session
+
+try:
+    import stripe
+except ImportError:  # pragma: no cover - surfaced via HTTP 503 when feature is used.
+    stripe = None
 
 from .auth_utils import create_access_token, hash_password, verify_password
 from .db import engine, get_db
@@ -27,6 +32,8 @@ from .schemas import (
     ActivityTrendPointRead,
     AdminMetricsRead,
     AdminOverviewRead,
+    BillingCheckoutSessionCreate,
+    BillingCheckoutSessionRead,
     BillingSettingsRead,
     BillingSettingsUpdate,
     IncidentCreate,
@@ -41,6 +48,7 @@ from .schemas import (
     ReportScheduleCreate,
     ReportScheduleRead,
     ReportScheduleStatusUpdate,
+    StripeWebhookEventRead,
     Token,
     OnboardingItemRead,
     PlanUsageRead,
@@ -86,7 +94,8 @@ ERROR_RESPONSES_AUTH_REGISTER = {
     409: {"description": "Email already exists"},
     429: {"description": "Auth rate limit exceeded"},
 }
-ERROR_RESPONSES_DBA_ONLY = {403: {"description": "DBA role required"}}
+DBA_ROLE_REQUIRED_DESCRIPTION = "DBA role required"
+ERROR_RESPONSES_DBA_ONLY = {403: {"description": DBA_ROLE_REQUIRED_DESCRIPTION}}
 ERROR_RESPONSES_USER_MUTATION = {
     400: {"description": "Invalid user mutation"},
     403: {"description": "DBA role required"},
@@ -105,6 +114,15 @@ ERROR_RESPONSES_SCHEDULE_MUTATION = {
     400: {"description": "Invalid schedule request"},
     403: {"description": "DBA role required or plan limit reached"},
     404: {"description": "Unknown report or schedule not found"},
+}
+ERROR_RESPONSES_BILLING_CHECKOUT = {
+    400: {"description": "Invalid Stripe checkout request"},
+    403: {"description": DBA_ROLE_REQUIRED_DESCRIPTION},
+    503: {"description": "Stripe billing is not configured"},
+}
+ERROR_RESPONSES_BILLING_WEBHOOK = {
+    400: {"description": "Invalid Stripe webhook request"},
+    503: {"description": "Stripe billing is not configured"},
 }
 
 DbDep = Annotated[Session, Depends(get_db)]
@@ -184,6 +202,55 @@ def _get_or_create_billing_settings(db: Session) -> BillingSettings:
     db.add(settings)
     db.flush()
     return settings
+
+
+def _stripe_required_setting(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if value:
+        return value
+    raise RuntimeError(f"Missing required billing configuration: {name}")
+
+
+def _stripe_client():
+    if stripe is None:
+        raise RuntimeError("Stripe SDK is not installed")
+    stripe.api_key = _stripe_required_setting("STRIPE_SECRET_KEY")
+    return stripe
+
+
+def _stripe_get(value: Any, key: str) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value.get(key)
+    return getattr(value, key, None)
+
+
+def _stripe_event_object(event: Any) -> Any:
+    data = _stripe_get(event, "data")
+    return _stripe_get(data, "object")
+
+
+def _apply_checkout_completed_event(settings: BillingSettings, event_object: Any) -> None:
+    customer_id = _stripe_get(event_object, "customer")
+    subscription_id = _stripe_get(event_object, "subscription")
+    if customer_id:
+        settings.stripe_customer_id = str(customer_id)
+    if subscription_id:
+        settings.stripe_subscription_id = str(subscription_id)
+    settings.billing_status = "active"
+
+
+def _apply_subscription_event(settings: BillingSettings, event_object: Any) -> None:
+    customer_id = _stripe_get(event_object, "customer")
+    subscription_id = _stripe_get(event_object, "id")
+    subscription_status = _stripe_get(event_object, "status")
+    if customer_id:
+        settings.stripe_customer_id = str(customer_id)
+    if subscription_id:
+        settings.stripe_subscription_id = str(subscription_id)
+    if isinstance(subscription_status, str) and subscription_status:
+        settings.billing_status = subscription_status
 
 
 def _enforce_plan_limit(db: Session, *, metric: str, current_count: int) -> None:
@@ -376,6 +443,95 @@ def update_billing_settings(
     db.commit()
     db.refresh(settings)
     return settings
+
+
+@app.post(
+    "/billing/checkout/session",
+    response_model=BillingCheckoutSessionRead,
+    responses=ERROR_RESPONSES_BILLING_CHECKOUT,
+)
+def create_billing_checkout_session(
+    payload: BillingCheckoutSessionCreate,
+    db: DbDep,
+    current: DbaUserDep,
+):
+    try:
+        stripe_client = _stripe_client()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    settings = _get_or_create_billing_settings(db)
+    try:
+        price_id = payload.price_id or _stripe_required_setting("STRIPE_PRICE_ID_STARTER")
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    try:
+        session = stripe_client.checkout.Session.create(
+            mode="subscription",
+            line_items=[{"price": price_id, "quantity": 1}],
+            success_url=payload.success_url,
+            cancel_url=payload.cancel_url,
+            customer=settings.stripe_customer_id or None,
+            customer_email=current.email if not settings.stripe_customer_id else None,
+            metadata={"plan_key": payload.plan_key or settings.plan_key},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Stripe checkout failed: {str(exc)}")
+
+    session_id = _stripe_get(session, "id")
+    checkout_url = _stripe_get(session, "url")
+    if not session_id or not checkout_url:
+        raise HTTPException(status_code=400, detail="Stripe checkout did not return a valid session")
+
+    return BillingCheckoutSessionRead(session_id=str(session_id), url=str(checkout_url))
+
+
+@app.post("/billing/webhook", response_model=StripeWebhookEventRead, responses=ERROR_RESPONSES_BILLING_WEBHOOK)
+async def handle_billing_webhook(
+    request: Request,
+    db: DbDep,
+    stripe_signature: Annotated[str | None, Header(alias="Stripe-Signature")] = None,
+):
+    try:
+        stripe_client = _stripe_client()
+        webhook_secret = _stripe_required_setting("STRIPE_WEBHOOK_SECRET")
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    if not stripe_signature:
+        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
+
+    payload_bytes = await request.body()
+    payload_text = payload_bytes.decode("utf-8")
+    try:
+        event = stripe_client.Webhook.construct_event(
+            payload=payload_text,
+            sig_header=stripe_signature,
+            secret=webhook_secret,
+        )
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid Stripe webhook signature")
+
+    event_type = str(_stripe_get(event, "type") or "unknown")
+    settings = _get_or_create_billing_settings(db)
+    event_object = _stripe_event_object(event)
+
+    if event_type == "checkout.session.completed":
+        _apply_checkout_completed_event(settings, event_object)
+    elif event_type in {
+        "customer.subscription.created",
+        "customer.subscription.updated",
+        "customer.subscription.deleted",
+    }:
+        _apply_subscription_event(settings, event_object)
+
+    db.add(settings)
+    db.commit()
+    db.refresh(settings)
+    return StripeWebhookEventRead(
+        received=True,
+        event_type=event_type,
+        billing_status=settings.billing_status,
+    )
 
 
 @app.post("/auth/login", response_model=Token, responses=ERROR_RESPONSES_AUTH_LOGIN)

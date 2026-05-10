@@ -195,6 +195,24 @@ class BillingSettingsUpdate(BaseModel):
     stripe_subscription_id: str | None = Field(default=None, max_length=120)
 
 
+class BillingCheckoutSessionCreate(BaseModel):
+    price_id: str | None = Field(default=None, min_length=3, max_length=120)
+    plan_key: str | None = Field(default=None, min_length=2, max_length=80)
+    success_url: str = Field(min_length=8, max_length=512)
+    cancel_url: str = Field(min_length=8, max_length=512)
+
+
+class BillingCheckoutSessionRead(BaseModel):
+    session_id: str
+    url: str
+
+
+class StripeWebhookEventRead(BaseModel):
+    received: bool
+    event_type: str
+    billing_status: str
+
+
 class OnboardingItemRead(BaseModel):
     key: str
     label: str

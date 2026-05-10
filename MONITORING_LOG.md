@@ -31,6 +31,7 @@
 | Update incident (DBA) | [✓] | Edited incident fields and saved successfully (Update confirmed) | [TIME] |
 | Resolve incident (DBA) | [✓] | Incident status changed to closed/resolved in UI | [TIME] |
 | Create schedule | [✓] | Two schedules created successfully for daily runs | [TIME] |
+| Full API smoke pass (DBA) | [✓] | Automated pass via live API: login, create/delete user, create/resolve incident, run report, create/disable schedule | 01:15 UTC |
 
 ---
 
@@ -83,6 +84,23 @@ Time HH:MM | [PASTE]
 | Issue | Severity | Time Found | Cause | Fix | Resolved |
 |-------|----------|-----------|-------|-----|----------|
 | [Describe] | S1/S2/S3 | HH:MM | [Root cause] | [Action taken] | [Yes/No] |
+
+---
+
+## Validation Update — May 10, 2026
+
+- **Live build:** `6ff1c18` (`Add billing and onboarding productization`) is marked live in Render.
+- **Migration evidence (Render logs):** `Running upgrade 006_sched_delivery_targets -> 007_billing_onboarding`.
+- **Health verification:** `GET https://dbops-api.onrender.com/health` returned `{"status":"ok","database":"reachable"}`.
+- **Authenticated verification:** `POST /auth/login`, `GET /auth/me`, and `GET /admin/overview` succeeded with DBA credentials.
+- **End-to-end smoke (API):**
+	- create user: `smoke.20260510011501@example.com` (id `4`) ✓
+	- delete user id `4` ✓
+	- create incident id `4` ✓
+	- resolve incident id `4` ✓
+	- run report `incidents_recent` (rows `4`, `1ms`) ✓
+	- create schedule id `5` ✓
+	- disable schedule id `5` ✓
 
 ---
 

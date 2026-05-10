@@ -1344,7 +1344,15 @@ IncidentsSection.propTypes = {
 };
 /* eslint-enable react/prop-types */
 
-function BusinessOpsPanel({ adminOverview, billingForm, setBillingForm, billingBusy, billingFeedback, onSaveBilling }) {
+function BusinessOpsPanel({
+  adminOverview,
+  billingForm,
+  setBillingForm,
+  billingBusy,
+  billingFeedback,
+  onSaveBilling,
+  onStartBillingCheckout,
+}) {
   if (!adminOverview) {
     return (
       <section className="panel">
@@ -1382,6 +1390,9 @@ function BusinessOpsPanel({ adminOverview, billingForm, setBillingForm, billingB
       </div>
 
       <h3 className="section-lede">Billing scaffold</h3>
+      <button type="button" className="btn btn-primary schedule-submit" onClick={onStartBillingCheckout} disabled={billingBusy}>
+        {billingBusy ? "Working..." : "Subscribe with Stripe"}
+      </button>
       <form className="form-grid schedule-form" onSubmit={onSaveBilling}>
         <label className="field">
           <span className="field-label">Plan key</span>
@@ -1471,6 +1482,7 @@ BusinessOpsPanel.propTypes = {
   billingBusy: PropTypes.bool.isRequired,
   billingFeedback: PropTypes.string.isRequired,
   onSaveBilling: PropTypes.func.isRequired,
+  onStartBillingCheckout: PropTypes.func.isRequired,
 };
 
 CreateUserSection.propTypes = {
@@ -2473,6 +2485,30 @@ export default function App() {
     await loadAdminOverview();
   }
 
+  async function startBillingCheckout() {
+    setBillingFeedback("");
+    setBillingBusy(true);
+    const origin = globalThis.window?.location?.origin || "";
+    const payload = {
+      plan_key: billingForm.plan_key,
+      success_url: `${origin}/?billing=success`,
+      cancel_url: `${origin}/?billing=cancel`,
+    };
+    const { res, body } = await apiJson("/billing/checkout/session", { method: "POST", body: payload });
+    if (!res.ok) {
+      setBillingFeedback(`Stripe checkout failed: ${formatApiDetail(body)}`);
+      setBillingBusy(false);
+      return;
+    }
+    if (!body?.url) {
+      setBillingFeedback("Stripe checkout failed: missing checkout URL from API response.");
+      setBillingBusy(false);
+      return;
+    }
+    setBillingBusy(false);
+    globalThis.window?.location?.assign(body.url);
+  }
+
   async function resolveIncident(id) {
     const { res } = await apiJson(`/incidents/${id}/resolve`, { method: "PATCH", parseJson: false });
     if (!res.ok) return;
@@ -2570,6 +2606,7 @@ export default function App() {
               billingBusy={billingBusy}
               billingFeedback={billingFeedback}
               onSaveBilling={saveBillingSettings}
+              onStartBillingCheckout={startBillingCheckout}
             />
           ) : null}
           {canManageUsers ? (
