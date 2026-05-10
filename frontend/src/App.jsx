@@ -183,6 +183,20 @@ function formatUtcIsoAsLocal(isoValue) {
   });
 }
 
+function formatSchedulerStamp(isoValue) {
+  if (!isoValue) return "—";
+  const value = new Date(isoValue);
+  if (Number.isNaN(value.getTime())) return isoValue;
+  return value.toLocaleString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    month: "2-digit",
+    day: "2-digit",
+    timeZoneName: "short",
+  });
+}
+
 function HealthConnectionMessages({ health, apiUrl }) {
   switch (health.kind) {
     case "loading":
@@ -524,6 +538,44 @@ function CreateUserSection({
   );
 }
 
+function SchedulerHealthPanel({ schedulerHealth }) {
+  const scheduler = schedulerHealth?.scheduler;
+  if (!schedulerHealth || !scheduler) {
+    return (
+      <section className="panel">
+        <h2 className="panel-title">Scheduler Health (DBA)</h2>
+        <p className="empty-state">Loading scheduler health...</p>
+      </section>
+    );
+  }
+
+  const lastError = scheduler.last_iteration_error;
+  const statusClass = lastError ? "health-strip health-strip--warn" : "health-strip health-strip--ok";
+
+  return (
+    <section className="panel">
+      <h2 className="panel-title">Scheduler Health (DBA)</h2>
+      <div className={statusClass}>
+        <strong>Loop:</strong> {scheduler.loop_enabled ? "enabled" : "disabled"} · <strong>Poll:</strong>{" "}
+        {scheduler.poll_seconds}s · <strong>Processed last iteration:</strong> {scheduler.last_iteration_processed}
+        {lastError ? ` · Last error: ${lastError}` : " · Last iteration completed without error"}
+      </div>
+      <div className="summary-grid summary-grid--compact">
+        <Card label="Last Start" value={formatSchedulerStamp(scheduler.last_iteration_started_at)} />
+        <Card label="Last Complete" value={formatSchedulerStamp(scheduler.last_iteration_completed_at)} />
+        <Card label="Consecutive Failures" value={scheduler.consecutive_failures ?? 0} />
+        <Card label="Last Processed" value={scheduler.last_iteration_processed ?? 0} />
+      </div>
+    </section>
+  );
+}
+
+SchedulerHealthPanel.propTypes = {
+  schedulerHealth: PropTypes.shape({
+    scheduler: PropTypes.object,
+  }),
+};
+
 CreateUserSection.propTypes = {
   apiBaseUrl: PropTypes.string.isRequired,
   existingUsers: PropTypes.arrayOf(
@@ -554,6 +606,7 @@ CreateUserSection.propTypes = {
 
 function DashboardBody({
   summary,
+  schedulerHealth,
   reportCatalog,
   selectedReportKey,
   setSelectedReportKey,
@@ -656,6 +709,8 @@ function DashboardBody({
           <p className="empty-state">Loading summary...</p>
         )}
       </section>
+
+      {canManageUsers ? <SchedulerHealthPanel schedulerHealth={schedulerHealth} /> : null}
 
       <section className="panel">
         <h2 className="panel-title">SQL reports (read-only)</h2>
@@ -1142,6 +1197,7 @@ function DashboardBody({
 
 DashboardBody.propTypes = {
   summary: PropTypes.object,
+  schedulerHealth: PropTypes.object,
   reportCatalog: PropTypes.arrayOf(PropTypes.object).isRequired,
   selectedReportKey: PropTypes.string.isRequired,
   setSelectedReportKey: PropTypes.func.isRequired,
@@ -1226,6 +1282,7 @@ export default function App() {
   const [reportNotice, setReportNotice] = useState("");
   const [reportBusy, setReportBusy] = useState(false);
   const [connectionHealth, setConnectionHealth] = useState({ kind: "loading" });
+  const [schedulerHealth, setSchedulerHealth] = useState(null);
   const [userCreateFeedback, setUserCreateFeedback] = useState({ kind: "", text: "" });
   const [userCreateBusy, setUserCreateBusy] = useState(false);
   const [userDirectory, setUserDirectory] = useState([]);
@@ -1440,6 +1497,16 @@ export default function App() {
     setReportSchedules(body);
   }
 
+  async function loadSchedulerHealth() {
+    if (!token || me?.role !== "DBA") {
+      setSchedulerHealth(null);
+      return;
+    }
+    const { res, body } = await apiJson("/health/scheduler");
+    if (!res.ok) return;
+    setSchedulerHealth(body);
+  }
+
   async function loadUserDirectory() {
     if (!token || me?.role !== "DBA") {
       setUserDirectory([]);
@@ -1498,6 +1565,10 @@ export default function App() {
 
   useEffect(() => {
     loadUserAuditLogs();
+  }, [token, me]);
+
+  useEffect(() => {
+    loadSchedulerHealth();
   }, [token, me]);
 
   useEffect(() => {
@@ -1956,6 +2027,7 @@ export default function App() {
           ) : null}
           <DashboardBody
             summary={summary}
+            schedulerHealth={schedulerHealth}
             reportCatalog={reportCatalog}
             selectedReportKey={selectedReportKey}
             setSelectedReportKey={setSelectedReportKey}

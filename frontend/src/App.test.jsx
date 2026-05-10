@@ -73,6 +73,18 @@ function createFetchMock({
 
   const staticResponses = {
     "GET /health": jsonResponse({ status: "ok", database: "reachable" }),
+    "GET /health/scheduler": jsonResponse({
+      status: "ok",
+      scheduler: {
+        loop_enabled: true,
+        poll_seconds: 60,
+        last_iteration_started_at: "2026-05-10T12:00:00",
+        last_iteration_completed_at: "2026-05-10T12:00:01",
+        last_iteration_processed: 2,
+        last_iteration_error: null,
+        consecutive_failures: 0,
+      },
+    }),
     "GET /auth/me": jsonResponse({ id: 2, email: meEmail, role: meRole, is_active: true }),
     "GET /reports/summary": jsonResponse({
       total_incidents: 1,
@@ -437,6 +449,9 @@ describe("App smoke", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Scheduled reports (DBA)" })).toBeInTheDocument();
     });
+
+    expect(screen.getByRole("heading", { name: "Scheduler Health (DBA)" })).toBeInTheDocument();
+    expect(screen.getByText(/Processed last iteration:/i)).toBeInTheDocument();
 
     expect(screen.getByText(/Local time preview:/i)).toBeInTheDocument();
 
