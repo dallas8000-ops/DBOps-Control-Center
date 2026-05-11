@@ -16,23 +16,27 @@ This repo is designed to run locally with Docker Compose and deploy to Render wi
 
 ## Completion level (current state)
 
-Overall project completion is approximately **75%** toward a production-ready internal tool.
+Overall project completion is approximately **82%** toward a production-ready internal tool.
 
 - **Implemented and working**
   - Authentication + RBAC (`DBA`, `Analyst`, `Viewer`)
+  - Auth rate limiting on login endpoints (configurable via env)
   - DBA bootstrap flow for empty database
   - User lifecycle controls (create, reset password, enable/disable, delete)
-  - Incident create/list/resolve workflow
-  - Whitelisted report execution + report audit trail
-  - Scheduled report definitions, enable/disable controls, and automatic execution logging
+  - User admin audit log (`GET /auth/users/audit`)
+  - Incident create, filtered/list/sort, Analyst/DBA edit (`PATCH /incidents/{id}`), DBA resolve
+  - Whitelisted report execution, CSV export, and execution audit trail
+  - DBA-managed scheduled reports (daily/weekly UTC) with optional webhook delivery hook
+  - Idempotent demo seed (`python -m app` / `seed-demo`)
+  - Starter backend pytest suite + frontend smoke tests + CI gates
   - Local Docker Compose workflow and Render deployment path
 - **Partially complete**
-  - Operational observability (basic health checks are present; deeper metrics/tracing not yet added)
-  - Incident workflow depth (history/SLA workflow not yet added)
-  - Reporting UX (scheduling not yet added)
+  - Operational observability (`/health`, scheduler introspection; metrics/tracing not yet added)
+  - Incident workflow depth (no per-field history timeline or SLA clocks yet)
+  - Scheduled report delivery (email path is a logged placeholder; multi-instance scheduler coordination not solved)
 - **Not complete yet**
-  - Full automated test suite and CI quality gates
-  - Advanced production controls (rate limiting, SSO, full runbooks)
+  - Broad automated coverage (failure paths, schedules, billing hooks if used)
+  - SSO/OIDC and hardened production runbooks
 
 ## Core capabilities
 
@@ -51,7 +55,9 @@ Overall project completion is approximately **75%** toward a production-ready in
   - Delete users (self-protection prevents deleting/disable own account)
 
 - **Incident operations**
-  - Create, list, and resolve incidents with ownership and severity
+  - Create, list with filters (status, severity, owner, search, date range) and sort (`newest` / `oldest` / `severity`)
+  - Analyst/DBA update open incidents (`PATCH /incidents/{id}`)
+  - DBA resolve workflow (`PATCH /incidents/{id}/resolve`)
   - Operational summary cards (total/open/resolved/high severity)
 
 - **Safe reporting and audit trail**
@@ -77,11 +83,13 @@ Overall project completion is approximately **75%** toward a production-ready in
 
 | Capability | Viewer | Analyst | DBA |
 |------------|--------|---------|-----|
-| `GET /incidents`, `GET /reports/summary` | Yes | Yes | Yes |
+| `GET /incidents` (filters/sort), `GET /reports/summary` | Yes | Yes | Yes |
 | `GET /reports/catalog`, `POST /reports/run`, `POST /reports/export/csv` | Yes (filtered catalog) | Yes | Yes |
 | `POST /incidents` | No | Yes | Yes |
+| `PATCH /incidents/{id}` (edit fields) | No | Yes | Yes |
 | `PATCH /incidents/{id}/resolve` | No | No | Yes |
-| User management (`/auth/users*`) | No | No | Yes |
+| User management (`/auth/users*`, `/auth/users/audit`) | No | No | Yes |
+| Report schedules (`POST/GET /reports/schedules`, status patch) | No | No | Yes |
 | `GET /reports/runs` (audit trail) | No | No | Yes |
 
 ## Run locally
@@ -216,7 +224,7 @@ docker compose exec backend python -m app
 | Frontend smoke tests | `npm run test:run` | ✅ Passing (4 smoke tests) |
 | Frontend lint health | IDE lint diagnostics on edited files | ✅ Passing |
 | Docker local stack | `docker compose up --build` | ✅ Passing |
-| Backend migration chain | Alembic upgrades through `003_users_active` | ✅ Passing |
+| Backend migration chain | Alembic upgrades through head (e.g. `007_billing_and_onboarding`) | ✅ Passing |
 | Backend integration tests | `pytest -q` (auth/RBAC + incident/filter + auth-rate-limit + admin-audit coverage) | ✅ Passing (14 tests) |
 | API health | `GET /health` | ✅ Passing |
 | Auth smoke tests | Bootstrap/login/create-user/manual role checks | ✅ Passing |
@@ -224,9 +232,9 @@ docker compose exec backend python -m app
 
 ### Test gaps (planned)
 
-- ⚠️ Backend suite is still starter-level and needs broader endpoint and failure-path coverage
-- ⚠️ Frontend smoke tests are in place, but deeper integration/e2e coverage is still pending
-- ⚠️ CI fail gates are active; migration checks and stricter quality policies can be added next
+- ⚠️ Backend suite covers core paths; expand coverage for schedules, CSV export edge cases, and billing/admin routes if used in production
+- ⚠️ Frontend smoke tests are starter-level; add deeper integration or Playwright/Cypress flows when UI stabilizes
+- ⚠️ Optional CI hardening: migration drift checks, coverage thresholds, dependency audit gates
 
 ### Local quality checks
 
@@ -264,16 +272,24 @@ If Postgres requires SSL, append params to `DATABASE_URL` (commonly `?sslmode=re
 
 ## Planned updates (next phase)
 
-Target window: **2 weeks**
+Target window: **~2 weeks** (items below are **not** duplicates of what is already shipped in this repo).
 
-1. **Data and workflow**
-   - Incident edit + filter/search/sort
-   - Demo data seeding polish and reset flow
-2. **Quality and reliability**
-   - Backend integration tests for auth/RBAC and critical endpoints
-   - Frontend smoke/integration tests for login and DBA flows
-   - CI checks for build/lint/test
-3. **Reporting and operations**
-  - Scheduled report runs with execution controls
-   - User admin action audit trail improvements
-   - Expanded troubleshooting/runbook documentation
+1. **Workflow and product depth**
+   - Incident change history / timeline (who changed what, when)
+   - SLA-style targets or escalation states (beyond open/resolved)
+   - Optional “wipe demo data” / tenant reset helper aligned with seed script
+
+2. **Reporting and scheduler production readiness**
+   - Distributed-safe scheduling (single-leader or external worker; avoid duplicate runs across API replicas)
+   - Real SMTP or provider integration for email delivery (replace placeholder logging)
+   - Report retention policies and export archival
+
+3. **Quality and observability**
+   - Expand pytest coverage on scheduler, webhooks, and failure branches
+   - Add structured logging + request correlation IDs
+   - Metrics (latency, auth failures, schedule failures) or lightweight OpenTelemetry hooks
+
+4. **Enterprise hardening**
+   - SSO/OIDC option for larger tenants
+   - Rate limiting beyond auth endpoints where appropriate
+   - Expanded operations runbook (`docs/`) for Render + incident response
