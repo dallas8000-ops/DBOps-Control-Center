@@ -69,6 +69,7 @@ def _upsert_user(db: Session, *, email: str, role: str, password: str) -> User:
 def _upsert_incident(db: Session, payload: dict) -> Incident:
     title = payload["title"]
     created_at = datetime.fromisoformat(payload["created_at"]) if payload.get("created_at") else datetime.now(timezone.utc).replace(tzinfo=None)
+    due_at_val = datetime.fromisoformat(str(payload["due_at"])) if payload.get("due_at") else None
     incident = db.query(Incident).filter(Incident.title == title).first()
     if incident is None:
         incident = Incident(
@@ -78,6 +79,7 @@ def _upsert_incident(db: Session, payload: dict) -> Incident:
             severity=payload.get("severity", "medium"),
             owner=payload.get("owner", "unassigned"),
             created_at=created_at,
+            due_at=due_at_val,
         )
         db.add(incident)
         return incident
@@ -87,6 +89,8 @@ def _upsert_incident(db: Session, payload: dict) -> Incident:
     incident.severity = payload.get("severity", incident.severity)
     incident.owner = payload.get("owner", incident.owner)
     incident.created_at = created_at
+    if "due_at" in payload:
+        incident.due_at = due_at_val if payload.get("due_at") else None
     db.add(incident)
     return incident
 

@@ -1,7 +1,7 @@
 import os
 from csv import reader as csv_reader
 from collections.abc import Generator
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from io import StringIO
 from types import SimpleNamespace
 
@@ -13,7 +13,7 @@ from sqlalchemy.pool import StaticPool
 from app.db import Base, get_db
 from app.main import app
 from app.models import ReportExecutionLog, ReportSchedule
-from app.rate_limit import configure_auth_rate_limit, reset_auth_rate_limit
+from app.rate_limit import configure_auth_rate_limit, configure_api_rate_limit, reset_api_rate_limit, reset_auth_rate_limit
 import app.scheduler as scheduler_module
 from app.report_runner import execute_whitelisted_report as execute_whitelisted_report_real
 from app.scheduler import process_due_report_schedules
@@ -69,6 +69,8 @@ def _client() -> Generator[TestClient, None, None]:
 
     configure_auth_rate_limit(max_requests=1000, window_seconds=60)
     reset_auth_rate_limit()
+    configure_api_rate_limit(max_requests=1000, window_seconds=60)
+    reset_api_rate_limit()
     app.dependency_overrides[get_db] = override_get_db
     old_disable_scheduler = os.environ.get("SCHEDULED_REPORTS_DISABLE_LOOP")
     os.environ["SCHEDULED_REPORTS_DISABLE_LOOP"] = "1"
@@ -80,6 +82,7 @@ def _client() -> Generator[TestClient, None, None]:
     else:
         os.environ["SCHEDULED_REPORTS_DISABLE_LOOP"] = old_disable_scheduler
     reset_auth_rate_limit()
+    reset_api_rate_limit()
     Base.metadata.drop_all(bind=engine)
 
 
@@ -276,6 +279,71 @@ def test_incident_history_records_create_update_resolve() -> None:
 
         missing = client.get("/incidents/99999/history", headers=_auth_headers(analyst_token))
         assert missing.status_code == 404
+
+
+def test_list_overdue_open_incidents() -> None:
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+        _create_user(client, dba_token, "analyst@example.com", "Analyst")
+        analyst_token = _login_token(client, "analyst@example.com", "Password123!")
+        past = (datetime.now(UTC) - timedelta(days=1)).replace(tzinfo=None).isoformat()
+        create = client.post(
+            "/incidents",
+            json={
+                "title": "Stale overdue ticket",
+                "description": "Past due for SLA drill",
+                "severity": "high",
+                "owner": "ops",
+                "due_at": past,
+            },
+            headers=_auth_headers(analyst_token),
+        )
+        assert create.status_code == 201
+        iid = create.json()["id"]
+
+        list_resp = client.get("/incidents?overdue=true", headers=_auth_headers(analyst_token))
+        assert list_resp.status_code == 200
+        assert any(row["id"] == iid for row in list_resp.json())
+
+
+def test_export_incident_history_csv() -> None:
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+        _create_user(client, dba_token, "analyst@example.com", "Analyst")
+        analyst_token = _login_token(client, "analyst@example.com", "Password123!")
+        create = client.post(
+            "/incidents",
+            json={
+                "title": "CSV history sample",
+                "description": "For csv export test",
+                "severity": "low",
+                "owner": "qa",
+            },
+            headers=_auth_headers(analyst_token),
+        )
+        assert create.status_code == 201
+        incident_id = create.json()["id"]
+        csv_resp = client.get(f"/incidents/{incident_id}/history/export", headers=_auth_headers(analyst_token))
+        assert csv_resp.status_code == 200
+        assert "csv" in csv_resp.headers.get("content-type", "").lower()
+        body = csv_resp.text
+        assert "details_json" in body
+        assert "created" in body
+
+
+def test_api_rate_limit_blocks_extra_report_runs() -> None:
+    for client in _client():
+        configure_api_rate_limit(2, 60)
+        dba_token = _bootstrap_dba(client)
+        _create_user(client, dba_token, "analyst@example.com", "Analyst")
+        analyst_token = _login_token(client, "analyst@example.com", "Password123!")
+        payload = {"report_key": "incidents_recent", "params": {"max_rows": 3}}
+        r1 = client.post("/reports/run", json=payload, headers=_auth_headers(analyst_token))
+        r2 = client.post("/reports/run", json=payload, headers=_auth_headers(analyst_token))
+        r3 = client.post("/reports/run", json=payload, headers=_auth_headers(analyst_token))
+        assert r1.status_code == 200
+        assert r2.status_code == 200
+        assert r3.status_code == 429
 
 
 def test_viewer_cannot_edit_incident() -> None:

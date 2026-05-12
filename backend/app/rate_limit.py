@@ -57,3 +57,27 @@ def reset_auth_rate_limit() -> None:
 def configure_auth_rate_limit(max_requests: int, window_seconds: int) -> None:
     global _rate_limiter
     _rate_limiter = InMemoryRateLimiter(max_requests=max_requests, window_seconds=window_seconds)
+
+
+_api_rate_limiter = InMemoryRateLimiter(
+    max_requests=_env_int("API_RATE_LIMIT_MAX_REQUESTS", 120),
+    window_seconds=_env_int("API_RATE_LIMIT_WINDOW_SECONDS", 60),
+)
+
+
+def api_rate_limit_key(client_host: str | None, bucket: str) -> str:
+    host = client_host or "unknown"
+    return f"api:{bucket}:{host}"
+
+
+def check_api_rate_limit(client_host: str | None, bucket: str) -> bool:
+    return _api_rate_limiter.allow(api_rate_limit_key(client_host, bucket))
+
+
+def reset_api_rate_limit() -> None:
+    _api_rate_limiter.clear()
+
+
+def configure_api_rate_limit(max_requests: int, window_seconds: int) -> None:
+    global _api_rate_limiter
+    _api_rate_limiter = InMemoryRateLimiter(max_requests=max_requests, window_seconds=window_seconds)

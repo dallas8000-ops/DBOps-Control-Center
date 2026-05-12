@@ -1,8 +1,11 @@
 import asyncio
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+import csv
 import json
+import logging
 import os
+import uuid
 from csv import DictWriter
 from datetime import UTC, date, datetime, time, timedelta
 from io import StringIO
@@ -34,8 +37,9 @@ from .models import (
     UserAdminAuditLog,
 )
 from .report_catalog import REPORTS
-from .rate_limit import check_auth_rate_limit
+from .rate_limit import check_api_rate_limit, check_auth_rate_limit, reset_api_rate_limit
 from .report_runner import execute_whitelisted_report, prepare_report_request
+from .request_context import reset_request_id, set_request_id
 from .scheduler import compute_next_run_at, get_scheduler_runtime_status, run_scheduler_loop
 from .schemas import (
     ActivityTrendPointRead,
@@ -84,9 +88,12 @@ async def lifespan(_: FastAPI):
             await task
 
 
-app = FastAPI(title="DBOps Control Center API", version="0.4.1", lifespan=lifespan)
+app = FastAPI(title="DBOps Control Center API", version="0.4.2", lifespan=lifespan)
+
+ACCESS_LOG = logging.getLogger("dbops.access")
 
 AUTH_RATE_LIMIT_DETAIL = "Too many auth requests. Please try again shortly."
+API_RATE_LIMIT_DETAIL = "Too many requests. Please try again shortly."
 ACCOUNT_DISABLED_DETAIL = "Your account is disabled. Contact a DBA."
 USER_NOT_FOUND_DETAIL = "User not found"
 INCIDENT_NOT_FOUND_DETAIL = "Incident not found"
@@ -114,15 +121,18 @@ ERROR_RESPONSES_USER_MUTATION = {
 ERROR_RESPONSES_INCIDENT_MUTATION = {
     403: {"description": "Insufficient role"},
     404: {"description": INCIDENT_NOT_FOUND_DETAIL},
+    429: {"description": "API rate limit exceeded"},
 }
 ERROR_RESPONSES_INCIDENT_READ = {
     403: {"description": "Insufficient permissions"},
     404: {"description": INCIDENT_NOT_FOUND_DETAIL},
+    429: {"description": "API rate limit exceeded"},
 }
 ERROR_RESPONSES_REPORT_EXECUTION = {
     400: {"description": "Invalid report request"},
     403: {"description": "Insufficient permissions for report"},
     404: {"description": "Unknown report"},
+    429: {"description": "API rate limit exceeded"},
 }
 ERROR_RESPONSES_SCHEDULE_MUTATION = {
     400: {"description": "Invalid schedule request"},
@@ -150,6 +160,14 @@ ONBOARDING_STEPS: list[tuple[str, str]] = [
     ("first_report_run", "Run first report"),
     ("first_schedule_created", "Create first schedule"),
 ]
+
+
+def _api_rate_limit_dependency(bucket: str):
+    def _check(request: Request) -> None:
+        host = request.client.host if request.client else None
+        if not check_api_rate_limit(host, bucket):
+            raise HTTPException(status_code=429, detail=API_RATE_LIMIT_DETAIL)
+    return _check
 
 
 def _log_user_admin_action(
@@ -458,6 +476,23 @@ _cors_kw: dict = {
 # Lets any *.onrender.com static site call this API (JWT still required for protected routes).
 if os.getenv("CORS_DISABLE_RENDER_REGEX", "").lower() not in ("1", "true", "yes"):
     _cors_kw["allow_origin_regex"] = r"^https://[a-zA-Z0-9\-]+\.onrender\.com$"
+
+
+@app.middleware("http")
+async def request_id_access_log_middleware(request: Request, call_next):
+    raw = request.headers.get("x-request-id") or request.headers.get("X-Request-ID")
+    rid = (raw or "").strip() or str(uuid.uuid4())
+    if len(rid) > 128:
+        rid = rid[:128]
+    token = set_request_id(rid)
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = rid
+        ACCESS_LOG.info("%s %s %s", request.method, request.url.path, response.status_code)
+        return response
+    finally:
+        reset_request_id(token)
+
 
 app.add_middleware(CORSMiddleware, **_cors_kw)
 
@@ -841,6 +876,7 @@ IncidentSearchQuery = Annotated[str | None, Query(min_length=1, max_length=120)]
 IncidentStartDateQuery = Annotated[date | None, Query()]
 IncidentEndDateQuery = Annotated[date | None, Query()]
 IncidentSortQuery = Annotated[str, Query(pattern="^(newest|oldest|severity)$")]
+IncidentOverdueQuery = Annotated[bool | None, Query(description="If true, only open incidents with due_at in the past")]
 
 
 @app.get("/incidents", response_model=list[IncidentRead])
@@ -853,6 +889,7 @@ def list_incidents(
     search: IncidentSearchQuery = None,
     start_date: IncidentStartDateQuery = None,
     end_date: IncidentEndDateQuery = None,
+    overdue: IncidentOverdueQuery = None,
     sort: IncidentSortQuery = "newest",
 ):
     query = db.query(Incident)
@@ -876,6 +913,13 @@ def list_incidents(
         query = query.filter(Incident.created_at >= datetime.combine(start_date, time.min))
     if end_date:
         query = query.filter(Incident.created_at < datetime.combine(end_date + timedelta(days=1), time.min))
+    if overdue is True:
+        now = datetime.now(UTC).replace(tzinfo=None)
+        query = query.filter(
+            Incident.status == "open",
+            Incident.due_at.isnot(None),
+            Incident.due_at < now,
+        )
 
     if sort == "oldest":
         query = query.order_by(Incident.created_at.asc())
@@ -893,7 +937,13 @@ def list_incidents(
     return query.all()
 
 
-@app.post("/incidents", response_model=IncidentRead, status_code=201, responses={403: {"description": "Insufficient role"}})
+@app.post(
+    "/incidents",
+    response_model=IncidentRead,
+    status_code=201,
+    responses={403: {"description": "Insufficient role"}, 429: {"description": "API rate limit exceeded"}},
+    dependencies=[Depends(_api_rate_limit_dependency("incidents_create"))],
+)
 def create_incident(
     payload: IncidentCreate,
     db: DbDep,
@@ -905,6 +955,7 @@ def create_incident(
         severity=payload.severity,
         owner=payload.owner,
         status="open",
+        due_at=payload.due_at,
     )
     db.add(incident)
     db.flush()
@@ -925,6 +976,7 @@ def create_incident(
             "severity": incident.severity,
             "owner": incident.owner,
             "status": incident.status,
+            "due_at": incident.due_at.isoformat() if incident.due_at else None,
         },
     )
     db.commit()
@@ -956,6 +1008,15 @@ def update_incident(
     if payload.owner is not None and payload.owner != incident.owner:
         changes["owner"] = {"before": incident.owner, "after": payload.owner}
         incident.owner = payload.owner
+
+    payload_updates = payload.model_dump(exclude_unset=True)
+    if "due_at" in payload_updates:
+        new_due = payload_updates["due_at"]
+        before = incident.due_at.isoformat() if incident.due_at else None
+        after = new_due.isoformat() if new_due else None
+        if before != after:
+            changes["due_at"] = {"before": before, "after": after}
+        incident.due_at = new_due
 
     if changes:
         _log_incident_history(
@@ -1033,6 +1094,45 @@ def get_incident_history(
     return out
 
 
+@app.get(
+    "/incidents/{incident_id}/history/export",
+    response_class=PlainTextResponse,
+    responses=ERROR_RESPONSES_INCIDENT_READ,
+)
+def export_incident_history_csv(
+    incident_id: int,
+    db: DbDep,
+    _: Annotated[User, Depends(require_roles("DBA", "Analyst", "Viewer"))],
+):
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail=INCIDENT_NOT_FOUND_DETAIL)
+    rows = (
+        db.query(IncidentHistory, User.email)
+        .outerjoin(User, IncidentHistory.actor_user_id == User.id)
+        .filter(IncidentHistory.incident_id == incident_id)
+        .order_by(IncidentHistory.created_at.asc(), IncidentHistory.id.asc())
+        .all()
+    )
+    buf = StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["id", "incident_id", "created_at", "actor_email", "action", "details_json"])
+    for hist, actor_email in rows:
+        writer.writerow(
+            [
+                hist.id,
+                hist.incident_id,
+                hist.created_at.isoformat() if hist.created_at else "",
+                actor_email or "",
+                hist.action,
+                hist.details_json or "{}",
+            ]
+        )
+    response = PlainTextResponse(buf.getvalue(), media_type="text/csv; charset=utf-8")
+    response.headers["Content-Disposition"] = f'attachment; filename="incident-{incident_id}-history.csv"'
+    return response
+
+
 @app.get("/reports/catalog", response_model=list[ReportCatalogEntry])
 def report_catalog(current: CurrentUserDep):
     entries: list[ReportCatalogEntry] = []
@@ -1050,7 +1150,12 @@ def report_catalog(current: CurrentUserDep):
     return entries
 
 
-@app.post("/reports/run", response_model=ReportExecuteResponse, responses=ERROR_RESPONSES_REPORT_EXECUTION)
+@app.post(
+    "/reports/run",
+    response_model=ReportExecuteResponse,
+    responses=ERROR_RESPONSES_REPORT_EXECUTION,
+    dependencies=[Depends(_api_rate_limit_dependency("reports_run"))],
+)
 def run_report(
     body: ReportExecuteRequest,
     db: DbDep,
@@ -1074,7 +1179,12 @@ def run_report(
         raise HTTPException(status_code=code, detail=msg)
 
 
-@app.post("/reports/export/csv", response_class=PlainTextResponse, responses=ERROR_RESPONSES_REPORT_EXECUTION)
+@app.post(
+    "/reports/export/csv",
+    response_class=PlainTextResponse,
+    responses=ERROR_RESPONSES_REPORT_EXECUTION,
+    dependencies=[Depends(_api_rate_limit_dependency("reports_export_csv"))],
+)
 def export_report_csv(
     body: ReportExecuteRequest,
     db: DbDep,

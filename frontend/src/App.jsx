@@ -117,6 +117,7 @@ function toIncidentQuery(filters) {
   if (filters.startDate) params.set("start_date", filters.startDate);
   if (filters.endDate) params.set("end_date", filters.endDate);
   if (filters.sort) params.set("sort", filters.sort);
+  if (filters.overdue) params.set("overdue", "true");
   const query = params.toString();
   return query ? `?${query}` : "";
 }
@@ -675,7 +676,6 @@ SchedulerHealthPanel.propTypes = {
   }),
 };
 
-/* eslint-disable react/prop-types */
 function SqlReportsSection({
   reportCatalog,
   selectedReportKey,
@@ -1157,7 +1157,17 @@ function IncidentsSection({
   incidentHistoryEntries,
   incidentHistoryError,
   onToggleIncidentHistory,
+  onDownloadIncidentHistoryCsv,
 }) {
+  function formatIncidentDue(iso) {
+    if (!iso) return "—";
+    try {
+      return new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+    } catch {
+      return "—";
+    }
+  }
+
   function renderEditActions(incident) {
     if (!canEditIncidents) return null;
     if (editingIncidentId !== incident.id) {
@@ -1221,6 +1231,14 @@ function IncidentsSection({
           <option value="oldest">Sort: oldest</option>
           <option value="severity">Sort: severity</option>
         </select>
+        <label className="incident-filter-overdue">
+          <input
+            type="checkbox"
+            checked={Boolean(incidentFilters.overdue)}
+            onChange={(e) => onIncidentFilterChange("overdue", e.target.checked)}
+          />{" "}
+          Overdue (open)
+        </label>
         <button type="button" className="btn btn-ghost" onClick={onClearIncidentFilters}>
           Clear filters
         </button>
@@ -1236,6 +1254,7 @@ function IncidentsSection({
                 <th>Description</th>
                 <th>Severity</th>
                 <th>Owner</th>
+                <th>Due</th>
                 <th>Status</th>
                 <th>Action</th>
               </tr>
@@ -1292,6 +1311,18 @@ function IncidentsSection({
                         incident.owner
                       )}
                     </td>
+                    <td>
+                      {editingIncidentId === incident.id ? (
+                        <input
+                          type="datetime-local"
+                          className="inline-input"
+                          value={incidentEditForm.dueAt}
+                          onChange={(e) => onChangeIncidentEditField("dueAt", e.target.value)}
+                        />
+                      ) : (
+                        formatIncidentDue(incident.due_at)
+                      )}
+                    </td>
                     <td>{incident.status}</td>
                     <td>
                       <div className="action-row">
@@ -1305,13 +1336,22 @@ function IncidentsSection({
                         >
                           {incidentHistoryOpenId === incident.id ? "Hide history" : "History"}
                         </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => {
+                            onDownloadIncidentHistoryCsv(incident.id).catch(() => {});
+                          }}
+                        >
+                          History CSV
+                        </button>
                         {renderEditActions(incident)}
                       </div>
                     </td>
                   </tr>
                   {incidentHistoryOpenId === incident.id ? (
                     <tr className="incident-history-row">
-                      <td colSpan={6}>
+                      <td colSpan={7}>
                         <div className="incident-history-panel">
                           {incidentHistoryLoading ? <p className="empty-state">Loading history…</p> : null}
                           {incidentHistoryError ? <p className="error-text">{incidentHistoryError}</p> : null}
@@ -1375,6 +1415,7 @@ IncidentsSection.propTypes = {
       severity: PropTypes.string.isRequired,
       owner: PropTypes.string.isRequired,
       status: PropTypes.string.isRequired,
+      due_at: PropTypes.string,
     }),
   ).isRequired,
   incidentFilters: PropTypes.shape({
@@ -1385,6 +1426,7 @@ IncidentsSection.propTypes = {
     startDate: PropTypes.string.isRequired,
     endDate: PropTypes.string.isRequired,
     sort: PropTypes.string.isRequired,
+    overdue: PropTypes.bool.isRequired,
   }).isRequired,
   onIncidentFilterChange: PropTypes.func.isRequired,
   onClearIncidentFilters: PropTypes.func.isRequired,
@@ -1395,6 +1437,7 @@ IncidentsSection.propTypes = {
     description: PropTypes.string.isRequired,
     severity: PropTypes.string.isRequired,
     owner: PropTypes.string.isRequired,
+    dueAt: PropTypes.string.isRequired,
   }).isRequired,
   incidentEditError: PropTypes.string.isRequired,
   onStartIncidentEdit: PropTypes.func.isRequired,
@@ -1408,8 +1451,8 @@ IncidentsSection.propTypes = {
   incidentHistoryEntries: PropTypes.arrayOf(PropTypes.object).isRequired,
   incidentHistoryError: PropTypes.string.isRequired,
   onToggleIncidentHistory: PropTypes.func.isRequired,
+  onDownloadIncidentHistoryCsv: PropTypes.func.isRequired,
 };
-/* eslint-enable react/prop-types */
 
 function BusinessOpsPanel({
   adminOverview,
@@ -1634,6 +1677,7 @@ function DashboardBody({
   incidentHistoryEntries,
   incidentHistoryError,
   onToggleIncidentHistory,
+  onDownloadIncidentHistoryCsv,
 }) {
   const [reportAuditViewLimit, setReportAuditViewLimit] = useState(() => {
     const store = globalThis.window?.localStorage;
@@ -1744,6 +1788,14 @@ function DashboardBody({
               value={form.owner}
               onChange={(e) => setForm({ ...form, owner: e.target.value })}
             />
+            <label className="form-field-label">
+              Target due (optional)
+              <input
+                type="datetime-local"
+                value={form.dueAt}
+                onChange={(e) => setForm({ ...form, dueAt: e.target.value })}
+              />
+            </label>
             <button type="submit" className="btn btn-primary">
               Create
             </button>
@@ -1775,6 +1827,7 @@ function DashboardBody({
         incidentHistoryEntries={incidentHistoryEntries}
         incidentHistoryError={incidentHistoryError}
         onToggleIncidentHistory={onToggleIncidentHistory}
+        onDownloadIncidentHistoryCsv={onDownloadIncidentHistoryCsv}
       />
     </>
   );
@@ -1832,6 +1885,7 @@ DashboardBody.propTypes = {
   incidentHistoryEntries: PropTypes.arrayOf(PropTypes.object).isRequired,
   incidentHistoryError: PropTypes.string.isRequired,
   onToggleIncidentHistory: PropTypes.func.isRequired,
+  onDownloadIncidentHistoryCsv: PropTypes.func.isRequired,
 };
 
 export default function App() {
@@ -1860,6 +1914,7 @@ export default function App() {
     description: "",
     severity: "medium",
     owner: "unassigned",
+    dueAt: "",
   });
   const [reportCatalog, setReportCatalog] = useState([]);
   const [selectedReportKey, setSelectedReportKey] = useState("");
@@ -1904,6 +1959,7 @@ export default function App() {
     startDate: "",
     endDate: "",
     sort: "newest",
+    overdue: false,
   });
   const [editingIncidentId, setEditingIncidentId] = useState(null);
   const [incidentEditForm, setIncidentEditForm] = useState({
@@ -1911,6 +1967,7 @@ export default function App() {
     description: "",
     severity: "medium",
     owner: "unassigned",
+    dueAt: "",
   });
   const [incidentEditError, setIncidentEditError] = useState("");
   const [incidentHistoryOpenId, setIncidentHistoryOpenId] = useState(null);
@@ -1953,7 +2010,7 @@ export default function App() {
     setUserAuditLogs([]);
     setUserAuditLoading(false);
     setEditingIncidentId(null);
-    setIncidentEditForm({ title: "", description: "", severity: "medium", owner: "unassigned" });
+    setIncidentEditForm({ title: "", description: "", severity: "medium", owner: "unassigned", dueAt: "" });
     setIncidentEditError("");
     setIncidentHistoryOpenId(null);
     setIncidentHistoryEntries([]);
@@ -2498,7 +2555,16 @@ export default function App() {
 
   async function createIncident(e) {
     e.preventDefault();
-    const { res, body } = await apiJson("/incidents", { method: "POST", body: form });
+    const { res, body } = await apiJson("/incidents", {
+      method: "POST",
+      body: {
+        title: form.title,
+        description: form.description,
+        severity: form.severity,
+        owner: form.owner,
+        due_at: form.dueAt ? new Date(form.dueAt).toISOString() : null,
+      },
+    });
     if (!res.ok) {
       setIncidentEditError(formatApiDetail(body));
       return;
@@ -2508,6 +2574,7 @@ export default function App() {
       description: "",
       severity: "medium",
       owner: "unassigned",
+      dueAt: "",
     });
     await loadData();
     if (me?.role === "DBA") await loadAdminOverview();
@@ -2599,6 +2666,28 @@ export default function App() {
     globalThis.window?.location?.assign(body.url);
   }
 
+  async function downloadIncidentHistoryCsv(incidentId) {
+    const res = await fetch(`${API_URL}/incidents/${incidentId}/history/export`, {
+      method: "GET",
+      headers: headers(token, false),
+    });
+    if (!res.ok) {
+      const body = await parseResponseBody(res);
+      setIncidentEditError(typeof body.detail === "string" ? body.detail : "History export failed");
+      return;
+    }
+    const csvText = await res.text();
+    const blob = new Blob([csvText], { type: "text/csv;charset=utf-8" });
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = `incident-${incidentId}-history.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  }
+
   async function loadIncidentHistory(incidentId) {
     setIncidentHistoryLoading(true);
     setIncidentHistoryError("");
@@ -2643,6 +2732,7 @@ export default function App() {
       description: incident.description,
       severity: incident.severity,
       owner: incident.owner,
+      dueAt: incident.due_at ? incident.due_at.slice(0, 16) : "",
     });
   }
 
@@ -2664,6 +2754,7 @@ export default function App() {
         description: incidentEditForm.description,
         severity: incidentEditForm.severity,
         owner: incidentEditForm.owner,
+        due_at: incidentEditForm.dueAt ? new Date(incidentEditForm.dueAt).toISOString() : null,
       },
     });
     if (!res.ok) {
@@ -2691,6 +2782,7 @@ export default function App() {
       startDate: "",
       endDate: "",
       sort: "newest",
+      overdue: false,
     });
   }
 
@@ -2804,6 +2896,7 @@ export default function App() {
             incidentHistoryEntries={incidentHistoryEntries}
             incidentHistoryError={incidentHistoryError}
             onToggleIncidentHistory={toggleIncidentHistory}
+            onDownloadIncidentHistoryCsv={downloadIncidentHistoryCsv}
           />
         </>
       ) : (

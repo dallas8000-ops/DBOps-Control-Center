@@ -8,11 +8,13 @@ from datetime import UTC, datetime, timedelta
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from .db import SessionLocal
 from .models import ReportExecutionLog, ReportSchedule, User
 from .report_runner import execute_whitelisted_report, prepare_report_request
+from .smtp_notify import send_smtp_text_email, smtp_configured
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +181,18 @@ def _dispatch_notification_hook(
         return
     payload = _notification_payload(schedule, ok, run_at, detail)
     if schedule.delivery_kind == "email":
-        logger.info("Scheduled report email hook placeholder: %s", payload)
+        if not schedule.delivery_target:
+            logger.warning("Schedule %s configured for email with empty target", schedule.id)
+            return
+        subject = f"DBOps schedule {schedule.id}: {schedule.report_key} ({payload['status']})"
+        body = json.dumps(payload, indent=2, sort_keys=True)
+        if smtp_configured():
+            try:
+                send_smtp_text_email(to_addr=schedule.delivery_target.strip(), subject=subject, body=body)
+            except Exception as exc:
+                logger.warning("SMTP delivery failed for schedule %s: %s", schedule.id, str(exc))
+        else:
+            logger.info("Scheduled report email hook (set SMTP_HOST to send): %s", payload)
         return
     if schedule.delivery_kind == "webhook":
         if not schedule.delivery_target:
@@ -193,11 +206,56 @@ def _dispatch_notification_hook(
     logger.warning("Schedule %s has unsupported delivery_kind=%s", schedule.id, schedule.delivery_kind)
 
 
+_SCHEDULER_LOCK_KEY1 = 948_221
+_SCHEDULER_LOCK_KEY2 = 1_129_033
+
+
+def _scheduler_try_advisory_lock(db) -> bool:
+    bind = db.get_bind()
+    if bind.dialect.name != "postgresql":
+        return True
+    row = db.execute(
+        text("SELECT pg_try_advisory_lock(:k1, :k2)"),
+        {"k1": _SCHEDULER_LOCK_KEY1, "k2": _SCHEDULER_LOCK_KEY2},
+    ).scalar()
+    return bool(row)
+
+
+def _scheduler_release_advisory_lock(db) -> None:
+    bind = db.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+    db.execute(
+        text("SELECT pg_advisory_unlock(:k1, :k2)"),
+        {"k1": _SCHEDULER_LOCK_KEY1, "k2": _SCHEDULER_LOCK_KEY2},
+    )
+
+
+def _purge_old_report_execution_logs(db, *, run_at: datetime) -> None:
+    raw = os.getenv("REPORT_EXECUTION_LOG_RETENTION_DAYS", "0").strip()
+    try:
+        days = int(raw)
+    except ValueError:
+        days = 0
+    if days <= 0:
+        return
+    cutoff = run_at - timedelta(days=days)
+    deleted = db.query(ReportExecutionLog).filter(ReportExecutionLog.created_at < cutoff).delete(synchronize_session=False)
+    if deleted:
+        db.commit()
+
+
 def process_due_report_schedules(session_factory: sessionmaker = SessionLocal, now: datetime | None = None) -> int:
     processed = 0
     run_at = now or datetime.now(UTC).replace(tzinfo=None)
     db = session_factory()
+    locked = False
     try:
+        if not _scheduler_try_advisory_lock(db):
+            return 0
+        locked = True
+        _purge_old_report_execution_logs(db, run_at=run_at)
+
         due_schedules = (
             db.query(ReportSchedule)
             .filter(ReportSchedule.is_enabled.is_(True), ReportSchedule.next_run_at <= run_at)
@@ -238,6 +296,12 @@ def process_due_report_schedules(session_factory: sessionmaker = SessionLocal, n
             processed += 1
         return processed
     finally:
+        if locked:
+            try:
+                _scheduler_release_advisory_lock(db)
+                db.commit()
+            except Exception:
+                logger.exception("Failed to release scheduler advisory lock")
         db.close()
 
 

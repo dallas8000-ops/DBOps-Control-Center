@@ -31,6 +31,7 @@ class Incident(Base):
     severity: Mapped[str] = mapped_column(String(50), default="medium")
     owner: Mapped[str] = mapped_column(String(120), default="unassigned")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
 class IncidentHistory(Base):

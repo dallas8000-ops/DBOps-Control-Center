@@ -492,6 +492,26 @@ table.data-table {
   width: 100%;
 }
 
+.incident-filter-overdue {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.form-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.form-field-label input[type="datetime-local"] {
+  font: inherit;
+}
+
 .incident-history-panel {
   padding: 0.65rem 0.85rem;
   background: var(--bg-elevated);

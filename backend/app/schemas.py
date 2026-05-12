@@ -35,6 +35,7 @@ class IncidentCreate(BaseModel):
     description: str = Field(min_length=5)
     severity: str = Field(default="medium")
     owner: str = Field(default="unassigned")
+    due_at: datetime | None = None
 
 
 class IncidentUpdate(BaseModel):
@@ -42,6 +43,7 @@ class IncidentUpdate(BaseModel):
     description: str | None = Field(default=None, min_length=5)
     severity: str | None = None
     owner: str | None = Field(default=None, min_length=1, max_length=120)
+    due_at: datetime | None = None
 
 
 class IncidentRead(BaseModel):
@@ -52,6 +54,7 @@ class IncidentRead(BaseModel):
     severity: str
     owner: str
     created_at: datetime
+    due_at: datetime | None = None
 
     class Config:
         from_attributes = True
