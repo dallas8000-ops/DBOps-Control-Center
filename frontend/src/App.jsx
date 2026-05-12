@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import PropTypes from "prop-types";
 
 const API_URL = String(import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
@@ -1152,6 +1152,11 @@ function IncidentsSection({
   onCancelIncidentEdit,
   canResolve,
   onResolveIncident,
+  incidentHistoryOpenId,
+  incidentHistoryLoading,
+  incidentHistoryEntries,
+  incidentHistoryError,
+  onToggleIncidentHistory,
 }) {
   function renderEditActions(incident) {
     if (!canEditIncidents) return null;
@@ -1237,63 +1242,120 @@ function IncidentsSection({
             </thead>
             <tbody>
               {incidents.map((incident) => (
-                <tr key={incident.id}>
-                  <td>
-                    {editingIncidentId === incident.id ? (
-                      <input
-                        className="inline-input"
-                        value={incidentEditForm.title}
-                        onChange={(e) => onChangeIncidentEditField("title", e.target.value)}
-                      />
-                    ) : (
-                      incident.title
-                    )}
-                  </td>
-                  <td>
-                    {editingIncidentId === incident.id ? (
-                      <input
-                        className="inline-input"
-                        value={incidentEditForm.description}
-                        onChange={(e) => onChangeIncidentEditField("description", e.target.value)}
-                      />
-                    ) : (
-                      incident.description
-                    )}
-                  </td>
-                  <td>
-                    {editingIncidentId === incident.id ? (
-                      <select
-                        className="inline-input"
-                        value={incidentEditForm.severity}
-                        onChange={(e) => onChangeIncidentEditField("severity", e.target.value)}
-                      >
-                        <option value="low">low</option>
-                        <option value="medium">medium</option>
-                        <option value="high">high</option>
-                      </select>
-                    ) : (
-                      incident.severity
-                    )}
-                  </td>
-                  <td>
-                    {editingIncidentId === incident.id ? (
-                      <input
-                        className="inline-input"
-                        value={incidentEditForm.owner}
-                        onChange={(e) => onChangeIncidentEditField("owner", e.target.value)}
-                      />
-                    ) : (
-                      incident.owner
-                    )}
-                  </td>
-                  <td>{incident.status}</td>
-                  <td>
-                    <div className="action-row">
-                      <IncidentResolveCell incident={incident} canResolve={canResolve} onResolve={onResolveIncident} />
-                      {renderEditActions(incident)}
-                    </div>
-                  </td>
-                </tr>
+                <Fragment key={incident.id}>
+                  <tr>
+                    <td>
+                      {editingIncidentId === incident.id ? (
+                        <input
+                          className="inline-input"
+                          value={incidentEditForm.title}
+                          onChange={(e) => onChangeIncidentEditField("title", e.target.value)}
+                        />
+                      ) : (
+                        incident.title
+                      )}
+                    </td>
+                    <td>
+                      {editingIncidentId === incident.id ? (
+                        <input
+                          className="inline-input"
+                          value={incidentEditForm.description}
+                          onChange={(e) => onChangeIncidentEditField("description", e.target.value)}
+                        />
+                      ) : (
+                        incident.description
+                      )}
+                    </td>
+                    <td>
+                      {editingIncidentId === incident.id ? (
+                        <select
+                          className="inline-input"
+                          value={incidentEditForm.severity}
+                          onChange={(e) => onChangeIncidentEditField("severity", e.target.value)}
+                        >
+                          <option value="low">low</option>
+                          <option value="medium">medium</option>
+                          <option value="high">high</option>
+                        </select>
+                      ) : (
+                        incident.severity
+                      )}
+                    </td>
+                    <td>
+                      {editingIncidentId === incident.id ? (
+                        <input
+                          className="inline-input"
+                          value={incidentEditForm.owner}
+                          onChange={(e) => onChangeIncidentEditField("owner", e.target.value)}
+                        />
+                      ) : (
+                        incident.owner
+                      )}
+                    </td>
+                    <td>{incident.status}</td>
+                    <td>
+                      <div className="action-row">
+                        <IncidentResolveCell incident={incident} canResolve={canResolve} onResolve={onResolveIncident} />
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => {
+                            onToggleIncidentHistory(incident.id).catch(() => {});
+                          }}
+                        >
+                          {incidentHistoryOpenId === incident.id ? "Hide history" : "History"}
+                        </button>
+                        {renderEditActions(incident)}
+                      </div>
+                    </td>
+                  </tr>
+                  {incidentHistoryOpenId === incident.id ? (
+                    <tr className="incident-history-row">
+                      <td colSpan={6}>
+                        <div className="incident-history-panel">
+                          {incidentHistoryLoading ? <p className="empty-state">Loading history…</p> : null}
+                          {incidentHistoryError ? <p className="error-text">{incidentHistoryError}</p> : null}
+                          {!incidentHistoryLoading && !incidentHistoryError && incidentHistoryEntries.length === 0 ? (
+                            <p className="empty-state">No history entries yet.</p>
+                          ) : null}
+                          {!incidentHistoryLoading && incidentHistoryEntries.length > 0 ? (
+                            <table className="incident-history-table">
+                              <thead>
+                                <tr>
+                                  <th>When</th>
+                                  <th>Actor</th>
+                                  <th>Action</th>
+                                  <th>Details</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {incidentHistoryEntries.map((entry) => (
+                                  <tr key={entry.id}>
+                                    <td>
+                                      {entry.created_at
+                                        ? new Date(entry.created_at).toLocaleString(undefined, {
+                                            dateStyle: "short",
+                                            timeStyle: "short",
+                                          })
+                                        : "—"}
+                                    </td>
+                                    <td>{entry.actor_email ? entry.actor_email : "—"}</td>
+                                    <td>{entry.action}</td>
+                                    <td>
+                                      <div className="incident-history-json">
+                                        {JSON.stringify(entry.details, null, 2)}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -1341,6 +1403,11 @@ IncidentsSection.propTypes = {
   onCancelIncidentEdit: PropTypes.func.isRequired,
   canResolve: PropTypes.bool.isRequired,
   onResolveIncident: PropTypes.func.isRequired,
+  incidentHistoryOpenId: PropTypes.oneOfType([PropTypes.number, PropTypes.oneOf([null])]),
+  incidentHistoryLoading: PropTypes.bool.isRequired,
+  incidentHistoryEntries: PropTypes.arrayOf(PropTypes.object).isRequired,
+  incidentHistoryError: PropTypes.string.isRequired,
+  onToggleIncidentHistory: PropTypes.func.isRequired,
 };
 /* eslint-enable react/prop-types */
 
@@ -1562,6 +1629,11 @@ function DashboardBody({
   onCancelIncidentEdit,
   canResolve,
   onResolveIncident,
+  incidentHistoryOpenId,
+  incidentHistoryLoading,
+  incidentHistoryEntries,
+  incidentHistoryError,
+  onToggleIncidentHistory,
 }) {
   const [reportAuditViewLimit, setReportAuditViewLimit] = useState(() => {
     const store = globalThis.window?.localStorage;
@@ -1698,6 +1770,11 @@ function DashboardBody({
         onCancelIncidentEdit={onCancelIncidentEdit}
         canResolve={canResolve}
         onResolveIncident={onResolveIncident}
+        incidentHistoryOpenId={incidentHistoryOpenId}
+        incidentHistoryLoading={incidentHistoryLoading}
+        incidentHistoryEntries={incidentHistoryEntries}
+        incidentHistoryError={incidentHistoryError}
+        onToggleIncidentHistory={onToggleIncidentHistory}
       />
     </>
   );
@@ -1750,6 +1827,11 @@ DashboardBody.propTypes = {
   onCancelIncidentEdit: PropTypes.func.isRequired,
   canResolve: PropTypes.bool.isRequired,
   onResolveIncident: PropTypes.func.isRequired,
+  incidentHistoryOpenId: PropTypes.oneOfType([PropTypes.number, PropTypes.oneOf([null])]),
+  incidentHistoryLoading: PropTypes.bool.isRequired,
+  incidentHistoryEntries: PropTypes.arrayOf(PropTypes.object).isRequired,
+  incidentHistoryError: PropTypes.string.isRequired,
+  onToggleIncidentHistory: PropTypes.func.isRequired,
 };
 
 export default function App() {
@@ -1831,6 +1913,10 @@ export default function App() {
     owner: "unassigned",
   });
   const [incidentEditError, setIncidentEditError] = useState("");
+  const [incidentHistoryOpenId, setIncidentHistoryOpenId] = useState(null);
+  const [incidentHistoryEntries, setIncidentHistoryEntries] = useState([]);
+  const [incidentHistoryLoading, setIncidentHistoryLoading] = useState(false);
+  const [incidentHistoryError, setIncidentHistoryError] = useState("");
   const [scheduleForm, setScheduleForm] = useState({
     report_key: "",
     cadence: "daily",
@@ -1869,6 +1955,10 @@ export default function App() {
     setEditingIncidentId(null);
     setIncidentEditForm({ title: "", description: "", severity: "medium", owner: "unassigned" });
     setIncidentEditError("");
+    setIncidentHistoryOpenId(null);
+    setIncidentHistoryEntries([]);
+    setIncidentHistoryLoading(false);
+    setIncidentHistoryError("");
   }
 
   function forceLogoutWithMessage(detail = "") {
@@ -2509,10 +2599,39 @@ export default function App() {
     globalThis.window?.location?.assign(body.url);
   }
 
+  async function loadIncidentHistory(incidentId) {
+    setIncidentHistoryLoading(true);
+    setIncidentHistoryError("");
+    const { res, body } = await apiJson(`/incidents/${incidentId}/history`);
+    setIncidentHistoryLoading(false);
+    if (!res.ok) {
+      setIncidentHistoryEntries([]);
+      setIncidentHistoryError(formatApiDetail(body));
+      return;
+    }
+    setIncidentHistoryEntries(Array.isArray(body) ? body : []);
+  }
+
+  async function toggleIncidentHistory(incidentId) {
+    if (incidentHistoryOpenId === incidentId) {
+      setIncidentHistoryOpenId(null);
+      setIncidentHistoryEntries([]);
+      setIncidentHistoryError("");
+      setIncidentHistoryLoading(false);
+      return;
+    }
+    setIncidentHistoryOpenId(incidentId);
+    setIncidentHistoryEntries([]);
+    await loadIncidentHistory(incidentId);
+  }
+
   async function resolveIncident(id) {
     const { res } = await apiJson(`/incidents/${id}/resolve`, { method: "PATCH", parseJson: false });
     if (!res.ok) return;
     await loadData();
+    if (incidentHistoryOpenId === id) {
+      await loadIncidentHistory(id);
+    }
     if (me?.role === "DBA") await loadAdminOverview();
   }
 
@@ -2553,6 +2672,9 @@ export default function App() {
     }
     setEditingIncidentId(null);
     await loadData();
+    if (incidentHistoryOpenId === incidentId) {
+      await loadIncidentHistory(incidentId);
+    }
     if (me?.role === "DBA") await loadAdminOverview();
   }
 
@@ -2677,6 +2799,11 @@ export default function App() {
             onCancelIncidentEdit={cancelIncidentEdit}
             canResolve={canResolve}
             onResolveIncident={resolveIncident}
+            incidentHistoryOpenId={incidentHistoryOpenId}
+            incidentHistoryLoading={incidentHistoryLoading}
+            incidentHistoryEntries={incidentHistoryEntries}
+            incidentHistoryError={incidentHistoryError}
+            onToggleIncidentHistory={toggleIncidentHistory}
           />
         </>
       ) : (

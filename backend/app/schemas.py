@@ -57,6 +57,15 @@ class IncidentRead(BaseModel):
         from_attributes = True
 
 
+class IncidentHistoryRead(BaseModel):
+    id: int
+    incident_id: int
+    actor_email: str | None
+    action: str
+    details: dict[str, Any]
+    created_at: datetime
+
+
 class ReportParamSpec(BaseModel):
     name: str
     type: str

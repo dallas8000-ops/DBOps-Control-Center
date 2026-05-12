@@ -214,6 +214,70 @@ def test_analyst_can_edit_incident() -> None:
         assert body["owner"] == "dba@example.com"
 
 
+def test_incident_history_records_create_update_resolve() -> None:
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+        _create_user(client, dba_token, "analyst@example.com", "Analyst")
+        _create_user(client, dba_token, "viewer@example.com", "Viewer")
+        analyst_token = _login_token(client, "analyst@example.com", "Password123!")
+        viewer_token = _login_token(client, "viewer@example.com", "Password123!")
+
+        create_resp = client.post(
+            "/incidents",
+            json={
+                "title": "Slow query",
+                "description": "Top queries show regression",
+                "severity": "low",
+                "owner": "analyst@example.com",
+            },
+            headers=_auth_headers(analyst_token),
+        )
+        assert create_resp.status_code == 201
+        incident_id = create_resp.json()["id"]
+
+        hist0 = client.get(f"/incidents/{incident_id}/history", headers=_auth_headers(analyst_token))
+        assert hist0.status_code == 200
+        assert len(hist0.json()) == 1
+        assert hist0.json()[0]["action"] == "created"
+        assert hist0.json()[0]["actor_email"] == "analyst@example.com"
+
+        viewer_hist = client.get(f"/incidents/{incident_id}/history", headers=_auth_headers(viewer_token))
+        assert viewer_hist.status_code == 200
+        assert len(viewer_hist.json()) == 1
+
+        edit_resp = client.patch(
+            f"/incidents/{incident_id}",
+            json={"title": "Slow query burst", "severity": "high"},
+            headers=_auth_headers(analyst_token),
+        )
+        assert edit_resp.status_code == 200
+
+        hist1 = client.get(f"/incidents/{incident_id}/history", headers=_auth_headers(analyst_token))
+        assert hist1.status_code == 200
+        entries = hist1.json()
+        assert len(entries) == 2
+        assert entries[1]["action"] == "updated"
+        assert "title" in entries[1]["details"]["changes"]
+        assert "severity" in entries[1]["details"]["changes"]
+
+        resolve_resp = client.patch(f"/incidents/{incident_id}/resolve", headers=_auth_headers(dba_token))
+        assert resolve_resp.status_code == 200
+
+        hist2 = client.get(f"/incidents/{incident_id}/history", headers=_auth_headers(analyst_token))
+        assert hist2.status_code == 200
+        assert len(hist2.json()) == 3
+        assert hist2.json()[2]["action"] == "resolved"
+        assert hist2.json()[2]["actor_email"] == "dba@example.com"
+
+        resolve_again = client.patch(f"/incidents/{incident_id}/resolve", headers=_auth_headers(dba_token))
+        assert resolve_again.status_code == 200
+        hist_no_dup = client.get(f"/incidents/{incident_id}/history", headers=_auth_headers(analyst_token))
+        assert len(hist_no_dup.json()) == 3
+
+        missing = client.get("/incidents/99999/history", headers=_auth_headers(analyst_token))
+        assert missing.status_code == 404
+
+
 def test_viewer_cannot_edit_incident() -> None:
     for client in _client():
         dba_token = _bootstrap_dba(client)

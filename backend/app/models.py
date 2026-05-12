@@ -33,6 +33,27 @@ class Incident(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class IncidentHistory(Base):
+    __tablename__ = "incident_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    incident_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("incidents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    actor_user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey(USERS_ID_FK, ondelete=ON_DELETE_SET_NULL),
+        nullable=True,
+        index=True,
+    )
+    action: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    details_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class ReportSchedule(Base):
     __tablename__ = "report_schedules"
 

@@ -492,6 +492,36 @@ table.data-table {
   width: 100%;
 }
 
+.incident-history-panel {
+  padding: 0.65rem 0.85rem;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+}
+
+.incident-history-table {
+  width: 100%;
+  font-size: 0.88rem;
+  border-collapse: collapse;
+}
+
+.incident-history-table th,
+.incident-history-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.incident-history-json {
+  font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+  font-size: 0.8rem;
+  word-break: break-word;
+  white-space: pre-wrap;
+  max-height: 9rem;
+  overflow: auto;
+}
+
 .inline-input {
   min-width: 110px;
 }

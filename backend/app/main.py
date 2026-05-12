@@ -23,7 +23,16 @@ except ImportError:  # pragma: no cover - surfaced via HTTP 503 when feature is 
 from .auth_utils import create_access_token, hash_password, verify_password
 from .db import engine, get_db
 from .deps import get_current_user, require_roles
-from .models import BillingSettings, Incident, OnboardingEvent, ReportExecutionLog, ReportSchedule, User, UserAdminAuditLog
+from .models import (
+    BillingSettings,
+    Incident,
+    IncidentHistory,
+    OnboardingEvent,
+    ReportExecutionLog,
+    ReportSchedule,
+    User,
+    UserAdminAuditLog,
+)
 from .report_catalog import REPORTS
 from .rate_limit import check_auth_rate_limit
 from .report_runner import execute_whitelisted_report, prepare_report_request
@@ -37,6 +46,7 @@ from .schemas import (
     BillingSettingsRead,
     BillingSettingsUpdate,
     IncidentCreate,
+    IncidentHistoryRead,
     IncidentRead,
     IncidentUpdate,
     LoginRequest,
@@ -74,7 +84,7 @@ async def lifespan(_: FastAPI):
             await task
 
 
-app = FastAPI(title="DBOps Control Center API", version="0.4.0", lifespan=lifespan)
+app = FastAPI(title="DBOps Control Center API", version="0.4.1", lifespan=lifespan)
 
 AUTH_RATE_LIMIT_DETAIL = "Too many auth requests. Please try again shortly."
 ACCOUNT_DISABLED_DETAIL = "Your account is disabled. Contact a DBA."
@@ -103,6 +113,10 @@ ERROR_RESPONSES_USER_MUTATION = {
 }
 ERROR_RESPONSES_INCIDENT_MUTATION = {
     403: {"description": "Insufficient role"},
+    404: {"description": INCIDENT_NOT_FOUND_DETAIL},
+}
+ERROR_RESPONSES_INCIDENT_READ = {
+    403: {"description": "Insufficient permissions"},
     404: {"description": INCIDENT_NOT_FOUND_DETAIL},
 }
 ERROR_RESPONSES_REPORT_EXECUTION = {
@@ -152,6 +166,24 @@ def _log_user_admin_action(
             actor_user_id=actor_user_id,
             target_user_id=target_user_id,
             target_email=target_email.lower(),
+            action=action,
+            details_json=json.dumps(details, sort_keys=True),
+        )
+    )
+
+
+def _log_incident_history(
+    db: Session,
+    *,
+    incident_id: int,
+    actor_user_id: int | None,
+    action: str,
+    details: dict,
+) -> None:
+    db.add(
+        IncidentHistory(
+            incident_id=incident_id,
+            actor_user_id=actor_user_id,
             action=action,
             details_json=json.dumps(details, sort_keys=True),
         )
@@ -882,6 +914,19 @@ def create_incident(
         actor_user_id=current.id,
         details={"incident_id": incident.id},
     )
+    _log_incident_history(
+        db,
+        incident_id=incident.id,
+        actor_user_id=current.id,
+        action="created",
+        details={
+            "title": incident.title,
+            "description": incident.description,
+            "severity": incident.severity,
+            "owner": incident.owner,
+            "status": incident.status,
+        },
+    )
     db.commit()
     db.refresh(incident)
     return incident
@@ -892,20 +937,34 @@ def update_incident(
     incident_id: int,
     payload: IncidentUpdate,
     db: DbDep,
-    _: Annotated[User, Depends(require_roles("DBA", "Analyst"))],
+    current: Annotated[User, Depends(require_roles("DBA", "Analyst"))],
 ):
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail=INCIDENT_NOT_FOUND_DETAIL)
 
-    if payload.title is not None:
+    changes: dict[str, dict[str, Any]] = {}
+    if payload.title is not None and payload.title != incident.title:
+        changes["title"] = {"before": incident.title, "after": payload.title}
         incident.title = payload.title
-    if payload.description is not None:
+    if payload.description is not None and payload.description != incident.description:
+        changes["description"] = {"before": incident.description, "after": payload.description}
         incident.description = payload.description
-    if payload.severity is not None:
+    if payload.severity is not None and payload.severity != incident.severity:
+        changes["severity"] = {"before": incident.severity, "after": payload.severity}
         incident.severity = payload.severity
-    if payload.owner is not None:
+    if payload.owner is not None and payload.owner != incident.owner:
+        changes["owner"] = {"before": incident.owner, "after": payload.owner}
         incident.owner = payload.owner
+
+    if changes:
+        _log_incident_history(
+            db,
+            incident_id=incident.id,
+            actor_user_id=current.id,
+            action="updated",
+            details={"changes": changes},
+        )
 
     db.commit()
     db.refresh(incident)
@@ -916,15 +975,62 @@ def update_incident(
 def resolve_incident(
     incident_id: int,
     db: DbDep,
-    _: DbaUserDep,
+    current: DbaUserDep,
 ):
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail=INCIDENT_NOT_FOUND_DETAIL)
+    if incident.status != "resolved":
+        _log_incident_history(
+            db,
+            incident_id=incident.id,
+            actor_user_id=current.id,
+            action="resolved",
+            details={"status": {"before": incident.status, "after": "resolved"}},
+        )
     incident.status = "resolved"
     db.commit()
     db.refresh(incident)
     return incident
+
+
+@app.get(
+    "/incidents/{incident_id}/history",
+    response_model=list[IncidentHistoryRead],
+    responses=ERROR_RESPONSES_INCIDENT_READ,
+)
+def get_incident_history(
+    incident_id: int,
+    db: DbDep,
+    _: Annotated[User, Depends(require_roles("DBA", "Analyst", "Viewer"))],
+):
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail=INCIDENT_NOT_FOUND_DETAIL)
+    rows = (
+        db.query(IncidentHistory, User.email)
+        .outerjoin(User, IncidentHistory.actor_user_id == User.id)
+        .filter(IncidentHistory.incident_id == incident_id)
+        .order_by(IncidentHistory.created_at.asc(), IncidentHistory.id.asc())
+        .all()
+    )
+    out: list[IncidentHistoryRead] = []
+    for hist, actor_email in rows:
+        try:
+            details = json.loads(hist.details_json or "{}")
+        except json.JSONDecodeError:
+            details = {}
+        out.append(
+            IncidentHistoryRead(
+                id=hist.id,
+                incident_id=hist.incident_id,
+                actor_email=actor_email,
+                action=hist.action,
+                details=details,
+                created_at=hist.created_at,
+            )
+        )
+    return out
 
 
 @app.get("/reports/catalog", response_model=list[ReportCatalogEntry])
