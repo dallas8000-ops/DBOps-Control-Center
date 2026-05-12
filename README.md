@@ -6,7 +6,7 @@ Role-based database operations dashboard for small teams that need safe visibili
 
 `DBOps Control Center` is a full-stack portfolio app that demonstrates an operations-focused workflow:
 
-- track incidents and operational summary metrics
+- track incidents (including change audit history), and operational summary metrics
 - enforce JWT auth + RBAC (`DBA`, `Analyst`, `Viewer`)
 - execute only whitelisted read-only SQL reports
 - audit report execution history
@@ -16,7 +16,7 @@ This repo is designed to run locally with Docker Compose and deploy to Render wi
 
 ## Completion level (current state)
 
-Overall project completion is approximately **82%** toward a production-ready internal tool.
+Overall project completion is approximately **85%** toward a production-ready internal tool.
 
 - **Implemented and working**
   - Authentication + RBAC (`DBA`, `Analyst`, `Viewer`)
@@ -24,7 +24,7 @@ Overall project completion is approximately **82%** toward a production-ready in
   - DBA bootstrap flow for empty database
   - User lifecycle controls (create, reset password, enable/disable, delete)
   - User admin audit log (`GET /auth/users/audit`)
-  - Incident create, filtered/list/sort, Analyst/DBA edit (`PATCH /incidents/{id}`), DBA resolve
+  - Incident create, filtered/list/sort, Analyst/DBA edit (`PATCH /incidents/{id}`), DBA resolve, **audit history** (`GET /incidents/{id}/history` + in-app History panel)
   - Whitelisted report execution, CSV export, and execution audit trail
   - DBA-managed scheduled reports (daily/weekly UTC) with optional webhook delivery hook
   - Idempotent demo seed (`python -m app` / `seed-demo`)
@@ -32,7 +32,7 @@ Overall project completion is approximately **82%** toward a production-ready in
   - Local Docker Compose workflow and Render deployment path
 - **Partially complete**
   - Operational observability (`/health`, scheduler introspection; metrics/tracing not yet added)
-  - Incident workflow depth (no per-field history timeline or SLA clocks yet)
+  - Incident workflow beyond history (no SLA clocks, escalation states, or comments thread yet)
   - Scheduled report delivery (email path is a logged placeholder; multi-instance scheduler coordination not solved)
 - **Not complete yet**
   - Broad automated coverage (failure paths, schedules, billing hooks if used)
@@ -56,8 +56,9 @@ Overall project completion is approximately **82%** toward a production-ready in
 
 - **Incident operations**
   - Create, list with filters (status, severity, owner, search, date range) and sort (`newest` / `oldest` / `severity`)
-  - Analyst/DBA update open incidents (`PATCH /incidents/{id}`)
-  - DBA resolve workflow (`PATCH /incidents/{id}/resolve`)
+  - Analyst/DBA update open incidents (`PATCH /incidents/{id}`); changes logged with before/after field diffs
+  - DBA resolve workflow (`PATCH /incidents/{id}/resolve`); resolve events logged (idempotent if already resolved)
+  - **History**: `GET /incidents/{id}/history` (Viewer/Analyst/DBA) returns chronological `created` / `updated` / `resolved` entries with actor email and JSON details; dashboard **History** toggle per row
   - Operational summary cards (total/open/resolved/high severity)
 
 - **Safe reporting and audit trail**
@@ -84,6 +85,7 @@ Overall project completion is approximately **82%** toward a production-ready in
 | Capability | Viewer | Analyst | DBA |
 |------------|--------|---------|-----|
 | `GET /incidents` (filters/sort), `GET /reports/summary` | Yes | Yes | Yes |
+| `GET /incidents/{id}/history` (audit trail) | Yes | Yes | Yes |
 | `GET /reports/catalog`, `POST /reports/run`, `POST /reports/export/csv` | Yes (filtered catalog) | Yes | Yes |
 | `POST /incidents` | No | Yes | Yes |
 | `PATCH /incidents/{id}` (edit fields) | No | Yes | Yes |
@@ -146,6 +148,8 @@ What gets seeded on each run:
 - 15 incidents with varied severity/status/owner
 - 12 report execution logs (`incidents_by_status`, `incidents_recent`, `open_high_severity`)
 
+Seeded incidents have **no** `incident_history` rows (history is recorded for activity after migration `008_incident_history` is applied).
+
 Seeded default user emails:
 
 - `barney@example.com` (DBA)
@@ -181,6 +185,7 @@ docker compose exec backend python -m app
 
 - **Incidents**
   - `GET /incidents` (supports `status`, `severity`, `owner`, `search`, `start_date`, `end_date`, `sort`)
+  - `GET /incidents/{id}/history` (chronological audit: create, field updates, resolve)
   - `POST /incidents`
   - `PATCH /incidents/{id}`
   - `PATCH /incidents/{id}/resolve`
@@ -224,15 +229,15 @@ docker compose exec backend python -m app
 | Frontend smoke tests | `npm run test:run` | ✅ Passing (4 smoke tests) |
 | Frontend lint health | IDE lint diagnostics on edited files | ✅ Passing |
 | Docker local stack | `docker compose up --build` | ✅ Passing |
-| Backend migration chain | Alembic upgrades through head (e.g. `007_billing_and_onboarding`) | ✅ Passing |
-| Backend integration tests | `pytest -q` (auth/RBAC + incident/filter + auth-rate-limit + admin-audit coverage) | ✅ Passing (14 tests) |
+| Backend migration chain | Alembic upgrades through head (includes `008_incident_history`) | ✅ Passing |
+| Backend integration tests | `pytest -q` (auth/RBAC, incidents, filters, incident history, rate limit, admin audit, reports/schedules) | ✅ Passing (29 tests) |
 | API health | `GET /health` | ✅ Passing |
 | Auth smoke tests | Bootstrap/login/create-user/manual role checks | ✅ Passing |
 | DBA admin actions | Reset password, enable/disable, delete user (manual) | ✅ Passing |
 
 ### Test gaps (planned)
 
-- ⚠️ Backend suite covers core paths; expand coverage for schedules, CSV export edge cases, and billing/admin routes if used in production
+- ⚠️ Backend suite covers core paths including incident history; expand coverage for schedules, CSV export edge cases, and billing/admin routes if used in production
 - ⚠️ Frontend smoke tests are starter-level; add deeper integration or Playwright/Cypress flows when UI stabilizes
 - ⚠️ Optional CI hardening: migration drift checks, coverage thresholds, dependency audit gates
 
@@ -275,8 +280,8 @@ If Postgres requires SSL, append params to `DATABASE_URL` (commonly `?sslmode=re
 Target window: **~2 weeks** (items below are **not** duplicates of what is already shipped in this repo).
 
 1. **Workflow and product depth**
-   - Incident change history / timeline (who changed what, when)
    - SLA-style targets or escalation states (beyond open/resolved)
+   - Richer incident timeline (comments, attachments, or export of history to CSV)
    - Optional “wipe demo data” / tenant reset helper aligned with seed script
 
 2. **Reporting and scheduler production readiness**
