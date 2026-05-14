@@ -1,5 +1,9 @@
 # DBOps Control Center
 
+**Private / proprietary.** This project is maintained in a **private** repository. **Sale, redistribution, download for others, or disclosure of this codebase or related materials without the copyright owner’s express written consent is prohibited.** See [`LEGAL_NOTICE.md`](./LEGAL_NOTICE.md) for the full notice.
+
+Commercial terms: [`DBOps_LICENSE.md`](./DBOps_LICENSE.md). Product positioning and pitch: [`DBOps_Product_Positioning.md`](./DBOps_Product_Positioning.md).
+
 Role-based database operations dashboard for small teams that need safe visibility, incident tracking, and audited reporting without exposing raw SQL access to everyone.
 
 ## Overview
@@ -16,27 +20,31 @@ This repo is designed to run locally with Docker Compose and deploy to Render wi
 
 ## Completion level (current state)
 
-Overall project completion is approximately **85%** toward a production-ready internal tool.
+Overall project completion is approximately **87%** toward a production-ready internal tool.
 
 - **Implemented and working**
   - Authentication + RBAC (`DBA`, `Analyst`, `Viewer`)
   - Auth rate limiting on login endpoints (configurable via env)
+  - **API rate limiting** (per-IP) on high-cost routes: incident create, report run, CSV export (`API_RATE_LIMIT_*` env)
+  - **Request correlation**: `X-Request-ID` header + structured access lines (`dbops.access` logger)
   - DBA bootstrap flow for empty database
   - User lifecycle controls (create, reset password, enable/disable, delete)
   - User admin audit log (`GET /auth/users/audit`)
-  - Incident create, filtered/list/sort, Analyst/DBA edit (`PATCH /incidents/{id}`), DBA resolve, **audit history** (`GET /incidents/{id}/history` + in-app History panel)
-  - Whitelisted report execution, CSV export, and execution audit trail
-  - DBA-managed scheduled reports (daily/weekly UTC) with optional webhook delivery hook
-  - Idempotent demo seed (`python -m app` / `seed-demo`)
-  - Starter backend pytest suite + frontend smoke tests + CI gates
+  - Incident create, filtered/list/sort, optional **`due_at`** and **`overdue=true`** filter (open + past due), Analyst/DBA edit, DBA resolve
+  - **Audit history** (`GET /incidents/{id}/history`, CSV export, in-app History + **History CSV**)
+  - Whitelisted report execution, CSV export, and execution audit trail; optional **report log retention** purge (`REPORT_EXECUTION_LOG_RETENTION_DAYS`)
+  - DBA-managed scheduled reports (daily/weekly UTC) with **`none` / `email` (SMTP when configured)** / `webhook` delivery
+  - **PostgreSQL advisory lock** so only one API replica runs the due-schedule sweep per tick (no paid coordinator)
+  - Idempotent demo seed (`python -m app` / `seed-demo`) and **`python -m app reset-demo --yes`** (clears operational data; keeps users/billing)
+  - Backend pytest suite + frontend smoke tests + CI gates
   - Local Docker Compose workflow and Render deployment path
 - **Partially complete**
-  - Operational observability (`/health`, scheduler introspection; metrics/tracing not yet added)
-  - Incident workflow beyond history (no SLA clocks, escalation states, or comments thread yet)
-  - Scheduled report delivery (email path is a logged placeholder; multi-instance scheduler coordination not solved)
+  - Operational observability (access log + request ID; no full metrics/tracing stack yet)
+  - Incident workflow (due dates shipped; **no** comments thread, attachments, or formal escalation states yet)
+  - Scheduler production hardening beyond Postgres locking (e.g. external worker / Redis lease) if you outgrow the current pattern
 - **Not complete yet**
-  - Broad automated coverage (failure paths, schedules, billing hooks if used)
-  - SSO/OIDC and hardened production runbooks
+  - Broad automated coverage (failure paths, billing edge cases if used in production)
+  - SSO/OIDC and expanded production runbooks
 
 ## Core capabilities
 
@@ -55,18 +63,18 @@ Overall project completion is approximately **85%** toward a production-ready in
   - Delete users (self-protection prevents deleting/disable own account)
 
 - **Incident operations**
-  - Create, list with filters (status, severity, owner, search, date range) and sort (`newest` / `oldest` / `severity`)
-  - Analyst/DBA update open incidents (`PATCH /incidents/{id}`); changes logged with before/after field diffs
-  - DBA resolve workflow (`PATCH /incidents/{id}/resolve`); resolve events logged (idempotent if already resolved)
-  - **History**: `GET /incidents/{id}/history` (Viewer/Analyst/DBA) returns chronological `created` / `updated` / `resolved` entries with actor email and JSON details; dashboard **History** toggle per row
+  - Create, list with filters (status, severity, owner, search, date range, **`overdue`** for open items past **`due_at`**) and sort (`newest` / `oldest` / `severity`)
+  - Optional **target due** (`due_at`) on create/edit; Analyst/DBA updates logged with before/after field diffs
+  - DBA resolve workflow; resolve events logged (idempotent if already resolved)
+  - **History**: chronological `created` / `updated` / `resolved`; JSON in API; **CSV export**; dashboard **History** + **History CSV**
   - Operational summary cards (total/open/resolved/high severity)
 
 - **Safe reporting and audit trail**
   - Report catalog defined in code (`backend/app/report_catalog.py`)
-  - Parameterized, whitelisted, read-only SQL execution
-  - Execution logging to `report_execution_logs`
+  - Parameterized, whitelisted, read-only SQL execution (**rate-limited** per IP on run + CSV export)
+  - Execution logging to `report_execution_logs` (optional **retention** purge via env)
   - DBA-managed report schedules with daily or weekly UTC run windows
-  - Delivery target hooks for scheduled runs (`none`, `email` placeholder logging, `webhook` POST)
+  - Delivery: `none`, **`email` via optional SMTP env** (stdlib; no vendor SDK required), or `webhook` POST
 
 - **Deployment readiness**
   - Alembic migrations on startup
@@ -85,7 +93,7 @@ Overall project completion is approximately **85%** toward a production-ready in
 | Capability | Viewer | Analyst | DBA |
 |------------|--------|---------|-----|
 | `GET /incidents` (filters/sort), `GET /reports/summary` | Yes | Yes | Yes |
-| `GET /incidents/{id}/history` (audit trail) | Yes | Yes | Yes |
+| `GET /incidents/{id}/history` (audit trail), `GET /incidents/{id}/history/export` (CSV) | Yes | Yes | Yes |
 | `GET /reports/catalog`, `POST /reports/run`, `POST /reports/export/csv` | Yes (filtered catalog) | Yes | Yes |
 | `POST /incidents` | No | Yes | Yes |
 | `PATCH /incidents/{id}` (edit fields) | No | Yes | Yes |
@@ -142,6 +150,12 @@ Equivalent explicit command:
 python -m app seed-demo
 ```
 
+To **clear operational demo data** (incidents, history, report logs, schedules, onboarding markers) while **keeping users and billing**, use:
+
+```bash
+python -m app reset-demo --yes
+```
+
 What gets seeded on each run:
 
 - 3 users: `DBA`, `Analyst`, `Viewer`
@@ -184,37 +198,42 @@ docker compose exec backend python -m app
   - `DELETE /auth/users/{user_id}`
 
 - **Incidents**
-  - `GET /incidents` (supports `status`, `severity`, `owner`, `search`, `start_date`, `end_date`, `sort`)
+  - `GET /incidents` (supports `status`, `severity`, `owner`, `search`, `start_date`, `end_date`, `sort`, **`overdue`**)
   - `GET /incidents/{id}/history` (chronological audit: create, field updates, resolve)
-  - `POST /incidents`
-  - `PATCH /incidents/{id}`
+  - `GET /incidents/{id}/history/export` (CSV download)
+  - `POST /incidents` (optional `due_at`; rate-limited per IP)
+  - `PATCH /incidents/{id}` (optional `due_at` updates)
   - `PATCH /incidents/{id}/resolve`
 
 - **Reports**
   - `GET /reports/summary`
   - `GET /reports/catalog`
-  - `POST /reports/run`
-  - `POST /reports/export/csv`
+  - `POST /reports/run` (rate-limited per IP)
+  - `POST /reports/export/csv` (rate-limited per IP)
   - `GET /reports/runs`
   - `POST /reports/schedules`
   - `GET /reports/schedules`
   - `PATCH /reports/schedules/{schedule_id}/status`
+
+Protected routes accept `Authorization: Bearer …`. Responses include **`X-Request-ID`** (or echo a client-provided `X-Request-ID`). See `backend/.env.example` for **`API_RATE_LIMIT_*`**, **SMTP_***, **`REPORT_EXECUTION_LOG_RETENTION_DAYS`**, etc.
 
 ## Scheduled report MVP notes
 
 - Schedules run inside the API process on a simple polling loop.
 - Supported cadences are `daily` and `weekly`, using UTC hour/minute fields.
 - Scheduled executions reuse the same whitelisted report validation and write into `report_execution_logs`.
-- Delivery configuration supports `none`, `email`, and `webhook` targets.
+- Delivery configuration supports `none`, **`email` (sent via stdlib SMTP when `SMTP_HOST` and related env vars are set; otherwise log-only)**, and `webhook` targets.
 - Failures are stored on the schedule (`last_error`) and also logged as failed report executions.
-- Email delivery is a hook placeholder that logs notification payloads for operator wiring.
 - Webhook delivery sends a JSON payload with short timeout and logs delivery errors without blocking scheduler progress.
-- Known limitation: this is a single-process scheduler. If you run multiple API instances, each instance can attempt the same due schedule unless you add external coordination.
+- **Multi-instance APIs (PostgreSQL):** a **session advisory lock** ensures only one replica processes due schedules per tick. SQLite / tests skip locking.
+- Optional: **`REPORT_EXECUTION_LOG_RETENTION_DAYS`** prunes old execution log rows at the start of a scheduler tick (leader only on Postgres).
 - Known limitation: schedules are owned by the creating DBA account. If that user is disabled, the schedule remains enabled but future runs log a failure until the owner is re-enabled or the schedule is replaced.
 
 ## Commercial assets package
 
+- **Proprietary notice / redistribution:** [`LEGAL_NOTICE.md`](./LEGAL_NOTICE.md)
 - Pricing sheet: `docs/commercial-assets/pricing-sheet.md`
+- Source license + product outline (template): `docs/commercial-assets/source-license-product-outline.md`
 - Onboarding checklist: `docs/commercial-assets/onboarding-checklist-day0-day7.md`
 - Support SLA matrix: `docs/commercial-assets/support-sla-response-matrix.md`
 - Demo scripts: `docs/commercial-assets/demo-video-scripts.md`
@@ -229,8 +248,8 @@ docker compose exec backend python -m app
 | Frontend smoke tests | `npm run test:run` | ✅ Passing (4 smoke tests) |
 | Frontend lint health | IDE lint diagnostics on edited files | ✅ Passing |
 | Docker local stack | `docker compose up --build` | ✅ Passing |
-| Backend migration chain | Alembic upgrades through head (includes `008_incident_history`) | ✅ Passing |
-| Backend integration tests | `pytest -q` (auth/RBAC, incidents, filters, incident history, rate limit, admin audit, reports/schedules) | ✅ Passing (29 tests) |
+| Backend migration chain | Alembic upgrades through head (includes `009_incident_due_at`) | ✅ Passing |
+| Backend integration tests | `pytest -q` (auth/RBAC, incidents, history, CSV, rate limits, schedules, billing paths, etc.) | ✅ Passing (32 tests) |
 | API health | `GET /health` | ✅ Passing |
 | Auth smoke tests | Bootstrap/login/create-user/manual role checks | ✅ Passing |
 | DBA admin actions | Reset password, enable/disable, delete user (manual) | ✅ Passing |
@@ -280,21 +299,19 @@ If Postgres requires SSL, append params to `DATABASE_URL` (commonly `?sslmode=re
 Target window: **~2 weeks** (items below are **not** duplicates of what is already shipped in this repo).
 
 1. **Workflow and product depth**
-   - SLA-style targets or escalation states (beyond open/resolved)
-   - Richer incident timeline (comments, attachments, or export of history to CSV)
-   - Optional “wipe demo data” / tenant reset helper aligned with seed script
+   - Formal escalation states or SLA policies beyond optional `due_at` / overdue filter
+   - Richer incident timeline (comments, attachments)
+   - Optional “wipe demo data” is available via `reset-demo`; consider a **DBA-only HTTP** helper behind env if you want it in the UI
 
 2. **Reporting and scheduler production readiness**
-   - Distributed-safe scheduling (single-leader or external worker; avoid duplicate runs across API replicas)
-   - Real SMTP or provider integration for email delivery (replace placeholder logging)
-   - Report retention policies and export archival
+   - External worker or stronger lease pattern if you outgrow Postgres advisory locking
+   - Report retention policies beyond execution-log pruning (e.g. CSV archival to object storage)
 
 3. **Quality and observability**
-   - Expand pytest coverage on scheduler, webhooks, and failure branches
-   - Add structured logging + request correlation IDs
-   - Metrics (latency, auth failures, schedule failures) or lightweight OpenTelemetry hooks
+   - Expand pytest coverage on webhooks, SMTP failure paths, and billing edge cases
+   - Metrics (latency, schedule failures) or lightweight OpenTelemetry hooks (self-hosted or your existing stack)
 
 4. **Enterprise hardening**
    - SSO/OIDC option for larger tenants
-   - Rate limiting beyond auth endpoints where appropriate
+   - Rate limiting beyond selected routes where appropriate
    - Expanded operations runbook (`docs/`) for Render + incident response

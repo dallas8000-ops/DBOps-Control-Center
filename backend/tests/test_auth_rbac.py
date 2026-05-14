@@ -850,13 +850,20 @@ def test_report_csv_export_supports_all_whitelisted_reports() -> None:
             ("incidents_recent", {"max_rows": 10}, "id,title,status,severity,owner,created_at"),
             ("incidents_by_status", {}, "status,incident_count"),
             ("open_high_severity", {}, "id,title,owner,created_at"),
+            ("incidents_open_by_owner", {}, "owner,open_count"),
+            ("incidents_by_severity", {}, "severity,incident_count"),
+            ("report_runs_by_report_key", {}, "report_key,run_count,success_count"),
+            ("schedules_overview", {}, "id,report_key,cadence,is_enabled,next_run_at,last_run_at,last_error"),
+            ("users_by_role", {}, "role,user_count"),
+            ("incident_history_by_action", {}, "action,event_count"),
+            ("admin_audit_by_action", {}, "action,event_count"),
         ]
 
         for report_key, params, expected_header in cases:
             resp = client.post(
                 "/reports/export/csv",
                 json={"report_key": report_key, "params": params},
-                headers=_auth_headers(analyst_token),
+                headers=_auth_headers(dba_token),
             )
             assert resp.status_code == 200
             assert resp.headers["content-type"].startswith("text/csv")
