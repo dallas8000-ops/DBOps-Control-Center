@@ -29,7 +29,7 @@ def api(method, path, **kwargs):
 # ── 1. Create Lists ────────────────────────────────────────────────────────────
 print("Creating lists...")
 lists = {}
-for name in ["Backlog", "Week 1 – This Week", "Week 2", "Done"]:
+for name in ["Backlog", "Week 6 - This Week", "Done"]:
     lst = api("POST", "/lists", params={"name": name, "idBoard": BOARD_ID, "pos": "bottom"})
     lists[name] = lst["id"]
     print(f"  ✓ {name}")
@@ -54,11 +54,11 @@ for name, color in label_colors.items():
 
 # ── 3. Card definitions ────────────────────────────────────────────────────────
 cards = [
-    # ── Backlog ──────────────────────────────────────────────────────────────
+    # -- Backlog --------------------------------------------------------------
     {
         "list": "Backlog",
         "name": "ROADMAP: Post-sprint Enhancements",
-        "desc": "Umbrella card for post-sprint roadmap items.",
+        "desc": "Umbrella card for items after the current Week 6 Stripe sprint.",
         "labels": [],
         "checklist": [
             "FEATURE: Scheduled report runs + notifications",
@@ -66,128 +66,47 @@ cards = [
             "FEATURE: Trend charts + SLA widgets",
         ],
     },
-    # ── Week 1 ───────────────────────────────────────────────────────────────
+
+    # -- Week 6 ---------------------------------------------------------------
     {
-        "list": "Week 1 – This Week",
-        "name": "FEATURE: Seed demo data CLI for local reset",
-        "desc": "Add a repeatable seed command that creates demo users, incidents, and report logs for local/dev environments.",
+        "list": "Week 6 - This Week",
+        "name": "FEATURE: Stripe billing integration wiring",
+        "desc": "Finalize Stripe checkout and webhook lifecycle wiring for event-driven billing state updates.",
         "labels": ["backend", "db", "high-priority"],
         "checklist": [
-            "Add script/command (python -m app.seed_demo or similar)",
-            "Seed users: DBA, Analyst, Viewer",
-            "Seed 10-20 incidents with varied severity/status/owner",
-            "Make seed idempotent (safe to rerun)",
-            "Add README usage section",
-            "Validate in Docker Compose flow",
+            "Create feature branch from main: feature/stripe-billing-wiring",
+            "Add backend endpoint POST /billing/checkout/session (DBA)",
+            "Add backend endpoint POST /billing/webhook with Stripe signature verification",
+            "Persist Stripe customer/subscription IDs into billing_settings",
+            "Add backend tests for checkout session + webhook updates",
+            "Add frontend billing action to launch Stripe Checkout",
+            "Configure Render env vars: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID_STARTER",
+            "Add Stripe webhook endpoint in dashboard and validate event delivery",
         ],
     },
+
     {
-        "list": "Week 1 – This Week",
-        "name": "FEATURE: Incident edit API + UI form",
-        "desc": "Allow DBA/Analyst to edit incident title/description/severity/owner with audit-safe update flow.",
-        "labels": ["backend", "frontend", "high-priority"],
+        "list": "Week 6 - This Week",
+        "name": "OPS: Render + Stripe final wiring",
+        "desc": "Finish deployment-level wiring for Stripe and verify end-to-end event delivery in production.",
+        "labels": ["devops", "backend", "high-priority"],
         "checklist": [
-            "Add PATCH /incidents/{id}",
-            "Validate editable fields",
-            "Add edit button + modal/panel in UI",
-            "Prevent unauthorized role edits",
-            "Add success/error feedback in UI",
-            "Add API + UI tests",
+            "Set STRIPE_SECRET_KEY on dbops-api in Render",
+            "Set STRIPE_WEBHOOK_SECRET on dbops-api in Render",
+            "Set STRIPE_PRICE_ID_STARTER on dbops-api in Render",
+            "Create Stripe webhook endpoint: https://<api-domain>/billing/webhook",
+            "Subscribe webhook events: checkout.session.completed, customer.subscription.updated, customer.subscription.deleted",
+            "Run checkout flow from Business Ops panel",
+            "Confirm billing_status and Stripe IDs update in admin overview",
         ],
     },
+
     {
-        "list": "Week 1 – This Week",
-        "name": "FEATURE: Incident filters / search / sort",
-        "desc": "Enable searching incidents and filtering by status, severity, owner, and date range.",
-        "labels": ["frontend", "backend", "high-priority"],
-        "checklist": [
-            "Add filter controls in incidents section",
-            "Add query-param support in backend list endpoint",
-            "Add sort (newest / oldest / severity)",
-            "Preserve filters in UI state",
-            "Empty-state and clear-filters UX",
-            "Test with seeded data",
-        ],
-    },
-    {
-        "list": "Week 1 – This Week",
-        "name": "HARDENING: Auth / session UX polish",
-        "desc": "Improve auth behavior and user messaging around token expiry and invalid session.",
-        "labels": ["frontend", "security"],
-        "checklist": [
-            "Centralize 401 handling",
-            "Force-clear token + redirect to login on expiry",
-            "Improve auth error messages",
-            "Add disabled-account message handling",
-            "Verify localStorage token lifecycle",
-        ],
-    },
-    {
-        "list": "Week 1 – This Week",
-        "name": "TEST: Backend auth / RBAC integration tests",
-        "desc": "Protect core routes with automated tests for the role matrix and auth flow.",
-        "labels": ["backend", "test", "high-priority"],
-        "checklist": [
-            "Test bootstrap registration",
-            "Test login success / failure",
-            "Test user-management endpoints (DBA only)",
-            "Test disabled-user blocked behavior",
-            "Test incident / report permissions by role",
-            "Add test-run instructions to README",
-        ],
-    },
-    # ── Week 2 ───────────────────────────────────────────────────────────────
-    {
-        "list": "Week 2",
-        "name": "FEATURE: User admin audit trail",
-        "desc": "Track user lifecycle actions (created, disabled, enabled, reset password, deleted) with actor and timestamp.",
-        "labels": ["backend", "db", "frontend"],
-        "checklist": [
-            "Add audit table + migration",
-            "Log admin actions server-side",
-            "Add DBA UI table for user-action history",
-            "Add filtering by action / email / date",
-            "Verify audit integrity on all user actions",
-        ],
-    },
-    {
-        "list": "Week 2",
-        "name": "FEATURE: Report CSV export",
-        "desc": "Allow exporting current report results to CSV safely.",
-        "labels": ["backend", "frontend"],
-        "checklist": [
-            "Add backend CSV response endpoint or frontend export util",
-            "Include headers and escaped values",
-            "Handle large-dataset limits",
-            "Add export button in report results block",
-            "Add tests for CSV format",
-        ],
-    },
-    {
-        "list": "Week 2",
-        "name": "DEVOPS: CI quality gates",
-        "desc": "Enforce lint / test / build checks in CI for backend and frontend.",
-        "labels": ["devops", "test", "high-priority"],
-        "checklist": [
-            "Backend lint + tests",
-            "Frontend build + lint",
-            "Migration sanity check in CI",
-            "Fail pipeline on critical checks",
-            "Update README badges / CI docs",
-        ],
-    },
-    {
-        "list": "Week 2",
-        "name": "DOCS: Production runbook + troubleshooting",
-        "desc": "Create a practical runbook for local, Docker, and Render operations.",
-        "labels": ["docs", "devops"],
-        "checklist": [
-            "Add local startup + reset flow",
-            "Add Docker troubleshooting section",
-            "Add Render env-var matrix",
-            "Add migration rollback notes",
-            "Add incident response checklist",
-        ],
+        "list": "Done",
+        "name": "RELEASE VALIDATION: May 10, 2026",
+        "desc": "Live API build and production smoke checks completed (health, auth, incidents, reports, schedules).",
+        "labels": ["backend", "devops"],
+        "checklist": [],
     },
 ]
 
