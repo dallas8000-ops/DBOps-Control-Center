@@ -21,6 +21,12 @@ services:
         generateValue: true
       - key: FRONTEND_ORIGINS
         sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_ID_STARTER
+        sync: false
 
   - type: web
     name: dbops-web
