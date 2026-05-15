@@ -71,3 +71,79 @@ ActivityTrendChart.propTypes = {
     }),
   ).isRequired,
 };
+
+export function ReportRunsTrendChart({ runs }) {
+  if (!runs || runs.length === 0) {
+    return (
+      <p className="empty-state">
+        No report history yet. Run a report to unlock daily success/failure trend insights.
+      </p>
+    );
+  }
+
+  const buckets = new Map();
+  runs.forEach((run) => {
+    const raw = String(run.created_at || "");
+    const day = raw.slice(0, 10) || "unknown";
+    if (!buckets.has(day)) {
+      buckets.set(day, { day, success: 0, failed: 0 });
+    }
+    const bucket = buckets.get(day);
+    if (run.success) {
+      bucket.success += 1;
+    } else {
+      bucket.failed += 1;
+    }
+  });
+
+  const points = Array.from(buckets.values())
+    .sort((a, b) => b.day.localeCompare(a.day))
+    .slice(0, 7)
+    .reverse()
+    .map((p) => ({
+      ...p,
+      label: p.day.slice(5),
+    }));
+
+  const maxValue = Math.max(1, ...points.flatMap((point) => [point.success, point.failed]));
+
+  return (
+    <div className="activity-trend report-runs-trend">
+      {points.map((point) => (
+        <div key={point.day} className="activity-trend__day">
+          <div
+            className="activity-trend__bars"
+            aria-label={`${point.day}: ${point.success} successful runs, ${point.failed} failed runs`}
+          >
+            <span
+              className="activity-trend__bar activity-trend__bar--runs"
+              style={{ height: `${(point.success / maxValue) * 100}%` }}
+            />
+            <span
+              className="activity-trend__bar activity-trend__bar--incidents"
+              style={{ height: `${(point.failed / maxValue) * 100}%` }}
+            />
+          </div>
+          <span className="hint activity-trend__label">{point.label}</span>
+        </div>
+      ))}
+      <div className="activity-trend__legend hint">
+        <span className="activity-trend__legend-item">
+          <i className="activity-trend__dot activity-trend__dot--runs" /> Successful runs
+        </span>
+        <span className="activity-trend__legend-item">
+          <i className="activity-trend__dot activity-trend__dot--incidents" /> Failed runs
+        </span>
+      </div>
+    </div>
+  );
+}
+
+ReportRunsTrendChart.propTypes = {
+  runs: PropTypes.arrayOf(
+    PropTypes.shape({
+      created_at: PropTypes.string,
+      success: PropTypes.bool,
+    }),
+  ).isRequired,
+};

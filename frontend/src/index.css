@@ -32,6 +32,32 @@
   }
 }
 
+html[data-theme="light"] {
+  --bg: #f4f6f9;
+  --bg-elevated: #ffffff;
+  --surface: #ffffff;
+  --border: rgba(15, 23, 42, 0.1);
+  --text: #0f172a;
+  --muted: #64748b;
+  --accent: #0284c7;
+  --accent-dim: rgba(2, 132, 199, 0.12);
+  --danger: #dc2626;
+  --shadow: 0 14px 36px rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme="dark"] {
+  --bg: #0f1419;
+  --bg-elevated: #161d27;
+  --surface: #1c2633;
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #e8eef5;
+  --muted: #94a3b8;
+  --accent: #38bdf8;
+  --accent-dim: rgba(56, 189, 248, 0.14);
+  --danger: #f87171;
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+}
+
 *,
 *::before,
 *::after {
@@ -149,6 +175,34 @@ body {
   color: var(--text);
 }
 
+.top-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.live-pill--on {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--text);
+}
+
+.live-pill--off {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--text);
+}
+
 .form-grid {
   display: grid;
   gap: 0.75rem;
@@ -247,6 +301,15 @@ textarea:focus {
   background: transparent;
 }
 
+.onboarding-quickstart {
+  margin: 0 0 0.85rem;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
 .error-text {
   margin: 0 0 0.25rem;
   color: var(--danger);
@@ -307,6 +370,106 @@ table.data-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.92rem;
+}
+
+@media (max-width: 760px) {
+  .incident-filter-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    padding: 0.45rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    backdrop-filter: blur(8px);
+    grid-template-columns: 1fr;
+  }
+
+  .incident-filter-toolbar input {
+    margin-bottom: 0.1rem;
+  }
+
+  .incident-filter-toggle,
+  .incident-density-toggle {
+    font-size: 0.85rem;
+  }
+
+  .incident-filters {
+    margin-bottom: 0.7rem;
+  }
+
+  .mobile-card-table {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .mobile-card-table thead {
+    display: none;
+  }
+
+  .mobile-card-table tbody,
+  .mobile-card-table tr,
+  .mobile-card-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .mobile-card-table tr {
+    margin: 0.7rem;
+    padding: 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+  }
+
+  .mobile-card-table td {
+    display: grid;
+    grid-template-columns: minmax(90px, 38%) minmax(0, 1fr);
+    gap: 0.5rem;
+    align-items: baseline;
+    padding: 0.35rem 0;
+    border-bottom: 1px dashed var(--border);
+  }
+
+  .mobile-card-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .mobile-card-table td::before {
+    content: attr(data-label);
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 650;
+  }
+
+  .mobile-card-table .action-row {
+    justify-content: flex-start;
+  }
+
+  .mobile-card-table .action-row .btn {
+    width: auto;
+  }
+
+  .mobile-card-table--compact tr {
+    margin: 0.5rem;
+    padding: 0.5rem;
+  }
+
+  .mobile-card-table--compact td {
+    padding: 0.22rem 0;
+    gap: 0.35rem;
+  }
+
+  .mobile-card-table--comfortable tr {
+    margin: 0.75rem;
+    padding: 0.75rem;
+  }
+
+  .mobile-card-table--comfortable td {
+    padding: 0.42rem 0;
+  }
 }
 
 .data-table th,
@@ -407,6 +570,10 @@ table.data-table {
   gap: 0.85rem;
 }
 
+.report-runs-trend {
+  margin: 0.2rem 0 0.75rem;
+}
+
 .activity-trend__bars {
   display: flex;
   align-items: end;
@@ -485,6 +652,21 @@ table.data-table {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 0.55rem;
   margin-bottom: 0.8rem;
+}
+
+.incident-filter-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(3, minmax(130px, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 0.55rem;
+}
+
+.incident-filter-toolbar .btn {
+  width: 100%;
+}
+
+.incident-filters--collapsed {
+  display: none;
 }
 
 

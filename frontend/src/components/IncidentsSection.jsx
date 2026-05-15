@@ -1,5 +1,7 @@
-import { Fragment } from "react";
+import { Fragment, useEffect, useState } from "react";
 import PropTypes from "prop-types";
+
+const INCIDENT_CARD_DENSITY_KEY = "dbops_incident_card_density";
 
 function IncidentResolveCell({ incident, canResolve, onResolve }) {
   if (incident.status === "open" && canResolve) {
@@ -45,6 +47,8 @@ export function IncidentsSection({
   incidentHistoryError,
   onToggleIncidentHistory,
   onDownloadIncidentHistoryCsv,
+  hasActiveFilters,
+  canCreateIncident,
 }) {
   function formatIncidentDue(iso) {
     if (!iso) return "—";
@@ -76,16 +80,72 @@ export function IncidentsSection({
     );
   }
 
+  let emptyMessage = "No incidents available yet. Ask a DBA or Analyst to create one so you can monitor status and trends.";
+  if (hasActiveFilters) {
+    emptyMessage = "No incidents match the current filters. Clear filters or broaden your search to continue.";
+  } else if (canCreateIncident) {
+    emptyMessage = "No incidents yet. Start by creating your first incident to unlock trend and SLA tracking.";
+  }
+
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [mobileDensity, setMobileDensity] = useState(() => {
+    const store = globalThis.window?.localStorage;
+    if (!store || typeof store.getItem !== "function") return "comfortable";
+    const raw = store.getItem(INCIDENT_CARD_DENSITY_KEY);
+    return raw === "compact" ? "compact" : "comfortable";
+  });
+
+  const hasAdvancedFilters = Boolean(
+    incidentFilters.status ||
+      incidentFilters.severity ||
+      incidentFilters.owner ||
+      incidentFilters.startDate ||
+      incidentFilters.endDate ||
+      incidentFilters.overdue,
+  );
+
+  useEffect(() => {
+    if (hasAdvancedFilters) {
+      setShowAdvancedFilters(true);
+    }
+  }, [hasAdvancedFilters]);
+
+  useEffect(() => {
+    const store = globalThis.window?.localStorage;
+    if (!store || typeof store.setItem !== "function") return;
+    store.setItem(INCIDENT_CARD_DENSITY_KEY, mobileDensity);
+  }, [mobileDensity]);
+
   return (
     <section className="stack-gap">
       <h2 className="panel-title">Incidents</h2>
-      <div className="incident-filters">
+      <div className="incident-filter-toolbar">
         <input
           type="text"
           placeholder="Search title, description, owner"
           value={incidentFilters.search}
           onChange={(e) => onIncidentFilterChange("search", e.target.value)}
         />
+        <button
+          type="button"
+          className="btn btn-ghost incident-filter-toggle"
+          onClick={() => setShowAdvancedFilters((prev) => !prev)}
+        >
+          {showAdvancedFilters ? "Hide filters" : "Show filters"}
+          {hasAdvancedFilters ? " (active)" : ""}
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost incident-density-toggle"
+          onClick={() => setMobileDensity((prev) => (prev === "comfortable" ? "compact" : "comfortable"))}
+        >
+          Density: {mobileDensity}
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={onClearIncidentFilters}>
+          Clear filters
+        </button>
+      </div>
+      <div className={`incident-filters ${showAdvancedFilters ? "" : "incident-filters--collapsed"}`}>
         <select value={incidentFilters.status} onChange={(e) => onIncidentFilterChange("status", e.target.value)}>
           <option value="">All status</option>
           <option value="open">open</option>
@@ -126,15 +186,12 @@ export function IncidentsSection({
           />{" "}
           Overdue (open)
         </label>
-        <button type="button" className="btn btn-ghost" onClick={onClearIncidentFilters}>
-          Clear filters
-        </button>
       </div>
       {incidents.length === 0 ? (
-        <p className="empty-state">No incidents yet.</p>
+        <p className="empty-state">{emptyMessage}</p>
       ) : (
         <div className="table-scroll">
-          <table className="data-table">
+          <table className={`data-table mobile-card-table mobile-card-table--${mobileDensity}`}>
             <thead>
               <tr>
                 <th>Title</th>
@@ -150,7 +207,7 @@ export function IncidentsSection({
               {incidents.map((incident) => (
                 <Fragment key={incident.id}>
                   <tr>
-                    <td>
+                    <td data-label="Title">
                       {editingIncidentId === incident.id ? (
                         <input
                           className="inline-input"
@@ -161,7 +218,7 @@ export function IncidentsSection({
                         incident.title
                       )}
                     </td>
-                    <td>
+                    <td data-label="Description">
                       {editingIncidentId === incident.id ? (
                         <input
                           className="inline-input"
@@ -172,7 +229,7 @@ export function IncidentsSection({
                         incident.description
                       )}
                     </td>
-                    <td>
+                    <td data-label="Severity">
                       {editingIncidentId === incident.id ? (
                         <select
                           className="inline-input"
@@ -187,7 +244,7 @@ export function IncidentsSection({
                         incident.severity
                       )}
                     </td>
-                    <td>
+                    <td data-label="Owner">
                       {editingIncidentId === incident.id ? (
                         <input
                           className="inline-input"
@@ -198,7 +255,7 @@ export function IncidentsSection({
                         incident.owner
                       )}
                     </td>
-                    <td>
+                    <td data-label="Due">
                       {editingIncidentId === incident.id ? (
                         <input
                           type="datetime-local"
@@ -210,8 +267,8 @@ export function IncidentsSection({
                         formatIncidentDue(incident.due_at)
                       )}
                     </td>
-                    <td>{incident.status}</td>
-                    <td>
+                    <td data-label="Status">{incident.status}</td>
+                    <td data-label="Action">
                       <div className="action-row">
                         <IncidentResolveCell incident={incident} canResolve={canResolve} onResolve={onResolveIncident} />
                         <button
@@ -339,4 +396,6 @@ IncidentsSection.propTypes = {
   incidentHistoryError: PropTypes.string.isRequired,
   onToggleIncidentHistory: PropTypes.func.isRequired,
   onDownloadIncidentHistoryCsv: PropTypes.func.isRequired,
+  hasActiveFilters: PropTypes.bool,
+  canCreateIncident: PropTypes.bool,
 };

@@ -2,7 +2,7 @@
 import PropTypes from "prop-types";
 
 import { BusinessOpsPanel } from "./components/BusinessOpsPanel.jsx";
-import { Card } from "./components/DashboardWidgets.jsx";
+import { Card, ReportRunsTrendChart } from "./components/DashboardWidgets.jsx";
 import { IncidentsSection } from "./components/IncidentsSection.jsx";
 import { formatSchedulerStamp, formatUtcIsoAsLocal, utcWallClockToLocalPreview } from "./formatters.js";
 
@@ -11,6 +11,7 @@ const API_URL = String(import.meta.env.VITE_API_URL || "http://localhost:8000").
 const CREATE_USER_FETCH_MS = 25_000;
 const REPORT_AUDIT_VIEW_LIMIT_KEY = "dbops_report_audit_view_limit";
 const REPORT_AUDIT_VIEW_LIMIT_OPTIONS = new Set(["3", "10", "25", "all"]);
+const THEME_PREFERENCE_KEY = "dbops_theme_preference";
 
 /** Hosted site (e.g. Render) still pointing at loopback — browser will block or fail the request. */
 function apiUrlMismatchForHostedPage(apiUrl) {
@@ -91,6 +92,11 @@ function sessionErrorMessage(detailText = "") {
   if (detail.includes("disabled")) return "Your account is disabled. Contact a DBA.";
   if (detail.includes("expired") || detail.includes("invalid")) return "Your session expired. Please sign in again.";
   return "Your session is no longer valid. Please sign in again.";
+}
+
+function formatLiveSync(stamp) {
+  if (!stamp) return "Waiting for first sync…";
+  return `Last live sync ${stamp.toLocaleTimeString()}`;
 }
 
 function authErrorMessage(status, body, fallback) {
@@ -256,6 +262,11 @@ function LoginPanel({
 
       <h3 className="section-lede">First-time setup (bootstrap DBA)</h3>
       <p className="panel-sub">Use once when the database has no users. Role must be DBA (fixed below).</p>
+      <ol className="onboarding-quickstart">
+        <li>Create your first DBA account.</li>
+        <li>Sign in and invite your first analyst/viewer.</li>
+        <li>Create your first incident, then run your first report.</li>
+      </ol>
       <form className="form-grid form-grid--narrow" onSubmit={onBootstrap}>
         <input
           type="email"
@@ -831,7 +842,7 @@ function ScheduledReportsSection({
         <p className="empty-state">No schedules created yet.</p>
       ) : (
         <div className="table-scroll">
-          <table className="data-table">
+          <table className="data-table mobile-card-table">
             <thead>
               <tr>
                 <th>Report</th>
@@ -846,23 +857,23 @@ function ScheduledReportsSection({
             <tbody>
               {reportSchedules.map((schedule) => (
                 <tr key={schedule.id}>
-                  <td>{schedule.report_key}</td>
-                  <td>
+                  <td data-label="Report">{schedule.report_key}</td>
+                  <td data-label="Cadence">
                     {schedule.cadence}
                     {schedule.cadence === "weekly" ? ` (${WEEKDAY_LABELS[schedule.weekday_utc ?? 0]})` : ""}
                     {` @ ${String(schedule.run_hour_utc).padStart(2, "0")}:${String(schedule.run_minute_utc).padStart(2, "0")} UTC`}
                   </td>
-                  <td className="hint">
+                  <td className="hint" data-label="Next run">
                     <div>{schedule.next_run_at}</div>
                     <div className="hint">Local: {formatUtcIsoAsLocal(schedule.next_run_at)}</div>
                   </td>
-                  <td>
+                  <td data-label="Delivery">
                     {schedule.delivery_kind}
                     {schedule.delivery_target ? `: ${schedule.delivery_target}` : ""}
                   </td>
-                  <td className="hint">{schedule.last_error || (schedule.last_success_at ? "ok" : "—")}</td>
-                  <td>{schedule.is_enabled ? "enabled" : "disabled"}</td>
-                  <td>
+                  <td className="hint" data-label="Last result">{schedule.last_error || (schedule.last_success_at ? "ok" : "—")}</td>
+                  <td data-label="Status">{schedule.is_enabled ? "enabled" : "disabled"}</td>
+                  <td data-label="Action">
                     <button
                       type="button"
                       className="btn btn-ghost"
@@ -939,6 +950,7 @@ function ReportAuditSection({
   return (
     <section className="panel">
       <h2 className="panel-title">Report audit trail (DBA)</h2>
+      <ReportRunsTrendChart runs={reportRuns} />
       <div className="report-audit-controls">
         <label htmlFor="report-audit-view-limit"><strong>Audit view</strong></label>
         <select
@@ -964,7 +976,7 @@ function ReportAuditSection({
         <p className="empty-state">No executions logged yet.</p>
       ) : (
         <div className="table-scroll">
-          <table className="data-table">
+          <table className="data-table mobile-card-table">
             <thead>
               <tr>
                 <th>Time</th>
@@ -979,13 +991,13 @@ function ReportAuditSection({
             <tbody>
               {visibleReportRuns.map((run) => (
                 <tr key={run.id}>
-                  <td className="hint">{run.created_at}</td>
-                  <td>{run.user_email}</td>
-                  <td>{run.report_key}</td>
-                  <td>{run.row_count ?? "—"}</td>
-                  <td>{run.duration_ms ?? "—"}</td>
-                  <td>{run.success ? "yes" : "no"}</td>
-                  <td className="hint" title={run.error_message || ""}>
+                  <td className="hint" data-label="Time">{run.created_at}</td>
+                  <td data-label="User">{run.user_email}</td>
+                  <td data-label="Report">{run.report_key}</td>
+                  <td data-label="Rows">{run.row_count ?? "—"}</td>
+                  <td data-label="ms">{run.duration_ms ?? "—"}</td>
+                  <td data-label="OK">{run.success ? "yes" : "no"}</td>
+                  <td className="hint" data-label="Error" title={run.error_message || ""}>
                     {auditErrorPreview(run.error_message)}
                   </td>
                 </tr>
@@ -1398,6 +1410,14 @@ export default function App() {
   const [incidentHistoryEntries, setIncidentHistoryEntries] = useState([]);
   const [incidentHistoryLoading, setIncidentHistoryLoading] = useState(false);
   const [incidentHistoryError, setIncidentHistoryError] = useState("");
+  const [liveSyncAt, setLiveSyncAt] = useState(null);
+  const [liveAutoRefresh, setLiveAutoRefresh] = useState(true);
+  const [themePreference, setThemePreference] = useState(() => {
+    const store = globalThis.window?.localStorage;
+    if (!store || typeof store.getItem !== "function") return "system";
+    const saved = store.getItem(THEME_PREFERENCE_KEY);
+    return saved === "light" || saved === "dark" ? saved : "system";
+  });
   const [scheduleForm, setScheduleForm] = useState({
     report_key: "",
     cadence: "daily",
@@ -1480,6 +1500,25 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
+    const html = globalThis.document?.documentElement;
+    if (!html) return;
+
+    const applyTheme = () => {
+      if (themePreference === "system") {
+        html.removeAttribute("data-theme");
+      } else {
+        html.setAttribute("data-theme", themePreference);
+      }
+    };
+
+    applyTheme();
+    const store = globalThis.window?.localStorage;
+    if (store && typeof store.setItem === "function") {
+      store.setItem(THEME_PREFERENCE_KEY, themePreference);
+    }
+  }, [themePreference]);
+
+  useEffect(() => {
     let cancelled = false;
     async function ping(showSpinner) {
       if (showSpinner) setConnectionHealth({ kind: "loading" });
@@ -1536,6 +1575,7 @@ export default function App() {
     }
     setIncidents(incidentsReq.body);
     setSummary(summaryReq.body);
+    setLiveSyncAt(new Date());
   }
 
   async function loadReportCatalog() {
@@ -1572,6 +1612,7 @@ export default function App() {
       const stamp = new Date().toLocaleTimeString();
       setReportRuns(rows);
       setReportRunsStatus(`Loaded ${rows.length} run(s) at ${stamp}.`);
+      setLiveSyncAt(new Date());
     } catch {
       setReportRunsStatus("Refresh failed (network). Please try again.");
     } finally {
@@ -1685,6 +1726,18 @@ export default function App() {
   useEffect(() => {
     loadAdminOverview();
   }, [token, me]);
+
+  useEffect(() => {
+    if (!token || !liveAutoRefresh) return;
+    const interval = setInterval(() => {
+      loadData().catch(() => {});
+      if (me?.role === "DBA") {
+        loadReportRuns().catch(() => {});
+        loadAdminOverview().catch(() => {});
+      }
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [token, me, incidentFilters, liveAutoRefresh]);
 
   useEffect(() => {
     if (!reportCatalog.length) {
@@ -2216,6 +2269,15 @@ export default function App() {
   const canResolve = role === "DBA";
   const canManageUsers = role === "DBA";
   const selectedReport = reportCatalog.find((r) => r.key === selectedReportKey);
+  const hasActiveIncidentFilters = Boolean(
+    incidentFilters.search ||
+      incidentFilters.status ||
+      incidentFilters.severity ||
+      incidentFilters.owner ||
+      incidentFilters.startDate ||
+      incidentFilters.endDate ||
+      incidentFilters.overdue,
+  );
 
   return (
     <main className="app-shell">
@@ -2232,9 +2294,34 @@ export default function App() {
             <span className="top-bar-meta">
               Signed in as <strong>{me?.email}</strong> ({me?.role})
             </span>
-            <button type="button" className="btn btn-ghost" onClick={logout}>
-              Log out
-            </button>
+            <span className={`live-pill ${liveAutoRefresh ? "live-pill--on" : "live-pill--off"}`}>
+              {liveAutoRefresh ? "Live updates on" : "Live updates paused"} · {formatLiveSync(liveSyncAt)}
+            </span>
+            <div className="top-bar-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setLiveAutoRefresh((prev) => !prev)}
+              >
+                {liveAutoRefresh ? "Pause live" : "Resume live"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() =>
+                  setThemePreference((prev) => {
+                    if (prev === "system") return "dark";
+                    if (prev === "dark") return "light";
+                    return "system";
+                  })
+                }
+              >
+                Theme: {themePreference}
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={logout}>
+                Log out
+              </button>
+            </div>
           </div>
           {canManageUsers ? (
             <BusinessOpsPanel
@@ -2321,6 +2408,7 @@ export default function App() {
             incidentHistoryError={incidentHistoryError}
             onToggleIncidentHistory={toggleIncidentHistory}
             onDownloadIncidentHistoryCsv={downloadIncidentHistoryCsv}
+            hasActiveFilters={hasActiveIncidentFilters}
           />
         </>
       ) : (
