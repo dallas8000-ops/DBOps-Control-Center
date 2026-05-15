@@ -2,6 +2,26 @@ import { Fragment, useEffect, useState } from "react";
 import PropTypes from "prop-types";
 
 const INCIDENT_CARD_DENSITY_KEY = "dbops_incident_card_density";
+const INCIDENT_FILTER_PRESETS_KEY_PREFIX = "dbops_incident_filter_presets";
+const INCIDENT_FILTER_FIELDS = ["search", "status", "severity", "owner", "startDate", "endDate", "sort", "overdue"];
+
+function normalizePresetFilters(raw) {
+  return {
+    search: String(raw?.search ?? ""),
+    status: String(raw?.status ?? ""),
+    severity: String(raw?.severity ?? ""),
+    owner: String(raw?.owner ?? ""),
+    startDate: String(raw?.startDate ?? ""),
+    endDate: String(raw?.endDate ?? ""),
+    sort: String(raw?.sort ?? "newest"),
+    overdue: Boolean(raw?.overdue),
+  };
+}
+
+function presetStorageKeyForUser(userKey = "") {
+  const safe = String(userKey || "anonymous").trim().toLowerCase() || "anonymous";
+  return `${INCIDENT_FILTER_PRESETS_KEY_PREFIX}:${safe}`;
+}
 
 function IncidentResolveCell({ incident, canResolve, onResolve }) {
   if (incident.status === "open" && canResolve) {
@@ -49,6 +69,7 @@ export function IncidentsSection({
   onDownloadIncidentHistoryCsv,
   hasActiveFilters,
   canCreateIncident,
+  presetStorageKey,
 }) {
   function formatIncidentDue(iso) {
     if (!iso) return "—";
@@ -94,6 +115,11 @@ export function IncidentsSection({
     const raw = store.getItem(INCIDENT_CARD_DENSITY_KEY);
     return raw === "compact" ? "compact" : "comfortable";
   });
+  const [presets, setPresets] = useState([]);
+  const [selectedPresetName, setSelectedPresetName] = useState("");
+  const [newPresetName, setNewPresetName] = useState("");
+
+  const userPresetStorageKey = presetStorageKeyForUser(presetStorageKey);
 
   const hasAdvancedFilters = Boolean(
     incidentFilters.status ||
@@ -115,6 +141,77 @@ export function IncidentsSection({
     if (!store || typeof store.setItem !== "function") return;
     store.setItem(INCIDENT_CARD_DENSITY_KEY, mobileDensity);
   }, [mobileDensity]);
+
+  useEffect(() => {
+    const store = globalThis.window?.localStorage;
+    if (!store || typeof store.getItem !== "function") {
+      setPresets([]);
+      setSelectedPresetName("");
+      return;
+    }
+    const raw = store.getItem(userPresetStorageKey);
+    if (!raw) {
+      setPresets([]);
+      setSelectedPresetName("");
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      const normalized = Array.isArray(parsed)
+        ? parsed
+            .filter((item) => item && typeof item.name === "string")
+            .map((item) => ({
+              name: item.name,
+              filters: normalizePresetFilters(item.filters),
+            }))
+        : [];
+      setPresets(normalized);
+      setSelectedPresetName((prev) =>
+        prev && normalized.some((item) => item.name === prev) ? prev : "",
+      );
+    } catch {
+      setPresets([]);
+      setSelectedPresetName("");
+    }
+  }, [userPresetStorageKey]);
+
+  function persistPresets(nextPresets) {
+    setPresets(nextPresets);
+    const store = globalThis.window?.localStorage;
+    if (!store || typeof store.setItem !== "function") return;
+    store.setItem(userPresetStorageKey, JSON.stringify(nextPresets));
+  }
+
+  function applyPresetByName(name) {
+    const preset = presets.find((item) => item.name === name);
+    if (!preset) return;
+    const nextFilters = normalizePresetFilters(preset.filters);
+    INCIDENT_FILTER_FIELDS.forEach((field) => {
+      onIncidentFilterChange(field, nextFilters[field]);
+    });
+    setShowAdvancedFilters(true);
+  }
+
+  function saveCurrentAsPreset() {
+    const name = newPresetName.trim();
+    if (!name) return;
+    const nextEntry = {
+      name,
+      filters: normalizePresetFilters(incidentFilters),
+    };
+    const nextPresets = [...presets.filter((item) => item.name.toLowerCase() !== name.toLowerCase()), nextEntry]
+      .sort((a, b) => a.name.localeCompare(b.name));
+    persistPresets(nextPresets);
+    setSelectedPresetName(name);
+    setNewPresetName("");
+  }
+
+  function deleteSelectedPreset() {
+    if (!selectedPresetName) return;
+    const nextPresets = presets.filter((item) => item.name !== selectedPresetName);
+    persistPresets(nextPresets);
+    setSelectedPresetName("");
+  }
 
   return (
     <section className="stack-gap">
@@ -143,6 +240,50 @@ export function IncidentsSection({
         </button>
         <button type="button" className="btn btn-ghost" onClick={onClearIncidentFilters}>
           Clear filters
+        </button>
+      </div>
+      <div className="incident-preset-row">
+        <select
+          value={selectedPresetName}
+          onChange={(e) => setSelectedPresetName(e.target.value)}
+          aria-label="Filter preset"
+        >
+          <option value="">Filter presets</option>
+          {presets.map((preset) => (
+            <option key={preset.name} value={preset.name}>
+              {preset.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={!selectedPresetName}
+          onClick={() => applyPresetByName(selectedPresetName)}
+        >
+          Apply preset
+        </button>
+        <input
+          type="text"
+          placeholder="Save current as..."
+          value={newPresetName}
+          onChange={(e) => setNewPresetName(e.target.value)}
+        />
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={!newPresetName.trim()}
+          onClick={saveCurrentAsPreset}
+        >
+          Save preset
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={!selectedPresetName}
+          onClick={deleteSelectedPreset}
+        >
+          Delete preset
         </button>
       </div>
       <div className={`incident-filters ${showAdvancedFilters ? "" : "incident-filters--collapsed"}`}>
@@ -398,4 +539,5 @@ IncidentsSection.propTypes = {
   onDownloadIncidentHistoryCsv: PropTypes.func.isRequired,
   hasActiveFilters: PropTypes.bool,
   canCreateIncident: PropTypes.bool,
+  presetStorageKey: PropTypes.string,
 };

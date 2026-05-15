@@ -398,6 +398,10 @@ table.data-table {
     margin-bottom: 0.7rem;
   }
 
+  .incident-preset-row {
+    grid-template-columns: 1fr;
+  }
+
   .mobile-card-table {
     border-collapse: separate;
     border-spacing: 0;
@@ -662,6 +666,17 @@ table.data-table {
 }
 
 .incident-filter-toolbar .btn {
+  width: 100%;
+}
+
+.incident-preset-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) repeat(2, minmax(120px, auto)) minmax(180px, 1fr) repeat(2, minmax(120px, auto));
+  gap: 0.55rem;
+  margin-bottom: 0.55rem;
+}
+
+.incident-preset-row .btn {
   width: 100%;
 }
 

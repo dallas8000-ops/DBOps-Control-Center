@@ -1114,6 +1114,8 @@ function DashboardBody({
   incidentHistoryError,
   onToggleIncidentHistory,
   onDownloadIncidentHistoryCsv,
+  incidentPresetStorageKey,
+  hasActiveFilters,
 }) {
   const [reportAuditViewLimit, setReportAuditViewLimit] = useState(() => {
     const store = globalThis.window?.localStorage;
@@ -1264,6 +1266,9 @@ function DashboardBody({
         incidentHistoryError={incidentHistoryError}
         onToggleIncidentHistory={onToggleIncidentHistory}
         onDownloadIncidentHistoryCsv={onDownloadIncidentHistoryCsv}
+        presetStorageKey={incidentPresetStorageKey}
+        hasActiveFilters={hasActiveFilters}
+        canCreateIncident={canCreateIncident}
       />
     </>
   );
@@ -1322,6 +1327,8 @@ DashboardBody.propTypes = {
   incidentHistoryError: PropTypes.string.isRequired,
   onToggleIncidentHistory: PropTypes.func.isRequired,
   onDownloadIncidentHistoryCsv: PropTypes.func.isRequired,
+  incidentPresetStorageKey: PropTypes.string,
+  hasActiveFilters: PropTypes.bool,
 };
 
 export default function App() {
@@ -2408,6 +2415,7 @@ export default function App() {
             incidentHistoryError={incidentHistoryError}
             onToggleIncidentHistory={toggleIncidentHistory}
             onDownloadIncidentHistoryCsv={downloadIncidentHistoryCsv}
+            incidentPresetStorageKey={me?.email || "anonymous"}
             hasActiveFilters={hasActiveIncidentFilters}
           />
         </>
