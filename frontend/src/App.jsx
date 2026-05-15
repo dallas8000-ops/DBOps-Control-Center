@@ -228,6 +228,11 @@ function LoginPanel({
       <HealthConnectionMessages health={connectionHealth} apiUrl={apiUrl} />
 
       <h2 className="panel-title">Sign in</h2>
+      <p className="panel-sub">
+        Demo accounts in the seeded database are <strong>barney@example.com</strong> (DBA), <strong>analyst@example.com</strong>,
+        and <strong>viewer@example.com</strong>. If the database is brand new, use the bootstrap DBA form below to create the first
+        admin account.
+      </p>
       {authError ? <p className="error-text">{authError}</p> : null}
       <form className="form-grid form-grid--narrow" onSubmit={onLogin}>
         <input

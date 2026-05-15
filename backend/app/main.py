@@ -9,7 +9,7 @@ import uuid
 from csv import DictWriter
 from datetime import UTC, date, datetime, time, timedelta
 from io import StringIO
-from typing import Annotated, Any
+from typing import Annotated, Any, TypeAlias
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -94,6 +94,7 @@ ACCESS_LOG = logging.getLogger("dbops.access")
 
 AUTH_RATE_LIMIT_DETAIL = "Too many auth requests. Please try again shortly."
 API_RATE_LIMIT_DETAIL = "Too many requests. Please try again shortly."
+API_RATE_LIMIT_DESCRIPTION = "API rate limit exceeded"
 ACCOUNT_DISABLED_DETAIL = "Your account is disabled. Contact a DBA."
 USER_NOT_FOUND_DETAIL = "User not found"
 INCIDENT_NOT_FOUND_DETAIL = "Incident not found"
@@ -121,18 +122,18 @@ ERROR_RESPONSES_USER_MUTATION = {
 ERROR_RESPONSES_INCIDENT_MUTATION = {
     403: {"description": "Insufficient role"},
     404: {"description": INCIDENT_NOT_FOUND_DETAIL},
-    429: {"description": "API rate limit exceeded"},
+    429: {"description": API_RATE_LIMIT_DESCRIPTION},
 }
 ERROR_RESPONSES_INCIDENT_READ = {
     403: {"description": "Insufficient permissions"},
     404: {"description": INCIDENT_NOT_FOUND_DETAIL},
-    429: {"description": "API rate limit exceeded"},
+    429: {"description": API_RATE_LIMIT_DESCRIPTION},
 }
 ERROR_RESPONSES_REPORT_EXECUTION = {
     400: {"description": "Invalid report request"},
     403: {"description": "Insufficient permissions for report"},
     404: {"description": "Unknown report"},
-    429: {"description": "API rate limit exceeded"},
+    429: {"description": API_RATE_LIMIT_DESCRIPTION},
 }
 ERROR_RESPONSES_SCHEDULE_MUTATION = {
     400: {"description": "Invalid schedule request"},
@@ -149,10 +150,10 @@ ERROR_RESPONSES_BILLING_WEBHOOK = {
     503: {"description": "Stripe billing is not configured"},
 }
 
-DbDep = Annotated[Session, Depends(get_db)]
-CurrentUserDep = Annotated[User, Depends(get_current_user)]
-DbaUserDep = Annotated[User, Depends(require_roles("DBA"))]
-RoleUserDep = Callable[..., User]
+DbDep: TypeAlias = Annotated[Session, Depends(get_db)]
+CurrentUserDep: TypeAlias = Annotated[User, Depends(get_current_user)]
+DbaUserDep: TypeAlias = Annotated[User, Depends(require_roles("DBA"))]
+RoleUserDep: TypeAlias = Callable[..., User]
 
 ONBOARDING_STEPS: list[tuple[str, str]] = [
     ("first_user_created", "Create first team member"),
@@ -281,6 +282,27 @@ def _stripe_event_object(event: Any) -> Any:
     return _stripe_get(data, "object")
 
 
+def _stripe_default_price_id(default_price: Any) -> str | None:
+    if isinstance(default_price, str) and default_price.startswith("price_"):
+        return default_price
+    if isinstance(default_price, dict):
+        default_price_id = _stripe_get(default_price, "id")
+        if isinstance(default_price_id, str) and default_price_id.startswith("price_"):
+            return default_price_id
+    return None
+
+
+def _stripe_first_active_price_id(stripe_client: Any, product_id: str) -> str | None:
+    prices = stripe_client.Price.list(product=product_id, active=True, limit=1)
+    rows = _stripe_get(prices, "data") or []
+    if not rows:
+        return None
+    first_id = _stripe_get(rows[0], "id")
+    if isinstance(first_id, str) and first_id.startswith("price_"):
+        return first_id
+    return None
+
+
 def _resolve_stripe_checkout_price_id(stripe_client: Any, raw_id: str) -> str:
     candidate = (raw_id or "").strip()
     if not candidate:
@@ -294,20 +316,14 @@ def _resolve_stripe_checkout_price_id(stripe_client: Any, raw_id: str) -> str:
             raise HTTPException(status_code=400, detail=f"Stripe product lookup failed: {str(exc)}")
 
         default_price = _stripe_get(product, "default_price")
-        if isinstance(default_price, str) and default_price.startswith("price_"):
-            return default_price
-        if isinstance(default_price, dict):
-            default_price_id = _stripe_get(default_price, "id")
-            if isinstance(default_price_id, str) and default_price_id.startswith("price_"):
-                return default_price_id
+        default_price_id = _stripe_default_price_id(default_price)
+        if default_price_id is not None:
+            return default_price_id
 
         try:
-            prices = stripe_client.Price.list(product=candidate, active=True, limit=1)
-            rows = _stripe_get(prices, "data") or []
-            if rows:
-                first_id = _stripe_get(rows[0], "id")
-                if isinstance(first_id, str) and first_id.startswith("price_"):
-                    return first_id
+            active_price_id = _stripe_first_active_price_id(stripe_client, candidate)
+            if active_price_id is not None:
+                return active_price_id
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Stripe price lookup failed: {str(exc)}")
 
@@ -363,6 +379,26 @@ def _record_onboarding_event(db: Session, *, event_key: str, actor_user_id: int 
             details_json=json.dumps(details or {}, sort_keys=True),
         )
     )
+
+
+def _record_string_incident_change(changes: dict[str, dict[str, Any]], incident: Incident, field_name: str, new_value: str | None) -> None:
+    current_value = getattr(incident, field_name)
+    if new_value is None or new_value == current_value:
+        return
+    changes[field_name] = {"before": current_value, "after": new_value}
+    setattr(incident, field_name, new_value)
+
+
+def _record_due_at_incident_change(
+    changes: dict[str, dict[str, Any]],
+    incident: Incident,
+    new_due_at: datetime | None,
+) -> None:
+    before = incident.due_at.isoformat() if incident.due_at else None
+    after = new_due_at.isoformat() if new_due_at else None
+    if before != after:
+        changes["due_at"] = {"before": before, "after": after}
+    incident.due_at = new_due_at
 
 
 def _build_onboarding_read(db: Session) -> list[OnboardingItemRead]:
@@ -941,7 +977,7 @@ def list_incidents(
     "/incidents",
     response_model=IncidentRead,
     status_code=201,
-    responses={403: {"description": "Insufficient role"}, 429: {"description": "API rate limit exceeded"}},
+    responses={403: {"description": "Insufficient role"}, 429: {"description": API_RATE_LIMIT_DESCRIPTION}},
     dependencies=[Depends(_api_rate_limit_dependency("incidents_create"))],
 )
 def create_incident(
@@ -996,27 +1032,14 @@ def update_incident(
         raise HTTPException(status_code=404, detail=INCIDENT_NOT_FOUND_DETAIL)
 
     changes: dict[str, dict[str, Any]] = {}
-    if payload.title is not None and payload.title != incident.title:
-        changes["title"] = {"before": incident.title, "after": payload.title}
-        incident.title = payload.title
-    if payload.description is not None and payload.description != incident.description:
-        changes["description"] = {"before": incident.description, "after": payload.description}
-        incident.description = payload.description
-    if payload.severity is not None and payload.severity != incident.severity:
-        changes["severity"] = {"before": incident.severity, "after": payload.severity}
-        incident.severity = payload.severity
-    if payload.owner is not None and payload.owner != incident.owner:
-        changes["owner"] = {"before": incident.owner, "after": payload.owner}
-        incident.owner = payload.owner
+    _record_string_incident_change(changes, incident, "title", payload.title)
+    _record_string_incident_change(changes, incident, "description", payload.description)
+    _record_string_incident_change(changes, incident, "severity", payload.severity)
+    _record_string_incident_change(changes, incident, "owner", payload.owner)
 
     payload_updates = payload.model_dump(exclude_unset=True)
     if "due_at" in payload_updates:
-        new_due = payload_updates["due_at"]
-        before = incident.due_at.isoformat() if incident.due_at else None
-        after = new_due.isoformat() if new_due else None
-        if before != after:
-            changes["due_at"] = {"before": before, "after": after}
-        incident.due_at = new_due
+        _record_due_at_incident_change(changes, incident, payload_updates["due_at"])
 
     if changes:
         _log_incident_history(

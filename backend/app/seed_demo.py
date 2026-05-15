@@ -61,7 +61,6 @@ def _upsert_user(db: Session, *, email: str, role: str, password: str) -> User:
         user.role = role
     if not user.is_active:
         user.is_active = True
-    user.hashed_password = hash_password(password)
     db.add(user)
     return user
 
