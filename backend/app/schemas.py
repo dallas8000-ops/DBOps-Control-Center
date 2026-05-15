@@ -69,6 +69,44 @@ class IncidentHistoryRead(BaseModel):
     created_at: datetime
 
 
+class IncidentBulkActionRequest(BaseModel):
+    action: str = Field(pattern="^(acknowledge|resolve|assign|escalate)$")
+    incident_ids: list[int] = Field(min_length=1, max_length=200)
+    owner: str | None = Field(default=None, min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def validate_assign_owner(self):
+        if self.owner is not None:
+            self.owner = self.owner.strip()
+        if self.action == "assign" and not self.owner:
+            raise ValueError("owner is required when action is assign")
+        if self.action != "assign":
+            self.owner = None
+        return self
+
+
+class IncidentBulkActionResult(BaseModel):
+    class Summary(BaseModel):
+        requested_count: int
+        unique_count: int
+        duplicate_count: int
+        updated_count: int
+        skipped_count: int
+
+    class ItemResult(BaseModel):
+        incident_id: int
+        outcome: str = Field(pattern="^(updated|skipped)$")
+        reason: str | None = None
+        before: dict[str, Any] | None = None
+        after: dict[str, Any] | None = None
+
+    action: str
+    affected_count: int
+    incidents: list[IncidentRead]
+    summary: Summary
+    items: list[ItemResult]
+
+
 class ReportParamSpec(BaseModel):
     name: str
     type: str

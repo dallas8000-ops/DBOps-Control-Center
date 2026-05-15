@@ -50,6 +50,8 @@ from .schemas import (
     BillingSettingsRead,
     BillingSettingsUpdate,
     IncidentCreate,
+    IncidentBulkActionRequest,
+    IncidentBulkActionResult,
     IncidentHistoryRead,
     IncidentRead,
     IncidentUpdate,
@@ -399,6 +401,110 @@ def _record_due_at_incident_change(
     if before != after:
         changes["due_at"] = {"before": before, "after": after}
     incident.due_at = new_due_at
+
+
+def _bulk_acknowledge_incident(db: Session, *, incident: Incident, actor_user_id: int) -> None:
+    _log_incident_history(
+        db,
+        incident_id=incident.id,
+        actor_user_id=actor_user_id,
+        action="acknowledged",
+        details={"status": incident.status},
+    )
+
+
+def _bulk_assign_incident(db: Session, *, incident: Incident, actor_user_id: int, owner: str) -> None:
+    _log_incident_history(
+        db,
+        incident_id=incident.id,
+        actor_user_id=actor_user_id,
+        action="assigned",
+        details={"owner": {"before": incident.owner, "after": owner}},
+    )
+    incident.owner = owner
+
+
+def _bulk_escalate_incident(db: Session, *, incident: Incident, actor_user_id: int) -> None:
+    _log_incident_history(
+        db,
+        incident_id=incident.id,
+        actor_user_id=actor_user_id,
+        action="escalated",
+        details={"severity": {"before": incident.severity, "after": "high"}},
+    )
+    incident.severity = "high"
+
+
+def _bulk_resolve_incident(db: Session, *, incident: Incident, actor_user_id: int) -> None:
+    _log_incident_history(
+        db,
+        incident_id=incident.id,
+        actor_user_id=actor_user_id,
+        action="resolved",
+        details={"status": {"before": incident.status, "after": "resolved"}},
+    )
+    incident.status = "resolved"
+
+
+def _apply_bulk_incident_action(
+    db: Session,
+    *,
+    incident: Incident,
+    action: str,
+    actor_user_id: int,
+    owner: str | None,
+) -> None:
+    if action == "acknowledge":
+        _bulk_acknowledge_incident(db, incident=incident, actor_user_id=actor_user_id)
+        return
+    if action == "assign" and owner is not None:
+        _bulk_assign_incident(db, incident=incident, actor_user_id=actor_user_id, owner=owner)
+        return
+    if action == "escalate":
+        _bulk_escalate_incident(db, incident=incident, actor_user_id=actor_user_id)
+        return
+    if action == "resolve":
+        _bulk_resolve_incident(db, incident=incident, actor_user_id=actor_user_id)
+
+
+def _bulk_action_skip_reason(
+    *,
+    incident: Incident,
+    action: str,
+    owner: str | None,
+) -> str | None:
+    if incident.status != "open":
+        return "incident is not open"
+    if action == "assign" and owner is not None and incident.owner == owner:
+        return "owner already set"
+    if action == "escalate" and incident.severity == "high":
+        return "incident already high severity"
+    return None
+
+
+def _incident_audit_snapshot(incident: Incident) -> dict[str, Any]:
+    return {
+        "status": incident.status,
+        "severity": incident.severity,
+        "owner": incident.owner,
+    }
+
+
+def _build_bulk_item_result(
+    *,
+    incident: Incident,
+    outcome: str,
+    reason: str | None,
+    before: dict[str, Any] | None,
+    after: dict[str, Any] | None,
+) -> IncidentBulkActionResult.ItemResult:
+    return IncidentBulkActionResult.ItemResult(
+        incident_id=incident.id,
+        outcome=outcome,
+        reason=reason,
+        before=before,
+        after=after,
+    )
 
 
 def _build_onboarding_read(db: Session) -> list[OnboardingItemRead]:
@@ -1076,6 +1182,90 @@ def resolve_incident(
     db.commit()
     db.refresh(incident)
     return incident
+
+
+@app.patch(
+    "/incidents/actions/bulk",
+    response_model=IncidentBulkActionResult,
+    responses=ERROR_RESPONSES_INCIDENT_MUTATION,
+    dependencies=[Depends(_api_rate_limit_dependency("incidents_mutation"))],
+)
+def bulk_incident_action(
+    payload: IncidentBulkActionRequest,
+    db: DbDep,
+    current: Annotated[User, Depends(require_roles("DBA", "Analyst"))],
+):
+    requested_count = len(payload.incident_ids)
+    unique_ids = list(dict.fromkeys(payload.incident_ids))
+    duplicate_count = requested_count - len(unique_ids)
+    incidents = db.query(Incident).filter(Incident.id.in_(unique_ids)).all()
+    if len(incidents) != len(unique_ids):
+        found_ids = {incident.id for incident in incidents}
+        missing = sorted([incident_id for incident_id in unique_ids if incident_id not in found_ids])
+        raise HTTPException(status_code=404, detail=f"Incidents not found: {', '.join(str(v) for v in missing)}")
+
+    if payload.action == "resolve" and current.role != "DBA":
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    incidents_by_id = {incident.id: incident for incident in incidents}
+    ordered_incidents = [incidents_by_id[incident_id] for incident_id in unique_ids]
+    item_results: list[IncidentBulkActionResult.ItemResult] = []
+    updated_incidents: list[Incident] = []
+
+    for incident in ordered_incidents:
+        skip_reason = _bulk_action_skip_reason(incident=incident, action=payload.action, owner=payload.owner)
+        if skip_reason is not None:
+            item_results.append(
+                _build_bulk_item_result(
+                    incident=incident,
+                    outcome="skipped",
+                    reason=skip_reason,
+                    before=_incident_audit_snapshot(incident),
+                    after=_incident_audit_snapshot(incident),
+                )
+            )
+            continue
+
+        before = _incident_audit_snapshot(incident)
+        _apply_bulk_incident_action(
+            db,
+            incident=incident,
+            action=payload.action,
+            actor_user_id=current.id,
+            owner=payload.owner,
+        )
+        after = _incident_audit_snapshot(incident)
+        item_results.append(
+            _build_bulk_item_result(
+                incident=incident,
+                outcome="updated",
+                reason=None,
+                before=before,
+                after=after,
+            )
+        )
+        updated_incidents.append(incident)
+
+    db.commit()
+    for incident in ordered_incidents:
+        db.refresh(incident)
+
+    updated_count = len(updated_incidents)
+    skipped_count = len(item_results) - updated_count
+
+    return IncidentBulkActionResult(
+        action=payload.action,
+        affected_count=updated_count,
+        incidents=ordered_incidents,
+        summary=IncidentBulkActionResult.Summary(
+            requested_count=requested_count,
+            unique_count=len(unique_ids),
+            duplicate_count=duplicate_count,
+            updated_count=updated_count,
+            skipped_count=skipped_count,
+        ),
+        items=item_results,
+    )
 
 
 @app.get(

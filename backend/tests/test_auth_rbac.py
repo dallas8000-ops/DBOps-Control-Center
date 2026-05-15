@@ -217,6 +217,153 @@ def test_analyst_can_edit_incident() -> None:
         assert body["owner"] == "dba@example.com"
 
 
+def test_analyst_bulk_acknowledge_escalate_assign_and_cannot_resolve() -> None:
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+        _create_user(client, dba_token, "analyst@example.com", "Analyst")
+        analyst_token = _login_token(client, "analyst@example.com", "Password123!")
+
+        create_resp = client.post(
+            "/incidents",
+            json={
+                "title": "Replica warning",
+                "description": "Replica delay keeps increasing",
+                "severity": "medium",
+                "owner": "oncall",
+            },
+            headers=_auth_headers(analyst_token),
+        )
+        assert create_resp.status_code == 201
+        incident_id = create_resp.json()["id"]
+
+        ack_resp = client.patch(
+            "/incidents/actions/bulk",
+            json={"action": "acknowledge", "incident_ids": [incident_id]},
+            headers=_auth_headers(analyst_token),
+        )
+        assert ack_resp.status_code == 200
+        ack_payload = ack_resp.json()
+        assert ack_payload["action"] == "acknowledge"
+        assert ack_payload["summary"]["updated_count"] == 1
+        assert ack_payload["summary"]["skipped_count"] == 0
+        assert ack_payload["items"][0]["outcome"] == "updated"
+
+        escalate_resp = client.patch(
+            "/incidents/actions/bulk",
+            json={"action": "escalate", "incident_ids": [incident_id]},
+            headers=_auth_headers(analyst_token),
+        )
+        assert escalate_resp.status_code == 200
+        escalate_payload = escalate_resp.json()
+        assert escalate_payload["incidents"][0]["severity"] == "high"
+        assert escalate_payload["items"][0]["before"]["severity"] == "medium"
+        assert escalate_payload["items"][0]["after"]["severity"] == "high"
+
+        assign_resp = client.patch(
+            "/incidents/actions/bulk",
+            json={"action": "assign", "incident_ids": [incident_id], "owner": "analyst@example.com"},
+            headers=_auth_headers(analyst_token),
+        )
+        assert assign_resp.status_code == 200
+        assign_payload = assign_resp.json()
+        assert assign_payload["incidents"][0]["owner"] == "analyst@example.com"
+        assert assign_payload["summary"]["updated_count"] == 1
+        assert assign_payload["items"][0]["after"]["owner"] == "analyst@example.com"
+
+        resolve_denied = client.patch(
+            "/incidents/actions/bulk",
+            json={"action": "resolve", "incident_ids": [incident_id]},
+            headers=_auth_headers(analyst_token),
+        )
+        assert resolve_denied.status_code == 403
+
+
+def test_dba_can_bulk_resolve_incidents() -> None:
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+        _create_user(client, dba_token, "analyst@example.com", "Analyst")
+        analyst_token = _login_token(client, "analyst@example.com", "Password123!")
+
+        create_resp = client.post(
+            "/incidents",
+            json={
+                "title": "Slow writes",
+                "description": "Write latency above threshold",
+                "severity": "high",
+                "owner": "analyst@example.com",
+            },
+            headers=_auth_headers(analyst_token),
+        )
+        assert create_resp.status_code == 201
+        incident_id = create_resp.json()["id"]
+
+        resolve_resp = client.patch(
+            "/incidents/actions/bulk",
+            json={"action": "resolve", "incident_ids": [incident_id]},
+            headers=_auth_headers(dba_token),
+        )
+        assert resolve_resp.status_code == 200
+        payload = resolve_resp.json()
+        assert payload["action"] == "resolve"
+        assert payload["affected_count"] == 1
+        assert payload["summary"]["updated_count"] == 1
+        assert payload["summary"]["skipped_count"] == 0
+        assert payload["incidents"][0]["status"] == "resolved"
+
+
+def test_bulk_action_returns_duplicate_and_skip_summary() -> None:
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+        _create_user(client, dba_token, "analyst@example.com", "Analyst")
+        analyst_token = _login_token(client, "analyst@example.com", "Password123!")
+
+        create_high = client.post(
+            "/incidents",
+            json={
+                "title": "Already high",
+                "description": "High severity incident",
+                "severity": "high",
+                "owner": "ops",
+            },
+            headers=_auth_headers(analyst_token),
+        )
+        assert create_high.status_code == 201
+        high_id = create_high.json()["id"]
+
+        create_resolved = client.post(
+            "/incidents",
+            json={
+                "title": "Will be resolved",
+                "description": "Resolved before bulk escalate",
+                "severity": "low",
+                "owner": "ops",
+            },
+            headers=_auth_headers(analyst_token),
+        )
+        assert create_resolved.status_code == 201
+        resolved_id = create_resolved.json()["id"]
+
+        resolve_resp = client.patch(f"/incidents/{resolved_id}/resolve", headers=_auth_headers(dba_token))
+        assert resolve_resp.status_code == 200
+
+        bulk_resp = client.patch(
+            "/incidents/actions/bulk",
+            json={"action": "escalate", "incident_ids": [high_id, high_id, resolved_id]},
+            headers=_auth_headers(analyst_token),
+        )
+        assert bulk_resp.status_code == 200
+        payload = bulk_resp.json()
+        assert payload["summary"]["requested_count"] == 3
+        assert payload["summary"]["unique_count"] == 2
+        assert payload["summary"]["duplicate_count"] == 1
+        assert payload["summary"]["updated_count"] == 0
+        assert payload["summary"]["skipped_count"] == 2
+        assert all(item["outcome"] == "skipped" for item in payload["items"])
+        reasons = {item["reason"] for item in payload["items"]}
+        assert "incident already high severity" in reasons
+        assert "incident is not open" in reasons
+
+
 def test_incident_history_records_create_update_resolve() -> None:
     for client in _client():
         dba_token = _bootstrap_dba(client)
