@@ -242,6 +242,14 @@ function createFetchMock({
         ),
     },
     {
+      match: (path, method) => path === "/billing/checkout/session" && method === "POST",
+      respond: () =>
+        jsonResponse({
+          session_id: "cs_test_123",
+          url: "https://checkout.stripe.test/session_123",
+        }),
+    },
+    {
       match: (path, method) => path.startsWith("/reports/schedules/") && path.endsWith("/status") && method === "PATCH",
       respond: () => jsonResponse({ ...schedules[0], is_enabled: false }),
     },
@@ -702,6 +710,18 @@ describe("App smoke", () => {
           ([url, options]) =>
             String(url).includes("/admin/billing") &&
             (options?.method || "GET").toUpperCase() === "PUT",
+        ),
+      ).toBe(true);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Subscribe with Stripe" }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, options]) =>
+            String(url).includes("/billing/checkout/session") &&
+            (options?.method || "GET").toUpperCase() === "POST",
         ),
       ).toBe(true);
     });
