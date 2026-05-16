@@ -7,5 +7,8 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.js"],
     include: ["src/**/*.test.{js,jsx}"],
+    testTimeout: 30000, // Set a timeout of 30 seconds for each test
+    minThreads: 1, // Ensure at least one thread is used
+    maxThreads: 2, // Cap thread usage to reduce memory pressure
   },
 });

@@ -332,3 +332,18 @@ Target window: **~2 weeks** (items below are **not** duplicates of what is alrea
    - SSO/OIDC option for larger tenants
    - Rate limiting beyond selected routes where appropriate
    - Expanded operations runbook (`docs/`) for Render + incident response
+
+## Branch Protection Rules
+
+This repository does not currently have branch protection rules configured, as it is maintained by a single developer. However, if this repository is transferred to a team or organization, it is recommended to configure branch protection rules to ensure code quality and prevent accidental changes to critical branches.
+
+### Suggested Branch Protection Settings:
+1. **Require a pull request before merging**:
+   - Require at least one approval.
+   - Dismiss stale pull request approvals when new commits are pushed.
+2. **Require status checks to pass before merging**:
+   - Ensure all CI/CD checks pass before merging.
+3. **Restrict who can push to matching branches**:
+   - Limit push access to specific team members or roles.
+
+For more information, refer to the [GitHub documentation on branch protection rules](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-protected-branches).
