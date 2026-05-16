@@ -40,7 +40,7 @@
 | Check | Status | Evidence | Time |
 |-------|--------|----------|------|
 | Render env vars set (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_STARTER`) | [ ] | [Paste screenshot/reference] | [TIME] |
-| Stripe webhook endpoint configured to `https://<api-host>/billing/webhook` | [ ] | [Stripe endpoint ID] | [TIME] |
+| Stripe webhook endpoint configured to `https://<api-host>/billing/webhook` | [✓] | dbops-api-webhook -> https://dbops-api.onrender.com/billing/webhook | [TIME] |
 | Webhook event subscriptions added (`checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`) | [ ] | [Stripe event list screenshot] | [TIME] |
 | DBA clicked **Subscribe with Stripe** and was redirected to Stripe Checkout | [ ] | [Checkout session ID `cs_...`] | [TIME] |
 | Checkout completed in Stripe test mode | [ ] | [Customer/subscription IDs] | [TIME] |
