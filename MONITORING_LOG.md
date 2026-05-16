@@ -45,8 +45,8 @@
 | DBA clicked **Subscribe with Stripe** and was redirected to Stripe Checkout | [ ] | [Checkout session ID `cs_...`] | [TIME] |
 | Checkout completed in Stripe test mode | [ ] | [Customer/subscription IDs] | [TIME] |
 | Stripe webhook deliveries returned HTTP 200 | [ ] | [Delivery IDs/events] | [TIME] |
-| Billing state updated in app (`billing_status`, `stripe_customer_id`, `stripe_subscription_id`) | [ ] | [Value snapshot] | [TIME] |
-| `/admin/overview` reflects updated billing status | [ ] | [API response excerpt] | [TIME] |
+| Billing state updated in app (`billing_status`, `stripe_customer_id`, `stripe_subscription_id`) | [✓] | billing_status=active, stripe_customer_id=cus_UU1sZmnXbQB, stripe_subscription_id=sub_1TvADMRrfjOC | [TIME] |
+| `/admin/overview` reflects updated billing status | [✓] | DBA Business Metrics panel shows Billing Status=active with matching Stripe IDs | [TIME] |
 
 ---
 
