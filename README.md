@@ -1,5 +1,7 @@
 # DBOps Control Center
 
+[![CI](https://github.com/dallas8000-ops/DBOps-Control-Center/actions/workflows/ci.yml/badge.svg)](https://github.com/dallas8000-ops/DBOps-Control-Center/actions/workflows/ci.yml)
+
 **Private / proprietary.** This project is maintained in a **private** repository. **Sale, redistribution, download for others, or disclosure of this codebase or related materials without the copyright owner’s express written consent is prohibited.** See [`LEGAL_NOTICE.md`](./LEGAL_NOTICE.md) for the full notice.
 
 Commercial terms: [`DBOps_LICENSE.md`](./DBOps_LICENSE.md). Product positioning and pitch: [`DBOps_Product_Positioning.md`](./DBOps_Product_Positioning.md).
@@ -277,6 +279,21 @@ npm run lint
 npm run test:run
 npm run build
 ```
+
+### CI quality gates
+
+GitHub Actions workflow: `.github/workflows/ci.yml`
+
+The CI pipeline runs on push and pull requests to `main`/`master` with three required jobs:
+
+- `backend`: installs backend deps, runs `ruff` critical checks, then `pytest -q`
+- `frontend`: runs `npm ci`, `npm run lint`, `npm run test:run`, and `npm run build`
+- `migration_sanity`: starts PostgreSQL and runs `alembic upgrade head` with CI `DATABASE_URL`
+
+Recommended branch protection for production safety:
+
+- Require all status checks from `CI` workflow before merge
+- Require pull request reviews before merge
 
 ## Render deployment
 

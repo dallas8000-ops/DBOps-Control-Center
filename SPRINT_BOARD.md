@@ -167,11 +167,11 @@ Allow exporting current report results to CSV safely.
 Enforce lint / test / build checks in CI for backend and frontend.
 
 **Checklist:**
-- [ ] Backend lint + tests
-- [ ] Frontend build + lint
-- [ ] Migration sanity check in CI
-- [ ] Fail pipeline on critical checks
-- [ ] Update README badges / CI docs
+- [x] Backend lint + tests
+- [x] Frontend build + lint
+- [x] Migration sanity check in CI
+- [x] Fail pipeline on critical checks
+- [x] Update README badges / CI docs
 
 ---
 
