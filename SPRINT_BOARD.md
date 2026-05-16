@@ -16,7 +16,7 @@ Wire billing scaffolding to Stripe checkout + webhook lifecycle so plan state ca
 - [x] Add backend endpoint `POST /billing/webhook` with Stripe signature verification
 - [x] Persist Stripe customer/subscription IDs into `billing_settings`
 - [x] Add backend tests for checkout session + webhook updates
-- [ ] Add frontend billing action to launch Stripe Checkout
+- [x] Add frontend billing action to launch Stripe Checkout
 - [ ] Configure Render env vars (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_STARTER`)
 - [ ] Add Stripe webhook endpoint in dashboard and validate event delivery
 
