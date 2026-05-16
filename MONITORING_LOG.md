@@ -35,6 +35,21 @@
 
 ---
 
+## Hour 1–6: Stripe Billing Verification
+
+| Check | Status | Evidence | Time |
+|-------|--------|----------|------|
+| Render env vars set (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_STARTER`) | [ ] | [Paste screenshot/reference] | [TIME] |
+| Stripe webhook endpoint configured to `https://<api-host>/billing/webhook` | [ ] | [Stripe endpoint ID] | [TIME] |
+| Webhook event subscriptions added (`checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`) | [ ] | [Stripe event list screenshot] | [TIME] |
+| DBA clicked **Subscribe with Stripe** and was redirected to Stripe Checkout | [ ] | [Checkout session ID `cs_...`] | [TIME] |
+| Checkout completed in Stripe test mode | [ ] | [Customer/subscription IDs] | [TIME] |
+| Stripe webhook deliveries returned HTTP 200 | [ ] | [Delivery IDs/events] | [TIME] |
+| Billing state updated in app (`billing_status`, `stripe_customer_id`, `stripe_subscription_id`) | [ ] | [Value snapshot] | [TIME] |
+| `/admin/overview` reflects updated billing status | [ ] | [API response excerpt] | [TIME] |
+
+---
+
 ## Hour 6–24: Background Tasks
 
 | Check | Status | Evidence | Time |
@@ -43,6 +58,7 @@
 | Rate limit blocks attempts | [ ] | 6 failed logins = blocked | [TIME] |
 | Audit logs created | [ ] | User created entry in audit_logs | [TIME] |
 | Report execution log | [✓] | `2026-05-09T22:18:08.922865 dallas8000@gmail.com incidents_by_status rows=2 ms=1 ok=yes` | 22:18:08 UTC |
+| Stripe webhooks continue to deliver after initial checkout | [ ] | [Recent successful delivery IDs] | [TIME] |
 
 ---
 
