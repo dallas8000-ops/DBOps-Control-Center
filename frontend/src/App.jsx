@@ -99,6 +99,17 @@ function formatLiveSync(stamp) {
   return `Last live sync ${stamp.toLocaleTimeString()}`;
 }
 
+function applyOptimisticBulkAction(rows, action, incidentIds, owner) {
+  const selected = new Set(incidentIds);
+  return rows.map((row) => {
+    if (!selected.has(row.id) || row.status !== "open") return row;
+    if (action === "resolve") return { ...row, status: "resolved" };
+    if (action === "assign" && owner) return { ...row, owner };
+    if (action === "escalate") return { ...row, severity: "high" };
+    return row;
+  });
+}
+
 function authErrorMessage(status, body, fallback) {
   const detail = formatApiDetail(body);
   const detailLower = detail.toLowerCase();
@@ -1427,6 +1438,7 @@ export default function App() {
   const [incidentHistoryLoading, setIncidentHistoryLoading] = useState(false);
   const [incidentHistoryError, setIncidentHistoryError] = useState("");
   const [bulkIncidentActionBusy, setBulkIncidentActionBusy] = useState(false);
+  const [incidentActionToast, setIncidentActionToast] = useState({ kind: "", text: "" });
   const [liveSyncAt, setLiveSyncAt] = useState(null);
   const [liveAutoRefresh, setLiveAutoRefresh] = useState(true);
   const [themePreference, setThemePreference] = useState(() => {
@@ -1477,7 +1489,16 @@ export default function App() {
     setIncidentHistoryEntries([]);
     setIncidentHistoryLoading(false);
     setIncidentHistoryError("");
+    setIncidentActionToast({ kind: "", text: "" });
   }
+
+  useEffect(() => {
+    if (!incidentActionToast.text) return undefined;
+    const timer = setTimeout(() => {
+      setIncidentActionToast({ kind: "", text: "" });
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [incidentActionToast]);
 
   function forceLogoutWithMessage(detail = "") {
     clearClientState();
@@ -2223,6 +2244,8 @@ export default function App() {
 
     setIncidentEditError("");
     setBulkIncidentActionBusy(true);
+    const previousIncidents = incidents;
+    setIncidents((prev) => applyOptimisticBulkAction(prev, action, incidentIds, owner));
 
     const payload = {
       action,
@@ -2237,9 +2260,25 @@ export default function App() {
 
     setBulkIncidentActionBusy(false);
     if (!res.ok) {
+      setIncidents(previousIncidents);
       setIncidentEditError(formatApiDetail(body));
+      setIncidentActionToast({ kind: "error", text: `Bulk ${action} failed. Changes were rolled back.` });
       return false;
     }
+
+    if (Array.isArray(body?.incidents)) {
+      const byId = new Map(body.incidents.map((item) => [item.id, item]));
+      setIncidents((prev) => prev.map((row) => byId.get(row.id) || row));
+    }
+
+    const summary = body?.summary;
+    const updated = Number(summary?.updated_count ?? body?.affected_count ?? incidentIds.length);
+    const skipped = Number(summary?.skipped_count ?? 0);
+    const duplicate = Number(summary?.duplicate_count ?? 0);
+    const parts = [`Bulk ${action}: ${updated} updated`];
+    if (skipped > 0) parts.push(`${skipped} skipped`);
+    if (duplicate > 0) parts.push(`${duplicate} duplicate request ids`);
+    setIncidentActionToast({ kind: "success", text: `${parts.join(" · ")}.` });
 
     await loadData();
     if (incidentHistoryOpenId && incidentIds.includes(incidentHistoryOpenId)) {
@@ -2371,6 +2410,15 @@ export default function App() {
               </button>
             </div>
           </div>
+          {incidentActionToast.text ? (
+            <div
+              className={`incident-toast incident-toast--${incidentActionToast.kind || "success"}`}
+              role="status"
+              aria-live="polite"
+            >
+              {incidentActionToast.text}
+            </div>
+          ) : null}
           {canManageUsers ? (
             <BusinessOpsPanel
               adminOverview={adminOverview}

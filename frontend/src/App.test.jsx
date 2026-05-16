@@ -45,6 +45,7 @@ function createFetchMock({
   meEmail = "analyst@example.com",
   reportRows = [{ status: "open", total: 1 }],
   auditRuns = [],
+  bulkActionStatus = 200,
   loginResponse = jsonResponse({ access_token: "token-123", token_type: "bearer" }),
 } = {}) {
   let incidentRow = {
@@ -272,10 +273,34 @@ function createFetchMock({
           incidentRow = { ...incidentRow, severity: "high" };
         }
 
+        if (bulkActionStatus >= 400) {
+          return jsonResponse({ detail: "Bulk action failed" }, bulkActionStatus);
+        }
+
         return jsonResponse({
           action,
           affected_count: 1,
           incidents: [incidentRow],
+          summary: {
+            requested_count: 1,
+            unique_count: 1,
+            duplicate_count: 0,
+            updated_count: 1,
+            skipped_count: 0,
+          },
+          items: [
+            {
+              incident_id: incidentRow.id,
+              outcome: "updated",
+              reason: null,
+              before: { status: "open", severity: "high", owner: "ops" },
+              after: {
+                status: incidentRow.status,
+                severity: incidentRow.severity,
+                owner: incidentRow.owner,
+              },
+            },
+          ],
         });
       },
     },
@@ -573,6 +598,40 @@ describe("App smoke", () => {
         ),
       ).toBe(true);
     });
+
+    expect(screen.getByText("Bulk acknowledge: 1 updated.")).toBeInTheDocument();
+  });
+
+  it("rolls back optimistic bulk resolve and shows error toast", async () => {
+    const fetchMock = createFetchMock({
+      meRole: "DBA",
+      meEmail: "dba@example.com",
+      bulkActionStatus: 500,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "dba@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "Password123!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Login" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Incidents" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText("Select incident 1"));
+    fireEvent.click(screen.getByRole("button", { name: "Resolve selected" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Bulk resolve failed. Changes were rolled back.")).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("button", { name: "Resolve" })).toBeInTheDocument();
   });
 
   it("runs report request", async () => {

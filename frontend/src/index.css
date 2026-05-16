@@ -181,6 +181,27 @@ body {
   gap: 0.5rem;
 }
 
+.incident-toast {
+  position: sticky;
+  top: 0.65rem;
+  z-index: 8;
+  margin: 0 0 0.85rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+  font-size: 0.9rem;
+}
+
+.incident-toast--success {
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.incident-toast--error {
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
 .live-pill {
   display: inline-flex;
   align-items: center;
