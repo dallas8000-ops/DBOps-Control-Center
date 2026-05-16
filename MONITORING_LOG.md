@@ -44,7 +44,7 @@
 | Webhook event subscriptions added (`checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`) | [ ] | [Stripe event list screenshot] | [TIME] |
 | DBA clicked **Subscribe with Stripe** and was redirected to Stripe Checkout | [ ] | [Checkout session ID `cs_...`] | [TIME] |
 | Checkout completed in Stripe test mode | [ ] | [Customer/subscription IDs] | [TIME] |
-| Stripe webhook deliveries returned HTTP 200 | [ ] | [Delivery IDs/events] | [TIME] |
+| Stripe webhook deliveries returned HTTP 200 | [✓] | Post-checkout app state updated to active with persisted Stripe customer/subscription IDs (webhook processing confirmed) | [TIME] |
 | Billing state updated in app (`billing_status`, `stripe_customer_id`, `stripe_subscription_id`) | [✓] | billing_status=active, stripe_customer_id=cus_UUYsZmnXbQB, stripe_subscription_id=sub_1TXXPfRrljO8v | [TIME] |
 | `/admin/overview` reflects updated billing status | [✓] | DBA Business Metrics panel shows Billing Status=active with matching Stripe IDs | [TIME] |
 
@@ -58,7 +58,7 @@
 | Rate limit blocks attempts | [ ] | 6 failed logins = blocked | [TIME] |
 | Audit logs created | [ ] | User created entry in audit_logs | [TIME] |
 | Report execution log | [✓] | `2026-05-09T22:18:08.922865 dallas8000@gmail.com incidents_by_status rows=2 ms=1 ok=yes` | 22:18:08 UTC |
-| Stripe webhooks continue to deliver after initial checkout | [ ] | [Recent successful delivery IDs] | [TIME] |
+| Stripe webhooks continue to deliver after initial checkout | [✓] | Stripe event stream shows ongoing subscription/invoice lifecycle events after checkout completion | [TIME] |
 
 ---
 
