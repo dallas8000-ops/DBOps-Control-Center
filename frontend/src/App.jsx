@@ -1116,6 +1116,9 @@ function DashboardBody({
   onDownloadIncidentHistoryCsv,
   incidentPresetStorageKey,
   hasActiveFilters,
+  currentUserEmail,
+  bulkIncidentActionBusy,
+  onBulkIncidentAction,
 }) {
   const [reportAuditViewLimit, setReportAuditViewLimit] = useState(() => {
     const store = globalThis.window?.localStorage;
@@ -1269,6 +1272,9 @@ function DashboardBody({
         presetStorageKey={incidentPresetStorageKey}
         hasActiveFilters={hasActiveFilters}
         canCreateIncident={canCreateIncident}
+        currentUserEmail={currentUserEmail}
+        bulkActionBusy={bulkIncidentActionBusy}
+        onBulkIncidentAction={onBulkIncidentAction}
       />
     </>
   );
@@ -1329,6 +1335,9 @@ DashboardBody.propTypes = {
   onDownloadIncidentHistoryCsv: PropTypes.func.isRequired,
   incidentPresetStorageKey: PropTypes.string,
   hasActiveFilters: PropTypes.bool,
+  currentUserEmail: PropTypes.string,
+  bulkIncidentActionBusy: PropTypes.bool,
+  onBulkIncidentAction: PropTypes.func,
 };
 
 export default function App() {
@@ -1417,6 +1426,7 @@ export default function App() {
   const [incidentHistoryEntries, setIncidentHistoryEntries] = useState([]);
   const [incidentHistoryLoading, setIncidentHistoryLoading] = useState(false);
   const [incidentHistoryError, setIncidentHistoryError] = useState("");
+  const [bulkIncidentActionBusy, setBulkIncidentActionBusy] = useState(false);
   const [liveSyncAt, setLiveSyncAt] = useState(null);
   const [liveAutoRefresh, setLiveAutoRefresh] = useState(true);
   const [themePreference, setThemePreference] = useState(() => {
@@ -2208,6 +2218,37 @@ export default function App() {
     if (me?.role === "DBA") await loadAdminOverview();
   }
 
+  async function runBulkIncidentAction({ action, incidentIds, owner }) {
+    if (!Array.isArray(incidentIds) || incidentIds.length === 0) return false;
+
+    setIncidentEditError("");
+    setBulkIncidentActionBusy(true);
+
+    const payload = {
+      action,
+      incident_ids: incidentIds,
+      owner: owner || undefined,
+    };
+
+    const { res, body } = await apiJson("/incidents/actions/bulk", {
+      method: "PATCH",
+      body: payload,
+    });
+
+    setBulkIncidentActionBusy(false);
+    if (!res.ok) {
+      setIncidentEditError(formatApiDetail(body));
+      return false;
+    }
+
+    await loadData();
+    if (incidentHistoryOpenId && incidentIds.includes(incidentHistoryOpenId)) {
+      await loadIncidentHistory(incidentHistoryOpenId);
+    }
+    if (me?.role === "DBA") await loadAdminOverview();
+    return true;
+  }
+
   function startIncidentEdit(incident) {
     setIncidentEditError("");
     setEditingIncidentId(incident.id);
@@ -2417,6 +2458,9 @@ export default function App() {
             onDownloadIncidentHistoryCsv={downloadIncidentHistoryCsv}
             incidentPresetStorageKey={me?.email || "anonymous"}
             hasActiveFilters={hasActiveIncidentFilters}
+            currentUserEmail={me?.email || ""}
+            bulkIncidentActionBusy={bulkIncidentActionBusy}
+            onBulkIncidentAction={runBulkIncidentAction}
           />
         </>
       ) : (

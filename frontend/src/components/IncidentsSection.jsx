@@ -70,7 +70,16 @@ export function IncidentsSection({
   hasActiveFilters,
   canCreateIncident,
   presetStorageKey,
+  currentUserEmail,
+  bulkActionBusy,
+  onBulkIncidentAction,
 }) {
+  const canUseBulkSelection = canEditIncidents || canResolve;
+
+  function canSelectIncident(incident) {
+    return canUseBulkSelection && incident.status === "open";
+  }
+
   function formatIncidentDue(iso) {
     if (!iso) return "—";
     try {
@@ -118,6 +127,8 @@ export function IncidentsSection({
   const [presets, setPresets] = useState([]);
   const [selectedPresetName, setSelectedPresetName] = useState("");
   const [newPresetName, setNewPresetName] = useState("");
+  const [selectedIncidentIds, setSelectedIncidentIds] = useState([]);
+  const [bulkAssignOwner, setBulkAssignOwner] = useState("");
 
   const userPresetStorageKey = presetStorageKeyForUser(presetStorageKey);
 
@@ -211,6 +222,51 @@ export function IncidentsSection({
     const nextPresets = presets.filter((item) => item.name !== selectedPresetName);
     persistPresets(nextPresets);
     setSelectedPresetName("");
+  }
+
+  const eligibleIncidentIds = incidents.filter((incident) => canSelectIncident(incident)).map((incident) => incident.id);
+  const eligibleIncidentIdSet = new Set(eligibleIncidentIds);
+  const selectedEligibleCount = selectedIncidentIds.filter((id) => eligibleIncidentIdSet.has(id)).length;
+  const allEligibleSelected = eligibleIncidentIds.length > 0 && selectedEligibleCount === eligibleIncidentIds.length;
+
+  useEffect(() => {
+    if (!canUseBulkSelection) {
+      setSelectedIncidentIds([]);
+      return;
+    }
+
+    const eligibleIdSet = new Set(eligibleIncidentIds);
+    setSelectedIncidentIds((prev) => prev.filter((id) => eligibleIdSet.has(id)));
+  }, [canUseBulkSelection, eligibleIncidentIds]);
+
+  function toggleIncidentSelected(incidentId, nextChecked) {
+    setSelectedIncidentIds((prev) => {
+      if (nextChecked) {
+        if (prev.includes(incidentId)) return prev;
+        return [...prev, incidentId];
+      }
+      return prev.filter((id) => id !== incidentId);
+    });
+  }
+
+  function toggleSelectAllEligible(nextChecked) {
+    if (!nextChecked) {
+      setSelectedIncidentIds([]);
+      return;
+    }
+    setSelectedIncidentIds(eligibleIncidentIds);
+  }
+
+  async function runBulkAction(action, ownerOverride = "") {
+    if (selectedIncidentIds.length === 0 || typeof onBulkIncidentAction !== "function") return;
+    const ownerValue = ownerOverride || bulkAssignOwner;
+    const payload = action === "assign" ? { owner: ownerValue.trim() } : {};
+    const ok = await onBulkIncidentAction({ action, incidentIds: selectedIncidentIds, ...payload });
+    if (!ok) return;
+    setSelectedIncidentIds([]);
+    if (action === "assign") {
+      setBulkAssignOwner("");
+    }
   }
 
   return (
@@ -328,6 +384,98 @@ export function IncidentsSection({
           Overdue (open)
         </label>
       </div>
+      {canUseBulkSelection ? (
+        <div className="incident-bulk-summary">
+          <span>
+            <strong>{selectedEligibleCount}</strong> selected of <strong>{eligibleIncidentIds.length}</strong> eligible incidents.
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={selectedIncidentIds.length === 0}
+            onClick={() => setSelectedIncidentIds([])}
+          >
+            Clear selection
+          </button>
+        </div>
+      ) : null}
+      {canUseBulkSelection ? (
+        <div className="incident-quick-actions">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={bulkActionBusy || selectedIncidentIds.length === 0 || typeof onBulkIncidentAction !== "function"}
+            onClick={() => {
+              runBulkAction("acknowledge").catch(() => {});
+            }}
+          >
+            Acknowledge selected
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={bulkActionBusy || selectedIncidentIds.length === 0 || typeof onBulkIncidentAction !== "function"}
+            onClick={() => {
+              runBulkAction("escalate").catch(() => {});
+            }}
+          >
+            Escalate selected
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={
+              bulkActionBusy ||
+              selectedIncidentIds.length === 0 ||
+              !canResolve ||
+              typeof onBulkIncidentAction !== "function"
+            }
+            onClick={() => {
+              runBulkAction("resolve").catch(() => {});
+            }}
+          >
+            Resolve selected
+          </button>
+          <div className="incident-quick-actions__assign">
+            <input
+              type="text"
+              placeholder="Assign owner"
+              value={bulkAssignOwner}
+              onChange={(e) => setBulkAssignOwner(e.target.value)}
+            />
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={
+                bulkActionBusy ||
+                selectedIncidentIds.length === 0 ||
+                !bulkAssignOwner.trim() ||
+                typeof onBulkIncidentAction !== "function"
+              }
+              onClick={() => {
+                runBulkAction("assign").catch(() => {});
+              }}
+            >
+              Assign selected
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={
+                bulkActionBusy ||
+                selectedIncidentIds.length === 0 ||
+                !currentUserEmail ||
+                typeof onBulkIncidentAction !== "function"
+              }
+              onClick={() => {
+                runBulkAction("assign", currentUserEmail || "").catch(() => {});
+              }}
+            >
+              Assign to me
+            </button>
+          </div>
+        </div>
+      ) : null}
       {incidents.length === 0 ? (
         <p className="empty-state">{emptyMessage}</p>
       ) : (
@@ -335,6 +483,20 @@ export function IncidentsSection({
           <table className={`data-table mobile-card-table mobile-card-table--${mobileDensity}`}>
             <thead>
               <tr>
+                {canUseBulkSelection ? (
+                  <th className="incident-select-col">
+                    <label className="incident-select-all">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all eligible incidents"
+                        checked={allEligibleSelected}
+                        disabled={eligibleIncidentIds.length === 0}
+                        onChange={(e) => toggleSelectAllEligible(e.target.checked)}
+                      />
+                      <span>Select</span>
+                    </label>
+                  </th>
+                ) : null}
                 <th>Title</th>
                 <th>Description</th>
                 <th>Severity</th>
@@ -348,6 +510,17 @@ export function IncidentsSection({
               {incidents.map((incident) => (
                 <Fragment key={incident.id}>
                   <tr>
+                    {canUseBulkSelection ? (
+                      <td data-label="Select">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select incident ${incident.id}`}
+                          checked={selectedIncidentIds.includes(incident.id)}
+                          disabled={!canSelectIncident(incident)}
+                          onChange={(e) => toggleIncidentSelected(incident.id, e.target.checked)}
+                        />
+                      </td>
+                    ) : null}
                     <td data-label="Title">
                       {editingIncidentId === incident.id ? (
                         <input
@@ -436,7 +609,7 @@ export function IncidentsSection({
                   </tr>
                   {incidentHistoryOpenId === incident.id ? (
                     <tr className="incident-history-row">
-                      <td colSpan={7}>
+                      <td colSpan={canUseBulkSelection ? 8 : 7}>
                         <div className="incident-history-panel">
                           {incidentHistoryLoading ? <p className="empty-state">Loading history…</p> : null}
                           {incidentHistoryError ? <p className="error-text">{incidentHistoryError}</p> : null}
@@ -540,4 +713,7 @@ IncidentsSection.propTypes = {
   hasActiveFilters: PropTypes.bool,
   canCreateIncident: PropTypes.bool,
   presetStorageKey: PropTypes.string,
+  currentUserEmail: PropTypes.string,
+  bulkActionBusy: PropTypes.bool,
+  onBulkIncidentAction: PropTypes.func,
 };

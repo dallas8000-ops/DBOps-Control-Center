@@ -47,6 +47,16 @@ function createFetchMock({
   auditRuns = [],
   loginResponse = jsonResponse({ access_token: "token-123", token_type: "bearer" }),
 } = {}) {
+  let incidentRow = {
+    id: 1,
+    title: "Replication lag",
+    description: "Lag exceeded threshold",
+    severity: "high",
+    owner: "ops",
+    status: "open",
+    created_at: "2026-05-08T10:00:00",
+  };
+
   const schedules = [
     {
       id: 1,
@@ -160,18 +170,7 @@ function createFetchMock({
     },
     {
       match: (path, method) => path === "/incidents" && method === "GET",
-      respond: () =>
-        jsonResponse([
-          {
-            id: 1,
-            title: "Replication lag",
-            description: "Lag exceeded threshold",
-            severity: "high",
-            owner: "ops",
-            status: "open",
-            created_at: "2026-05-08T10:00:00",
-          },
-        ]),
+      respond: () => jsonResponse([incidentRow]),
     },
     {
       match: (path, method) => path === "/incidents" && method === "POST",
@@ -247,16 +246,38 @@ function createFetchMock({
     },
     {
       match: (path, method) => path.endsWith("/resolve") && method === "PATCH",
-      respond: () =>
-        jsonResponse({
-          id: 1,
-          title: "Replication lag",
-          description: "Lag exceeded threshold",
-          severity: "high",
-          owner: "ops",
-          status: "resolved",
-          created_at: "2026-05-08T10:00:00",
-        }),
+      respond: () => {
+        incidentRow = { ...incidentRow, status: "resolved" };
+        return jsonResponse(incidentRow);
+      },
+    },
+    {
+      match: (path, method) => path === "/incidents/actions/bulk" && method === "PATCH",
+      respond: (reqOptions = {}) => {
+        let parsed = {};
+        try {
+          parsed = JSON.parse(String(reqOptions.body || "{}"));
+        } catch {
+          parsed = {};
+        }
+
+        const action = String(parsed.action || "");
+        if (action === "resolve") {
+          incidentRow = { ...incidentRow, status: "resolved" };
+        }
+        if (action === "assign" && parsed.owner) {
+          incidentRow = { ...incidentRow, owner: String(parsed.owner) };
+        }
+        if (action === "escalate") {
+          incidentRow = { ...incidentRow, severity: "high" };
+        }
+
+        return jsonResponse({
+          action,
+          affected_count: 1,
+          incidents: [incidentRow],
+        });
+      },
     },
   ];
 
@@ -267,7 +288,7 @@ function createFetchMock({
     if (staticResponses[key]) return staticResponses[key];
 
     const handler = dynamicHandlers.find((candidate) => candidate.match(path, method));
-    if (handler) return handler.respond();
+    if (handler) return handler.respond(options);
 
     return jsonResponse({ detail: `Unhandled route ${method} ${path}` }, 500);
   });
@@ -474,6 +495,81 @@ describe("App smoke", () => {
           ([url, options]) =>
             String(url).includes("/incidents") &&
             (options?.method || "GET").toUpperCase() === "POST",
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it("shows bulk selection controls for Analyst on eligible incidents", async () => {
+    vi.stubGlobal("fetch", createFetchMock({ meRole: "Analyst", meEmail: "analyst@example.com" }));
+
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "analyst@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "Password123!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Login" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Incidents" })).toBeInTheDocument();
+    });
+
+    expect(screen.getByLabelText("Select all eligible incidents")).toBeInTheDocument();
+    expect(screen.getByLabelText("Select incident 1")).toBeInTheDocument();
+  });
+
+  it("hides bulk selection controls for Viewer", async () => {
+    vi.stubGlobal("fetch", createFetchMock({ meRole: "Viewer", meEmail: "viewer@example.com" }));
+
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "viewer@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "Password123!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Login" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Incidents" })).toBeInTheDocument();
+    });
+
+    expect(screen.queryByLabelText("Select all eligible incidents")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Select incident 1")).not.toBeInTheDocument();
+  });
+
+  it("sends bulk acknowledge request from quick actions bar", async () => {
+    const fetchMock = createFetchMock({ meRole: "Analyst", meEmail: "analyst@example.com" });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "analyst@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "Password123!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Login" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Incidents" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText("Select incident 1"));
+    fireEvent.click(screen.getByRole("button", { name: "Acknowledge selected" }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, options]) =>
+            String(url).includes("/incidents/actions/bulk") &&
+            (options?.method || "GET").toUpperCase() === "PATCH" &&
+            String(options?.body || "").includes("\"action\":\"acknowledge\""),
         ),
       ).toBe(true);
     });
