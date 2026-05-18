@@ -1,5 +1,5 @@
 import PropTypes from "prop-types";
-import { ActivityTrendChart, Card } from "./DashboardWidgets.jsx";
+import { ActivityTrendChart, Card, SlaStatusWidget } from "./DashboardWidgets.jsx";
 import { formatCurrencyFromCents, formatUtcIsoAsLocal } from "../formatters.js";
 
 export function BusinessOpsPanel({
@@ -116,6 +116,13 @@ export function BusinessOpsPanel({
         </button>
       </form>
       {billingFeedback ? <p className="hint">{billingFeedback}</p> : null}
+
+      <h3 className="section-lede">SLA status (open incidents)</h3>
+      <SlaStatusWidget
+        openIncidents={metrics.open_incidents}
+        overdueIncidents={metrics.overdue_incidents ?? 0}
+        incidentsWithSla={metrics.incidents_with_sla ?? 0}
+      />
 
       <h3 className="section-lede">Activity trend (last 7 days)</h3>
       <ActivityTrendChart points={activityTrend} />

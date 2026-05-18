@@ -525,11 +525,14 @@ def _build_admin_metrics(db: Session) -> AdminMetricsRead:
     window_start = now - timedelta(hours=24)
     recent_runs = db.query(ReportExecutionLog).filter(ReportExecutionLog.created_at >= window_start)
     completed_steps = db.query(OnboardingEvent).count()
+    open_q = db.query(Incident).filter(Incident.status == "open")
     return AdminMetricsRead(
         total_users=db.query(User).count(),
         active_users=db.query(User).filter(User.is_active.is_(True)).count(),
-        open_incidents=db.query(Incident).filter(Incident.status == "open").count(),
+        open_incidents=open_q.count(),
         resolved_incidents=db.query(Incident).filter(Incident.status == "resolved").count(),
+        overdue_incidents=open_q.filter(Incident.due_at.isnot(None), Incident.due_at < now).count(),
+        incidents_with_sla=open_q.filter(Incident.due_at.isnot(None)).count(),
         enabled_schedules=db.query(ReportSchedule).filter(ReportSchedule.is_enabled.is_(True)).count(),
         report_runs_last_24h=recent_runs.count(),
         successful_report_runs_last_24h=recent_runs.filter(ReportExecutionLog.success.is_(True)).count(),

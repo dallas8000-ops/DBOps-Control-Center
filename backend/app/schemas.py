@@ -275,6 +275,8 @@ class AdminMetricsRead(BaseModel):
     active_users: int
     open_incidents: int
     resolved_incidents: int
+    overdue_incidents: int
+    incidents_with_sla: int
     enabled_schedules: int
     report_runs_last_24h: int
     successful_report_runs_last_24h: int

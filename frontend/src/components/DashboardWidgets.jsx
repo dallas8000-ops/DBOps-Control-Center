@@ -147,3 +147,50 @@ ReportRunsTrendChart.propTypes = {
     }),
   ).isRequired,
 };
+
+export function SlaStatusWidget({ openIncidents, overdueIncidents, incidentsWithSla }) {
+  const onTrack = Math.max(incidentsWithSla - overdueIncidents, 0);
+  const noSla = Math.max(openIncidents - incidentsWithSla, 0);
+  const healthPct = incidentsWithSla === 0 ? 100 : Math.round((onTrack / incidentsWithSla) * 100);
+  const isBreach = overdueIncidents > 0;
+
+  if (openIncidents === 0) {
+    return <p className="empty-state">No open incidents — SLA health is perfect.</p>;
+  }
+
+  return (
+    <div className="sla-widget">
+      <div className="sla-widget__badges">
+        <div className={`sla-widget__badge ${isBreach ? "sla-widget__badge--breach" : "sla-widget__badge--ok"}`}>
+          <span className="sla-widget__count">{overdueIncidents}</span>
+          <span className="sla-widget__label">Overdue</span>
+        </div>
+        <div className="sla-widget__badge sla-widget__badge--ok">
+          <span className="sla-widget__count">{onTrack}</span>
+          <span className="sla-widget__label">On track</span>
+        </div>
+        <div className="sla-widget__badge">
+          <span className="sla-widget__count">{noSla}</span>
+          <span className="sla-widget__label">No SLA set</span>
+        </div>
+      </div>
+      {incidentsWithSla > 0 && (
+        <div className="sla-widget__bar-wrap">
+          <div className="sla-widget__bar" aria-label={`SLA health ${healthPct}%`}>
+            <div
+              className={`sla-widget__bar-fill ${isBreach ? "sla-widget__bar-fill--breach" : ""}`}
+              style={{ width: `${healthPct}%` }}
+            />
+          </div>
+          <span className="hint">{healthPct}% of tracked incidents on track</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+SlaStatusWidget.propTypes = {
+  openIncidents: PropTypes.number.isRequired,
+  overdueIncidents: PropTypes.number.isRequired,
+  incidentsWithSla: PropTypes.number.isRequired,
+};
