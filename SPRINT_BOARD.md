@@ -71,6 +71,16 @@
 ### FEATURE: Report CSV export
 - [x] `POST /reports/export/csv`, UI export button, CSV tests
 
+### FEATURE: SSO/OIDC integration (Google PKCE)
+- [x] `oidc_verify.py` — OIDC discovery, JWKS caching, RS256 ID token verification, PKCE code exchange
+- [x] `OidcCallbackRequest` schema
+- [x] `GET /auth/oidc/config` — public frontend config
+- [x] `POST /auth/oidc/callback` — code exchange + user auto-provisioning
+- [x] `GET /health/oidc` — env presence check
+- [x] Frontend PKCE flow + "Sign in with SSO" button in `LoginPanel`
+- [x] `render.yaml` + `.env.example` updated with `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_DEFAULT_ROLE`
+- [x] End-to-end tested with Google OAuth 2.0 (Web application client)
+
 ### DOCS: Deployment guide + runbooks
 - [x] `DEPLOYMENT.md` — Render deploy, env matrix, links to runbooks
 - [x] [`docs/STRIPE_RENDER_SETUP.md`](./docs/STRIPE_RENDER_SETUP.md) — Render env + Stripe webhook events
@@ -86,7 +96,7 @@
 |-------|--------|
 | ROADMAP: Post-sprint enhancements | — |
 | FEATURE: Scheduled report runs + notifications (enhancements) | `backend` `frontend` |
-| FEATURE: SSO/OIDC integration spike | `backend` `security` |
+| ~~FEATURE: SSO/OIDC integration spike~~ | `backend` `security` |
 | FEATURE: Trend charts + SLA widgets | `frontend` |
 
 ---
