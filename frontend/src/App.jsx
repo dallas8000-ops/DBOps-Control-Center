@@ -183,6 +183,27 @@ function csvFilenameFromContentDisposition(contentDisposition, fallbackReportKey
   return fallback;
 }
 
+function _oidcGenerateCodeVerifier() {
+  const arr = new Uint8Array(32);
+  crypto.getRandomValues(arr);
+  return btoa(String.fromCharCode(...arr)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+}
+
+async function _oidcComputeCodeChallenge(verifier) {
+  const data = new TextEncoder().encode(verifier);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
+}
+
+function _oidcGenerateState() {
+  const arr = new Uint8Array(16);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function HealthConnectionMessages({ health, apiUrl }) {
   switch (health.kind) {
     case "loading":
@@ -240,6 +261,10 @@ function LoginPanel({
   bootstrapForm,
   setBootstrapForm,
   onBootstrap,
+  oidcConfig,
+  oidcBusy,
+  oidcError,
+  onOidcLogin,
 }) {
   return (
     <section className="panel">
@@ -252,6 +277,16 @@ function LoginPanel({
         admin account.
       </p>
       {authError ? <p className="error-text">{authError}</p> : null}
+      {oidcError ? <p className="error-text">{oidcError}</p> : null}
+      {oidcConfig ? (
+        <div className="oidc-sso-row">
+          <button type="button" className="btn btn-primary" disabled={oidcBusy} onClick={onOidcLogin}>
+            {oidcBusy ? "Redirecting…" : "Sign in with SSO"}
+          </button>
+          <span className="hint">via {oidcConfig.authorization_endpoint?.replace(/\/[^/]*$/, "") || "your OIDC provider"}</span>
+        </div>
+      ) : null}
+      {oidcConfig ? <p className="hint oidc-divider">— or sign in with email/password —</p> : null}
       <form className="form-grid form-grid--narrow" onSubmit={onLogin}>
         <input
           type="email"
@@ -324,6 +359,14 @@ LoginPanel.propTypes = {
   }).isRequired,
   setBootstrapForm: PropTypes.func.isRequired,
   onBootstrap: PropTypes.func.isRequired,
+  oidcConfig: PropTypes.shape({
+    authorization_endpoint: PropTypes.string.isRequired,
+    client_id: PropTypes.string.isRequired,
+    scope: PropTypes.string.isRequired,
+  }),
+  oidcBusy: PropTypes.bool,
+  oidcError: PropTypes.string,
+  onOidcLogin: PropTypes.func,
 };
 
 function PlanUsageBanner({ billing, planUsage, kind }) {
@@ -1414,6 +1457,9 @@ export default function App() {
   const [connectionHealth, setConnectionHealth] = useState({ kind: "loading" });
   const [schedulerHealth, setSchedulerHealth] = useState(null);
   const [smtpHealth, setSmtpHealth] = useState(null);
+  const [oidcConfig, setOidcConfig] = useState(null);
+  const [oidcBusy, setOidcBusy] = useState(false);
+  const [oidcError, setOidcError] = useState("");
   const [adminOverview, setAdminOverview] = useState(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingFeedback, setBillingFeedback] = useState("");
@@ -1705,6 +1751,85 @@ export default function App() {
     setSchedulerHealth(body);
   }
 
+  async function loadOidcConfig() {
+    try {
+      const res = await fetch(`${API_URL}/auth/oidc/config`);
+      if (res.ok) {
+        const body = await res.json().catch(() => null);
+        if (body) setOidcConfig(body);
+      }
+    } catch {
+      // OIDC not configured or unreachable — silently ignore
+    }
+  }
+
+  async function startOidcLogin() {
+    if (!oidcConfig) return;
+    setOidcBusy(true);
+    setOidcError("");
+    try {
+      const verifier = _oidcGenerateCodeVerifier();
+      const challenge = await _oidcComputeCodeChallenge(verifier);
+      const state = _oidcGenerateState();
+      const redirectUri = globalThis.location?.origin || "";
+      globalThis.sessionStorage?.setItem("oidc_state", state);
+      globalThis.sessionStorage?.setItem("oidc_code_verifier", verifier);
+      globalThis.sessionStorage?.setItem("oidc_redirect_uri", redirectUri);
+      const params = new URLSearchParams({
+        response_type: "code",
+        client_id: oidcConfig.client_id,
+        scope: oidcConfig.scope,
+        redirect_uri: redirectUri,
+        state,
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+      });
+      globalThis.location.href = `${oidcConfig.authorization_endpoint}?${params.toString()}`;
+    } catch (err) {
+      setOidcError(`SSO redirect failed: ${err?.message || err}`);
+      setOidcBusy(false);
+    }
+  }
+
+  async function handleOidcCallback() {
+    const search = globalThis.location?.search || "";
+    if (!search) return;
+    const params = new URLSearchParams(search);
+    const code = params.get("code");
+    const state = params.get("state");
+    if (!code) return;
+    const storedState = globalThis.sessionStorage?.getItem("oidc_state");
+    const codeVerifier = globalThis.sessionStorage?.getItem("oidc_code_verifier");
+    const redirectUri = globalThis.sessionStorage?.getItem("oidc_redirect_uri");
+    globalThis.history?.replaceState({}, "", globalThis.location?.pathname || "/");
+    globalThis.sessionStorage?.removeItem("oidc_state");
+    globalThis.sessionStorage?.removeItem("oidc_code_verifier");
+    globalThis.sessionStorage?.removeItem("oidc_redirect_uri");
+    if (!codeVerifier || !redirectUri || state !== storedState) {
+      setOidcError("SSO state mismatch — please try signing in again.");
+      return;
+    }
+    setOidcBusy(true);
+    setOidcError("");
+    try {
+      const res = await fetch(`${API_URL}/auth/oidc/callback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, redirect_uri: redirectUri, code_verifier: codeVerifier }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setOidcError(body?.detail || "SSO login failed.");
+        return;
+      }
+      setToken(body.access_token);
+    } catch {
+      setOidcError(`SSO login failed — could not reach the API (${API_URL}).`);
+    } finally {
+      setOidcBusy(false);
+    }
+  }
+
   async function loadSmtpHealth() {
     if (!token || me?.role !== "DBA") {
       setSmtpHealth(null);
@@ -1793,6 +1918,15 @@ export default function App() {
   useEffect(() => {
     loadUserAuditLogs();
   }, [token, me]);
+
+  useEffect(() => {
+    loadOidcConfig();
+  }, []);
+
+  useEffect(() => {
+    if (IS_VITEST) return;
+    handleOidcCallback();
+  }, []);
 
   useEffect(() => {
     loadSchedulerHealth();
@@ -2566,6 +2700,10 @@ export default function App() {
           bootstrapForm={bootstrapForm}
           setBootstrapForm={setBootstrapForm}
           onBootstrap={bootstrapRegister}
+          oidcConfig={oidcConfig}
+          oidcBusy={oidcBusy}
+          oidcError={oidcError}
+          onOidcLogin={startOidcLogin}
         />
       )}
     </main>

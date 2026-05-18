@@ -760,6 +760,18 @@ table.data-table {
   background: linear-gradient(90deg, #dc2626, #f87171);
 }
 
+.oidc-sso-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.oidc-divider {
+  text-align: center;
+  margin: 0.5rem 0;
+}
+
 .incident-filters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

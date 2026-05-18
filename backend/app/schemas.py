@@ -14,6 +14,12 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class OidcCallbackRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=4096)
+    redirect_uri: str = Field(min_length=8, max_length=512)
+    code_verifier: str = Field(min_length=43, max_length=128)
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)

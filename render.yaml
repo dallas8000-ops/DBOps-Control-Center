@@ -28,6 +28,15 @@ services:
         sync: false
       - key: STRIPE_PRICE_ID_STARTER
         sync: false
+      # OIDC/SSO: set values in Render dashboard. Verify: GET /health/oidc
+      - key: OIDC_ISSUER
+        sync: false
+      - key: OIDC_CLIENT_ID
+        sync: false
+      - key: OIDC_CLIENT_SECRET
+        sync: false
+      - key: OIDC_DEFAULT_ROLE
+        sync: false
 
   - type: web
     name: dbops-web

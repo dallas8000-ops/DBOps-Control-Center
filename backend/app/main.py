@@ -23,7 +23,9 @@ try:
 except ImportError:  # pragma: no cover - surfaced via HTTP 503 when feature is used.
     stripe = None
 
+from jose import JWTError
 from .auth_utils import create_access_token, hash_password, verify_password
+from . import oidc_verify as _oidc
 from .db import engine, get_db
 from .deps import get_current_user, require_roles
 from .models import (
@@ -56,6 +58,7 @@ from .schemas import (
     IncidentRead,
     IncidentUpdate,
     LoginRequest,
+    OidcCallbackRequest,
     ReportCatalogEntry,
     ReportExecuteRequest,
     ReportExecuteResponse,
@@ -707,7 +710,85 @@ def health_billing(response: Response):
     }
 
 
+_OIDC_ENV_VARS = ("OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET")
 _SMTP_ENV_VARS = ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM")
+
+
+@app.get("/health/oidc")
+def health_oidc(response: Response):
+    """OIDC env presence check. No secrets returned. Verify: GET /health/oidc"""
+    config = {var.lower(): _stripe_env_configured(var) for var in _OIDC_ENV_VARS}
+    ready = config["oidc_issuer"] and config["oidc_client_id"]
+    if not ready:
+        response.status_code = 503
+    return {
+        "status": "ok" if ready else "degraded",
+        "oidc": config,
+        "note": "Set OIDC_ISSUER and OIDC_CLIENT_ID to enable SSO login.",
+    }
+
+
+@app.get("/auth/oidc/config")
+def oidc_config_endpoint():
+    """Public OIDC config for the frontend SSO flow. No secrets returned."""
+    if not _oidc.oidc_configured():
+        raise HTTPException(status_code=404, detail="OIDC is not configured")
+    try:
+        auth_endpoint = _oidc.get_authorization_endpoint()
+    except Exception as exc:
+        logger.warning("OIDC discovery failed: %s", exc)
+        raise HTTPException(status_code=503, detail="OIDC provider discovery failed")
+    return {
+        "authorization_endpoint": auth_endpoint,
+        "client_id": _oidc.get_oidc_client_id(),
+        "scope": "openid email profile",
+    }
+
+
+@app.post("/auth/oidc/callback", response_model=Token)
+def oidc_callback(payload: OidcCallbackRequest, db: DbDep):
+    """Exchange a PKCE authorization code for a DBOps access token."""
+    if not _oidc.oidc_configured():
+        raise HTTPException(status_code=503, detail="OIDC is not configured")
+    try:
+        token_response = _oidc.exchange_authorization_code(
+            code=payload.code,
+            redirect_uri=payload.redirect_uri,
+            code_verifier=payload.code_verifier,
+        )
+    except Exception as exc:
+        logger.warning("OIDC code exchange failed: %s", exc)
+        raise HTTPException(status_code=401, detail="OIDC code exchange failed")
+    id_token = token_response.get("id_token")
+    if not id_token:
+        raise HTTPException(status_code=401, detail="Provider did not return an ID token")
+    try:
+        claims = _oidc.verify_oidc_id_token(id_token)
+    except (JWTError, ValueError) as exc:
+        raise HTTPException(status_code=401, detail=f"Invalid ID token: {exc}")
+    except Exception as exc:
+        logger.warning("OIDC token verification error: %s", exc)
+        raise HTTPException(status_code=503, detail="OIDC token verification failed")
+    email = claims["email"].lower().strip()
+    user = db.query(User).filter(User.email == email).first()
+    if user is None:
+        default_role = _oidc.get_oidc_default_role()
+        user = User(email=email, hashed_password="", role=default_role, is_active=True)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        _log_user_admin_action(
+            db,
+            actor_user_id=user.id,
+            target_user_id=user.id,
+            target_email=email,
+            action="oidc_auto_provision",
+            details={"role": default_role},
+        )
+        db.commit()
+    elif not user.is_active:
+        raise HTTPException(status_code=403, detail=ACCOUNT_DISABLED_DETAIL)
+    return Token(access_token=create_access_token(str(user.id), user.role))
 
 
 @app.get("/health/smtp")
