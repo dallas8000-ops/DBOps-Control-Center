@@ -707,6 +707,23 @@ def health_billing(response: Response):
     }
 
 
+_SMTP_ENV_VARS = ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM")
+
+
+@app.get("/health/smtp")
+def health_smtp(response: Response):
+    """SMTP env presence check (no secret values). Shows whether email delivery is configured."""
+    config = {var.lower(): _stripe_env_configured(var) for var in _SMTP_ENV_VARS}
+    host_set = config["smtp_host"]
+    if not host_set:
+        response.status_code = 503
+    return {
+        "status": "ok" if host_set else "degraded",
+        "smtp": config,
+        "note": "Only SMTP_HOST is required; SMTP_USER/SMTP_PASSWORD needed for auth; SMTP_FROM defaults to SMTP_USER.",
+    }
+
+
 @app.get("/admin/overview", response_model=AdminOverviewRead)
 def admin_overview(
     db: DbDep,

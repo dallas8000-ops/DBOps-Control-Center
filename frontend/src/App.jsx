@@ -543,7 +543,7 @@ function CreateUserSection({
   );
 }
 
-function SchedulerHealthPanel({ schedulerHealth }) {
+function SchedulerHealthPanel({ schedulerHealth, smtpHealth }) {
   const scheduler = schedulerHealth?.scheduler;
   if (!schedulerHealth || !scheduler) {
     return (
@@ -556,6 +556,8 @@ function SchedulerHealthPanel({ schedulerHealth }) {
 
   const lastError = scheduler.last_iteration_error;
   const statusClass = lastError ? "health-strip health-strip--warn" : "health-strip health-strip--ok";
+  const smtpOk = smtpHealth?.status === "ok";
+  const smtpClass = smtpOk ? "health-strip health-strip--ok" : "health-strip health-strip--warn";
 
   return (
     <section className="panel">
@@ -571,6 +573,14 @@ function SchedulerHealthPanel({ schedulerHealth }) {
         <Card label="Consecutive Failures" value={scheduler.consecutive_failures ?? 0} />
         <Card label="Last Processed" value={scheduler.last_iteration_processed ?? 0} />
       </div>
+      {smtpHealth ? (
+        <div className={smtpClass} style={{ marginTop: "0.75rem" }}>
+          <strong>Email delivery (SMTP):</strong>{" "}
+          {smtpOk
+            ? `configured · host set · user ${smtpHealth.smtp?.smtp_user ? "set" : "not set"}`
+            : "not configured — set SMTP_HOST on the API server to enable email notifications"}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -579,6 +589,7 @@ SchedulerHealthPanel.propTypes = {
   schedulerHealth: PropTypes.shape({
     scheduler: PropTypes.object,
   }),
+  smtpHealth: PropTypes.object,
 };
 
 function SqlReportsSection({
@@ -861,6 +872,7 @@ function ScheduledReportsSection({
                 <th>Cadence</th>
                 <th>Next run</th>
                 <th>Delivery</th>
+                <th>Notify</th>
                 <th>Last result</th>
                 <th>Status</th>
                 <th>Action</th>
@@ -882,6 +894,12 @@ function ScheduledReportsSection({
                   <td data-label="Delivery">
                     {schedule.delivery_kind}
                     {schedule.delivery_target ? `: ${schedule.delivery_target}` : ""}
+                  </td>
+                  <td className="hint" data-label="Notify">
+                    {schedule.notify_on_success ? "✓ success" : ""}
+                    {schedule.notify_on_success && schedule.notify_on_failure ? " · " : ""}
+                    {schedule.notify_on_failure ? "✓ failure" : ""}
+                    {!schedule.notify_on_success && !schedule.notify_on_failure ? "off" : ""}
                   </td>
                   <td className="hint" data-label="Last result">{schedule.last_error || (schedule.last_success_at ? "ok" : "—")}</td>
                   <td data-label="Status">{schedule.is_enabled ? "enabled" : "disabled"}</td>
@@ -1076,6 +1094,7 @@ CreateUserSection.propTypes = {
 function DashboardBody({
   summary,
   schedulerHealth,
+  smtpHealth,
   adminOverview,
   reportCatalog,
   selectedReportKey,
@@ -1170,7 +1189,7 @@ function DashboardBody({
         )}
       </section>
 
-      {canManageUsers ? <SchedulerHealthPanel schedulerHealth={schedulerHealth} /> : null}
+      {canManageUsers ? <SchedulerHealthPanel schedulerHealth={schedulerHealth} smtpHealth={smtpHealth} /> : null}
       <SqlReportsSection
         reportCatalog={reportCatalog}
         selectedReportKey={selectedReportKey}
@@ -1295,6 +1314,7 @@ function DashboardBody({
 DashboardBody.propTypes = {
   summary: PropTypes.object,
   schedulerHealth: PropTypes.object,
+  smtpHealth: PropTypes.object,
   adminOverview: PropTypes.object,
   reportCatalog: PropTypes.arrayOf(PropTypes.object).isRequired,
   selectedReportKey: PropTypes.string.isRequired,
@@ -1393,6 +1413,7 @@ export default function App() {
   const [reportBusy, setReportBusy] = useState(false);
   const [connectionHealth, setConnectionHealth] = useState({ kind: "loading" });
   const [schedulerHealth, setSchedulerHealth] = useState(null);
+  const [smtpHealth, setSmtpHealth] = useState(null);
   const [adminOverview, setAdminOverview] = useState(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingFeedback, setBillingFeedback] = useState("");
@@ -1684,6 +1705,16 @@ export default function App() {
     setSchedulerHealth(body);
   }
 
+  async function loadSmtpHealth() {
+    if (!token || me?.role !== "DBA") {
+      setSmtpHealth(null);
+      return;
+    }
+    const { res, body } = await apiJson("/health/smtp", { handleUnauthorized: false });
+    if (res.status !== 200 && res.status !== 503) return;
+    setSmtpHealth(body);
+  }
+
   async function loadAdminOverview() {
     if (!token || me?.role !== "DBA") {
       setAdminOverview(null);
@@ -1765,6 +1796,10 @@ export default function App() {
 
   useEffect(() => {
     loadSchedulerHealth();
+  }, [token, me]);
+
+  useEffect(() => {
+    loadSmtpHealth();
   }, [token, me]);
 
   useEffect(() => {
@@ -2462,6 +2497,7 @@ export default function App() {
           <DashboardBody
             summary={summary}
             schedulerHealth={schedulerHealth}
+            smtpHealth={smtpHealth}
             adminOverview={adminOverview}
             reportCatalog={reportCatalog}
             selectedReportKey={selectedReportKey}
