@@ -151,6 +151,7 @@ def _decode_id_token(token: str, key_data: dict, *, issuer: str, client_id: str)
         algorithms=["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"],
         audience=client_id,
         issuer=issuer,
+        options={"verify_at_hash": False},
     )
 
 
