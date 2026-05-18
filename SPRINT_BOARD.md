@@ -19,18 +19,18 @@
 - [x] Persist Stripe customer/subscription IDs into `billing_settings`
 - [x] Add backend tests for checkout session + webhook updates
 - [x] Add frontend billing action to launch Stripe Checkout
-- [ ] Configure Render env vars — follow [`docs/STRIPE_RENDER_SETUP.md`](./docs/STRIPE_RENDER_SETUP.md); verify with `python scripts/verify_stripe_config.py`
+- [x] Configure Render env vars — follow [`docs/STRIPE_RENDER_SETUP.md`](./docs/STRIPE_RENDER_SETUP.md); verify with `python scripts/verify_stripe_config.py`
 - [x] Stripe webhook URL configured (`https://dbops-api.onrender.com/billing/webhook`)
-- [ ] Confirm Stripe webhook **event subscriptions** in dashboard — listed in `docs/STRIPE_RENDER_SETUP.md` + `GET /health/billing`
+- [x] Confirm Stripe webhook **event subscriptions** in dashboard — listed in `docs/STRIPE_RENDER_SETUP.md` + `GET /health/billing`
 
 ### OPS: Render + Stripe final wiring
 **Labels:** `devops` `backend` `high-priority`
 
-- [ ] Set `STRIPE_SECRET_KEY` on **dbops-api** in Render
-- [ ] Set `STRIPE_WEBHOOK_SECRET` on **dbops-api** in Render
-- [ ] Set `STRIPE_PRICE_ID_STARTER` on **dbops-api** in Render
+- [x] Set `STRIPE_SECRET_KEY` on **dbops-api** in Render
+- [x] Set `STRIPE_WEBHOOK_SECRET` on **dbops-api** in Render
+- [x] Set `STRIPE_PRICE_ID_STARTER` on **dbops-api** in Render
 - [x] Create Stripe webhook endpoint pointing at `/billing/webhook`
-- [ ] Subscribe required webhook events in Stripe
+- [x] Subscribe required webhook events in Stripe
 - [x] Checkout flow updates billing (`billing_status=active`, Stripe IDs in `/admin/overview`)
 
 ---
