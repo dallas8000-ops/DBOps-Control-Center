@@ -1,9 +1,13 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 USERS_ID_FK = "users.id"
@@ -30,7 +34,7 @@ class Incident(Base):
     status: Mapped[str] = mapped_column(String(50), default="open")
     severity: Mapped[str] = mapped_column(String(50), default="medium")
     owner: Mapped[str] = mapped_column(String(120), default="unassigned")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
@@ -52,7 +56,7 @@ class IncidentHistory(Base):
     )
     action: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     details_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
 
 
 class ReportSchedule(Base):
@@ -80,7 +84,7 @@ class ReportSchedule(Base):
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
 
 
 class ReportExecutionLog(Base):
@@ -100,7 +104,7 @@ class ReportExecutionLog(Base):
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     success: Mapped[bool] = mapped_column(default=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
 class UserAdminAuditLog(Base):
@@ -122,7 +126,7 @@ class UserAdminAuditLog(Base):
     target_email: Mapped[str] = mapped_column(String(255), nullable=False)
     action: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     details_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
 
 
 class BillingSettings(Base):
@@ -136,8 +140,8 @@ class BillingSettings(Base):
     max_schedules: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
     stripe_customer_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 class OnboardingEvent(Base):
@@ -152,4 +156,4 @@ class OnboardingEvent(Base):
         index=True,
     )
     details_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)

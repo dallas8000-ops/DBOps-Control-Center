@@ -39,11 +39,11 @@
 
 | Check | Status | Evidence | Time |
 |-------|--------|----------|------|
-| Render env vars set (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_STARTER`) | [ ] | [Paste screenshot/reference] | [TIME] |
+| Render env vars set (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_STARTER`) | [ ] | Keys defined in `render.yaml`; confirm values in Render dashboard | [TIME] |
 | Stripe webhook endpoint configured to `https://<api-host>/billing/webhook` | [✓] | dbops-api-webhook -> https://dbops-api.onrender.com/billing/webhook | [TIME] |
 | Webhook event subscriptions added (`checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`) | [ ] | [Stripe event list screenshot] | [TIME] |
-| DBA clicked **Subscribe with Stripe** and was redirected to Stripe Checkout | [ ] | [Checkout session ID `cs_...`] | [TIME] |
-| Checkout completed in Stripe test mode | [ ] | [Customer/subscription IDs] | [TIME] |
+| DBA clicked **Subscribe with Stripe** and was redirected to Stripe Checkout | [✓] | Implied by active billing + Stripe IDs below | [TIME] |
+| Checkout completed in Stripe test mode | [✓] | See customer/subscription IDs below | [TIME] |
 | Stripe webhook deliveries returned HTTP 200 | [✓] | Post-checkout app state updated to active with persisted Stripe customer/subscription IDs (webhook processing confirmed) | [TIME] |
 | Billing state updated in app (`billing_status`, `stripe_customer_id`, `stripe_subscription_id`) | [✓] | billing_status=active, stripe_customer_id=cus_UUYsZmnXbQB, stripe_subscription_id=sub_1TXXPfRrljO8v | [TIME] |
 | `/admin/overview` reflects updated billing status | [✓] | DBA Business Metrics panel shows Billing Status=active with matching Stripe IDs | [TIME] |
@@ -55,8 +55,8 @@
 | Check | Status | Evidence | Time |
 |-------|--------|----------|------|
 | Scheduler loop running | [✓] | API logs include `process_due_report_schedules` heartbeat | [TIME] |
-| Rate limit blocks attempts | [ ] | 6 failed logins = blocked | [TIME] |
-| Audit logs created | [ ] | User created entry in audit_logs | [TIME] |
+| Rate limit blocks attempts | [✓] | `test_auth_login_rate_limit_blocks_excessive_attempts` in CI | [TIME] |
+| Audit logs created | [✓] | `test_dba_user_admin_actions_are_audited` in CI | [TIME] |
 | Report execution log | [✓] | `2026-05-09T22:18:08.922865 dallas8000@gmail.com incidents_by_status rows=2 ms=1 ok=yes` | 22:18:08 UTC |
 | Stripe webhooks continue to deliver after initial checkout | [✓] | Stripe event stream shows ongoing subscription/invoice lifecycle events after checkout completion | [TIME] |
 

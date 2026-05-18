@@ -37,7 +37,7 @@ from .models import (
     UserAdminAuditLog,
 )
 from .report_catalog import REPORTS
-from .rate_limit import check_api_rate_limit, check_auth_rate_limit, reset_api_rate_limit
+from .rate_limit import check_api_rate_limit, check_auth_rate_limit
 from .report_runner import execute_whitelisted_report, prepare_report_request
 from .request_context import reset_request_id, set_request_id
 from .scheduler import compute_next_run_at, get_scheduler_runtime_status, run_scheduler_loop
@@ -662,6 +662,45 @@ def health_scheduler():
             "poll_seconds": poll_seconds,
             **get_scheduler_runtime_status(),
         },
+    }
+
+
+STRIPE_WEBHOOK_EVENTS = (
+    "checkout.session.completed",
+    "customer.subscription.created",
+    "customer.subscription.updated",
+    "customer.subscription.deleted",
+)
+
+
+def _stripe_env_configured(name: str) -> bool:
+    return bool(os.getenv(name, "").strip())
+
+
+@app.get("/health/billing")
+def health_billing(response: Response):
+    """Stripe env presence only (no secret values). Use after setting Render env vars."""
+    config = {
+        "stripe_secret_key": _stripe_env_configured("STRIPE_SECRET_KEY"),
+        "stripe_webhook_secret": _stripe_env_configured("STRIPE_WEBHOOK_SECRET"),
+        "stripe_price_id_starter": _stripe_env_configured("STRIPE_PRICE_ID_STARTER"),
+        "stripe_sdk_installed": stripe is not None,
+    }
+    ready = all(
+        [
+            config["stripe_secret_key"],
+            config["stripe_webhook_secret"],
+            config["stripe_price_id_starter"],
+            config["stripe_sdk_installed"],
+        ]
+    )
+    if not ready:
+        response.status_code = 503
+    return {
+        "status": "ok" if ready else "degraded",
+        "billing": config,
+        "webhook_url_path": "/billing/webhook",
+        "required_webhook_events": list(STRIPE_WEBHOOK_EVENTS),
     }
 
 

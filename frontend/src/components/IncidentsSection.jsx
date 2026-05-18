@@ -224,20 +224,32 @@ export function IncidentsSection({
     setSelectedPresetName("");
   }
 
-  const eligibleIncidentIds = incidents.filter((incident) => canSelectIncident(incident)).map((incident) => incident.id);
+  const eligibleIncidentIdsKey = incidents
+    .filter((incident) => canSelectIncident(incident))
+    .map((incident) => incident.id)
+    .join(",");
+  const eligibleIncidentIds = eligibleIncidentIdsKey
+    ? eligibleIncidentIdsKey.split(",").map((id) => Number(id))
+    : [];
   const eligibleIncidentIdSet = new Set(eligibleIncidentIds);
   const selectedEligibleCount = selectedIncidentIds.filter((id) => eligibleIncidentIdSet.has(id)).length;
   const allEligibleSelected = eligibleIncidentIds.length > 0 && selectedEligibleCount === eligibleIncidentIds.length;
 
   useEffect(() => {
     if (!canUseBulkSelection) {
-      setSelectedIncidentIds([]);
+      setSelectedIncidentIds((prev) => (prev.length === 0 ? prev : []));
       return;
     }
 
     const eligibleIdSet = new Set(eligibleIncidentIds);
-    setSelectedIncidentIds((prev) => prev.filter((id) => eligibleIdSet.has(id)));
-  }, [canUseBulkSelection, eligibleIncidentIds]);
+    setSelectedIncidentIds((prev) => {
+      const next = prev.filter((id) => eligibleIdSet.has(id));
+      if (next.length === prev.length && next.every((id, index) => id === prev[index])) {
+        return prev;
+      }
+      return next;
+    });
+  }, [canUseBulkSelection, eligibleIncidentIdsKey]);
 
   function toggleIncidentSelected(incidentId, nextChecked) {
     setSelectedIncidentIds((prev) => {

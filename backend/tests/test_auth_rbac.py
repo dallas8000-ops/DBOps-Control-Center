@@ -1200,6 +1200,29 @@ def test_scheduler_health_endpoint_returns_runtime_status() -> None:
         assert "last_iteration_completed_at" in body["scheduler"]
 
 
+def test_billing_health_reports_stripe_env_flags(monkeypatch) -> None:
+    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
+    monkeypatch.delenv("STRIPE_WEBHOOK_SECRET", raising=False)
+    monkeypatch.delenv("STRIPE_PRICE_ID_STARTER", raising=False)
+    for client in _client():
+        resp = client.get("/health/billing")
+        assert resp.status_code == 503
+        body = resp.json()
+        assert body["status"] == "degraded"
+        assert body["billing"]["stripe_secret_key"] is False
+        assert "checkout.session.completed" in body["required_webhook_events"]
+
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_123")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test_123")
+    monkeypatch.setenv("STRIPE_PRICE_ID_STARTER", "price_test_123")
+    for client in _client():
+        resp = client.get("/health/billing")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "ok"
+        assert all(body["billing"].values())
+
+
 def test_due_schedule_retries_transient_execution_failure(monkeypatch) -> None:
     for client in _client():
         dba_token = _bootstrap_dba(client)

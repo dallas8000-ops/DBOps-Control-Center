@@ -21,6 +21,7 @@ services:
         generateValue: true
       - key: FRONTEND_ORIGINS
         sync: false
+      # Stripe: set values in Render dashboard (see docs/STRIPE_RENDER_SETUP.md). Verify: GET /health/billing
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_WEBHOOK_SECRET

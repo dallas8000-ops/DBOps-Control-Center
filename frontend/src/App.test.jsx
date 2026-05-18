@@ -1,7 +1,7 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import App from "./App";
+import { renderApp } from "./test/renderApp";
 
 function jsonResponse(payload, status = 200) {
   return {
@@ -162,6 +162,7 @@ function createFetchMock({
     "GET /reports/runs": jsonResponse(auditRuns),
     "GET /reports/schedules": jsonResponse(schedules),
     "GET /auth/users": jsonResponse([]),
+    "GET /auth/oidc/config": jsonResponse({ enabled: false }),
   };
 
   const dynamicHandlers = [
@@ -337,21 +338,22 @@ afterEach(() => {
   cleanup();
   clearStoredState();
   vi.unstubAllGlobals();
-  vi.restoreAllMocks();
 });
 
 describe("App smoke", () => {
-  it("renders login panel", () => {
+  it("renders login panel", async () => {
     vi.stubGlobal("fetch", createFetchMock());
-    render(<App />);
-    expect(screen.getByRole("heading", { name: "DBOps Control Center" })).toBeInTheDocument();
+    renderApp();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "DBOps Control Center" })).toBeInTheDocument();
+    });
     expect(screen.getByRole("button", { name: "Login" })).toBeInTheDocument();
   });
 
-  it.skip("logs in and shows signed-in header", async () => {
+  it("logs in and shows signed-in header", async () => {
     vi.stubGlobal("fetch", createFetchMock());
 
-    render(<App />);
+    renderApp();
 
     fireEvent.change(screen.getByPlaceholderText("Email"), {
       target: { value: "analyst@example.com" },
@@ -368,11 +370,11 @@ describe("App smoke", () => {
     expect(screen.getByText(/Analyst/)).toBeInTheDocument();
   });
 
-  it.skip("restores a persisted token from localStorage", async () => {
+  it("restores a persisted token from localStorage", async () => {
     globalThis.window.localStorage.setItem("dbops_token", "stored-token");
     vi.stubGlobal("fetch", createFetchMock());
 
-    render(<App />);
+    renderApp();
 
     await waitFor(() => {
       expect(screen.getByText(/Signed in as/i)).toBeInTheDocument();
@@ -381,7 +383,7 @@ describe("App smoke", () => {
     expect(globalThis.window.localStorage.getItem("dbops_token")).toBe("stored-token");
   });
 
-  it.skip("shows a disabled-account message on login failure", async () => {
+  it("shows a disabled-account message on login failure", async () => {
     vi.stubGlobal(
       "fetch",
       createFetchMock({
@@ -389,7 +391,7 @@ describe("App smoke", () => {
       }),
     );
 
-    render(<App />);
+    renderApp();
 
     fireEvent.change(screen.getByPlaceholderText("Email"), {
       target: { value: "analyst@example.com" },
@@ -404,7 +406,7 @@ describe("App smoke", () => {
     });
   });
 
-  it.skip("shows a friendly rate-limit message on login", async () => {
+  it("shows a friendly rate-limit message on login", async () => {
     vi.stubGlobal(
       "fetch",
       createFetchMock({
@@ -412,7 +414,7 @@ describe("App smoke", () => {
       }),
     );
 
-    render(<App />);
+    renderApp();
 
     fireEvent.change(screen.getByPlaceholderText("Email"), {
       target: { value: "analyst@example.com" },
@@ -427,7 +429,7 @@ describe("App smoke", () => {
     });
   });
 
-  it.skip("shows a friendly bootstrap-complete message", async () => {
+  it("shows a friendly bootstrap-complete message", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url, options = {}) => {
@@ -446,7 +448,7 @@ describe("App smoke", () => {
       }),
     );
 
-    render(<App />);
+    renderApp();
 
     fireEvent.change(screen.getByPlaceholderText("Admin email"), {
       target: { value: "dba@example.com" },
@@ -464,7 +466,7 @@ describe("App smoke", () => {
     });
   });
 
-  it.skip("clears the stored token and returns to login on expired session", async () => {
+  it("clears the stored token and returns to login on expired session", async () => {
     globalThis.window.localStorage.setItem("dbops_token", "expired-token");
     vi.stubGlobal(
       "fetch",
@@ -484,7 +486,7 @@ describe("App smoke", () => {
       }),
     );
 
-    render(<App />);
+    renderApp();
 
     await waitFor(() => {
       expect(screen.getByText("Your session expired. Please sign in again.")).toBeInTheDocument();
@@ -493,11 +495,11 @@ describe("App smoke", () => {
     expect(globalThis.window.localStorage.getItem("dbops_token")).toBeNull();
   });
 
-  it.skip("submits create incident request", async () => {
+  it("submits create incident request", async () => {
     const fetchMock = createFetchMock();
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<App />);
+    renderApp();
 
     fireEvent.change(screen.getByPlaceholderText("Email"), {
       target: { value: "analyst@example.com" },
@@ -533,10 +535,10 @@ describe("App smoke", () => {
     });
   });
 
-  it.skip("shows bulk selection controls for Analyst on eligible incidents", async () => {
+  it("shows bulk selection controls for Analyst on eligible incidents", async () => {
     vi.stubGlobal("fetch", createFetchMock({ meRole: "Analyst", meEmail: "analyst@example.com" }));
 
-    render(<App />);
+    renderApp();
 
     fireEvent.change(screen.getByPlaceholderText("Email"), {
       target: { value: "analyst@example.com" },
@@ -554,10 +556,10 @@ describe("App smoke", () => {
     expect(screen.getByLabelText("Select incident 1")).toBeInTheDocument();
   });
 
-  it.skip("hides bulk selection controls for Viewer", async () => {
+  it("hides bulk selection controls for Viewer", async () => {
     vi.stubGlobal("fetch", createFetchMock({ meRole: "Viewer", meEmail: "viewer@example.com" }));
 
-    render(<App />);
+    renderApp();
 
     fireEvent.change(screen.getByPlaceholderText("Email"), {
       target: { value: "viewer@example.com" },
@@ -575,11 +577,11 @@ describe("App smoke", () => {
     expect(screen.queryByLabelText("Select incident 1")).not.toBeInTheDocument();
   });
 
-  it.skip("sends bulk acknowledge request from quick actions bar", async () => {
+  it("sends bulk acknowledge request from quick actions bar", async () => {
     const fetchMock = createFetchMock({ meRole: "Analyst", meEmail: "analyst@example.com" });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<App />);
+    renderApp();
 
     fireEvent.change(screen.getByPlaceholderText("Email"), {
       target: { value: "analyst@example.com" },
@@ -610,7 +612,7 @@ describe("App smoke", () => {
     expect(screen.getByText("Bulk acknowledge: 1 updated.")).toBeInTheDocument();
   });
 
-  it.skip("rolls back optimistic bulk resolve and shows error toast", async () => {
+  it("rolls back optimistic bulk resolve and shows error toast", async () => {
     const fetchMock = createFetchMock({
       meRole: "DBA",
       meEmail: "dba@example.com",
@@ -618,7 +620,7 @@ describe("App smoke", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<App />);
+    renderApp();
 
     fireEvent.change(screen.getByPlaceholderText("Email"), {
       target: { value: "dba@example.com" },
@@ -642,11 +644,11 @@ describe("App smoke", () => {
     expect(screen.getByRole("button", { name: "Resolve" })).toBeInTheDocument();
   });
 
-  it.skip("runs report request", async () => {
+  it("runs report request", async () => {
     const fetchMock = createFetchMock({ reportRows: [{ status: "open", total: 3 }] });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<App />);
+    renderApp();
 
     fireEvent.change(screen.getByPlaceholderText("Email"), {
       target: { value: "analyst@example.com" },
@@ -673,11 +675,11 @@ describe("App smoke", () => {
     });
   });
 
-  it.skip("DBA can create and toggle a report schedule", async () => {
+  it("DBA can create and toggle a report schedule", async () => {
     const fetchMock = createFetchMock({ meRole: "DBA", meEmail: "dba@example.com" });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<App />);
+    renderApp();
 
     fireEvent.change(screen.getByPlaceholderText("Email"), {
       target: { value: "dba@example.com" },
@@ -757,7 +759,7 @@ describe("App smoke", () => {
     });
   });
 
-  it.skip("DBA report audit trail updates for 10, 25, all, and refresh", async () => {
+  it("DBA report audit trail updates for 10, 25, all, and refresh", async () => {
     const runs = Array.from({ length: 12 }, (_, idx) => ({
       id: 201 + idx,
       created_at: `2026-05-09T${String(23 - idx).padStart(2, "0")}:00:00`,
@@ -770,7 +772,7 @@ describe("App smoke", () => {
     }));
     vi.stubGlobal("fetch", createFetchMock({ meRole: "DBA", meEmail: "dba@example.com", auditRuns: runs }));
 
-    render(<App />);
+    renderApp();
 
     fireEvent.change(screen.getByPlaceholderText("Email"), {
       target: { value: "dba@example.com" },
@@ -823,7 +825,7 @@ describe("App smoke", () => {
     });
   });
 
-  it.skip("exports report csv", async () => {
+  it("exports report csv", async () => {
     const fetchMock = createFetchMock({ reportRows: [{ status: "open", total: 3 }] });
     vi.stubGlobal("fetch", fetchMock);
     const createObjectURL = vi.fn(() => "blob:csv");
@@ -834,7 +836,7 @@ describe("App smoke", () => {
     URL.createObjectURL = createObjectURL;
     URL.revokeObjectURL = revokeObjectURL;
     try {
-      render(<App />);
+      renderApp();
 
       fireEvent.change(screen.getByPlaceholderText("Email"), {
         target: { value: "analyst@example.com" },

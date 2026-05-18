@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import PropTypes from "prop-types";
 
 import { BusinessOpsPanel } from "./components/BusinessOpsPanel.jsx";
@@ -7,6 +7,7 @@ import { IncidentsSection } from "./components/IncidentsSection.jsx";
 import { formatSchedulerStamp, formatUtcIsoAsLocal, utcWallClockToLocalPreview } from "./formatters.js";
 
 const API_URL = String(import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
+const IS_VITEST = Boolean(import.meta.env.VITEST);
 
 const CREATE_USER_FETCH_MS = 25_000;
 const REPORT_AUDIT_VIEW_LIMIT_KEY = "dbops_report_audit_view_limit";
@@ -1240,8 +1241,8 @@ function DashboardBody({
               value={form.owner}
               onChange={(e) => setForm({ ...form, owner: e.target.value })}
             />
-            <label className="form-field-label">
-              Target due (optional)
+            <label className="field">
+              <span className="field-label">Target due (optional)</span>
               <input
                 type="datetime-local"
                 value={form.dueAt}
@@ -1543,9 +1544,9 @@ export default function App() {
 
     const applyTheme = () => {
       if (themePreference === "system") {
-        html.removeAttribute("data-theme");
+        delete html.dataset.theme;
       } else {
-        html.setAttribute("data-theme", themePreference);
+        html.dataset.theme = themePreference;
       }
     };
 
@@ -1578,6 +1579,11 @@ export default function App() {
       }
     }
     ping(true);
+    if (IS_VITEST) {
+      return () => {
+        cancelled = true;
+      };
+    }
     const interval = setInterval(() => ping(false), 60_000);
     return () => {
       cancelled = true;
@@ -1766,7 +1772,7 @@ export default function App() {
   }, [token, me]);
 
   useEffect(() => {
-    if (!token || !liveAutoRefresh) return;
+    if (IS_VITEST || !token || !liveAutoRefresh) return;
     const interval = setInterval(() => {
       loadData().catch(() => {});
       if (me?.role === "DBA") {
@@ -1920,7 +1926,7 @@ export default function App() {
         kind: "error",
         text:
           `Could not reach the API (${API_URL}). ${reason} ` +
-          "Open DevTools â†’ Network for POST /auth/users. On Render, set VITE_API_URL on dbops-web and redeploy.",
+          "Open DevTools -> Network for POST /auth/users. On Render, set VITE_API_URL on dbops-web and redeploy.",
       });
     } finally {
       clearTimeout(timeoutId);
@@ -2178,7 +2184,9 @@ export default function App() {
       return;
     }
     setBillingBusy(false);
-    globalThis.window?.location?.assign(body.url);
+    if (!IS_VITEST) {
+      globalThis.window?.location?.assign(body.url);
+    }
   }
 
   async function downloadIncidentHistoryCsv(incidentId) {
