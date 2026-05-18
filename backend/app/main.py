@@ -13,7 +13,7 @@ from typing import Annotated, Any, TypeAlias
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import case, or_, text
 from sqlalchemy.orm import Session
@@ -645,6 +645,13 @@ async def request_id_access_log_middleware(request: Request, call_next):
 app.add_middleware(CORSMiddleware, **_cors_kw)
 
 
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all so unhandled exceptions still return CORS headers."""
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
 @app.get("/health")
 def health(response: Response):
     """Liveness plus PostgreSQL connectivity (SELECT 1). Returns 503 if DB unreachable."""
@@ -770,24 +777,30 @@ def oidc_callback(payload: OidcCallbackRequest, db: DbDep):
         logger.warning("OIDC token verification error: %s", exc)
         raise HTTPException(status_code=503, detail="OIDC token verification failed")
     email = claims["email"].lower().strip()
-    user = db.query(User).filter(User.email == email).first()
-    if user is None:
-        default_role = _oidc.get_oidc_default_role()
-        user = User(email=email, hashed_password="", role=default_role, is_active=True)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        _log_user_admin_action(
-            db,
-            actor_user_id=user.id,
-            target_user_id=user.id,
-            target_email=email,
-            action="oidc_auto_provision",
-            details={"role": default_role},
-        )
-        db.commit()
-    elif not user.is_active:
-        raise HTTPException(status_code=403, detail=ACCOUNT_DISABLED_DETAIL)
+    try:
+        user = db.query(User).filter(User.email == email).first()
+        if user is None:
+            default_role = _oidc.get_oidc_default_role()
+            user = User(email=email, hashed_password="", role=default_role, is_active=True)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            _log_user_admin_action(
+                db,
+                actor_user_id=user.id,
+                target_user_id=user.id,
+                target_email=email,
+                action="oidc_auto_provision",
+                details={"role": default_role},
+            )
+            db.commit()
+        elif not user.is_active:
+            raise HTTPException(status_code=403, detail=ACCOUNT_DISABLED_DETAIL)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("OIDC user provisioning error for %s: %s", email, exc)
+        raise HTTPException(status_code=500, detail="OIDC user provisioning failed")
     return Token(access_token=create_access_token(str(user.id), user.role))
 
 
