@@ -1823,8 +1823,9 @@ export default function App() {
         return;
       }
       setToken(body.access_token);
-    } catch {
-      setOidcError(`SSO login failed — could not reach the API (${API_URL}).`);
+    } catch (err) {
+      const detail = err?.message || String(err);
+      setOidcError(`SSO login failed — ${detail} (API: ${API_URL})`);
     } finally {
       setOidcBusy(false);
     }
