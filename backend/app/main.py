@@ -96,6 +96,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="DBOps Control Center API", version="0.4.2", lifespan=lifespan)
 
 ACCESS_LOG = logging.getLogger("dbops.access")
+logger = logging.getLogger(__name__)
 
 AUTH_RATE_LIMIT_DETAIL = "Too many auth requests. Please try again shortly."
 API_RATE_LIMIT_DETAIL = "Too many requests. Please try again shortly."
