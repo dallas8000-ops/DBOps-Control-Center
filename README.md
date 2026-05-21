@@ -22,11 +22,12 @@ This repo is designed to run locally with Docker Compose and deploy to Render wi
 
 ## Completion level (current state)
 
-Overall project completion is approximately **87%** toward a production-ready internal tool.
+Overall project completion is approximately **95%** toward a production-ready internal tool.
 
 - **Implemented and working**
   - Authentication + RBAC (`DBA`, `Analyst`, `Viewer`)
-  - Auth rate limiting on login endpoints (configurable via env)
+  - **OIDC SSO** via PKCE (Google, Microsoft, any standards-compliant provider) — `GET /auth/oidc/config`, `POST /auth/oidc/callback`, auto-provisioning with configurable default role
+  - Auth rate limiting on all login + OIDC callback endpoints (configurable via env)
   - **API rate limiting** (per-IP) on high-cost routes: incident create, report run, CSV export (`API_RATE_LIMIT_*` env)
   - **Request correlation**: `X-Request-ID` header + structured access lines (`dbops.access` logger)
   - DBA bootstrap flow for empty database
@@ -37,6 +38,7 @@ Overall project completion is approximately **87%** toward a production-ready in
   - Whitelisted report execution, CSV export, and execution audit trail; optional **report log retention** purge (`REPORT_EXECUTION_LOG_RETENTION_DAYS`)
   - DBA-managed scheduled reports (daily/weekly UTC) with **`none` / `email` (SMTP when configured)** / `webhook` delivery
   - **PostgreSQL advisory lock** so only one API replica runs the due-schedule sweep per tick (no paid coordinator)
+  - **Stripe billing** — checkout session creation, webhook lifecycle (`checkout.session.completed`, `customer.subscription.*`), billing settings persistence, `GET /health/billing`
   - Idempotent demo seed (`python -m app` / `seed-demo`) and **`python -m app reset-demo --yes`** (clears operational data; keeps users/billing)
   - Backend pytest suite + frontend smoke tests + CI gates
   - Local Docker Compose workflow and Render deployment path
@@ -46,7 +48,7 @@ Overall project completion is approximately **87%** toward a production-ready in
   - Scheduler production hardening beyond Postgres locking (e.g. external worker / Redis lease) if you outgrow the current pattern
 - **Not complete yet**
   - Broad automated coverage (failure paths, billing edge cases if used in production)
-  - SSO/OIDC and expanded production runbooks
+  - Expanded production runbooks (OpenTelemetry, metrics)
 
 ## Core capabilities
 
@@ -90,7 +92,8 @@ Overall project completion is approximately **87%** toward a production-ready in
 
 - **Backend**: FastAPI, SQLAlchemy, Alembic, PostgreSQL
 - **Frontend**: React, Vite
-- **Auth**: JWT (HS256), passlib/bcrypt
+- **Auth**: JWT (HS256), passlib/bcrypt, OIDC PKCE (python-jose)
+- **Billing**: Stripe (checkout sessions + webhook lifecycle)
 - **Local runtime**: Docker Desktop + Docker Compose
 
 ## RBAC matrix
@@ -237,7 +240,9 @@ docker compose exec backend python -m app
 - **Health**
   - `GET /health`
   - `GET /health/oidc`
+  - `GET /health/smtp`
   - `GET /health/billing`
+  - `GET /health/scheduler`
 
 - **Auth**
   - `POST /auth/register` (bootstrap first DBA only)
@@ -273,6 +278,15 @@ docker compose exec backend python -m app
   - `POST /reports/schedules`
   - `GET /reports/schedules`
   - `PATCH /reports/schedules/{schedule_id}/status`
+
+- **Billing**
+  - `POST /billing/checkout/session`
+  - `POST /billing/webhook`
+  - `GET /billing/settings`
+  - `PATCH /billing/settings`
+
+- **Admin**
+  - `GET /admin/overview`
 
 - **AI Assist**
   - `POST /api/ai/find-report`
@@ -325,7 +339,7 @@ Operational notes:
 | Frontend lint health | IDE lint diagnostics on edited files | ✅ Passing |
 | Docker local stack | `docker compose up --build` | ✅ Passing |
 | Backend migration chain | Alembic upgrades through head (includes `009_incident_due_at`) | ✅ Passing |
-| Backend integration tests | `pytest -q` (auth/RBAC, incidents, history, CSV, rate limits, schedules, billing paths, etc.) | ✅ Passing (32 tests) |
+| Backend integration tests | `pytest -q` (auth/RBAC, incidents, history, CSV, rate limits, schedules, billing paths, etc.) | ✅ Passing |
 | API health | `GET /health` | ✅ Passing |
 | Auth smoke tests | Bootstrap/login/create-user/manual role checks | ✅ Passing |
 | DBA admin actions | Reset password, enable/disable, delete user (manual) | ✅ Passing |
@@ -360,7 +374,7 @@ GitHub Actions workflow: `.github/workflows/ci.yml`
 
 The CI pipeline runs on push and pull requests to `main`/`master` with three required jobs:
 
-- `backend`: installs backend deps, runs `ruff` critical checks, then `pytest -q`
+- `backend`: installs backend deps, runs `ruff` (syntax + unused imports + style), then `pytest -q`
 - `frontend`: runs `npm ci`, `npm run lint`, `npm run test:run`, and `npm run build`
 - `migration_sanity`: starts PostgreSQL and runs `alembic upgrade head` with CI `DATABASE_URL`
 
@@ -403,9 +417,9 @@ Target window: **~2 weeks** (items below are **not** duplicates of what is alrea
    - Metrics (latency, schedule failures) or lightweight OpenTelemetry hooks (self-hosted or your existing stack)
 
 4. **Enterprise hardening**
-   - SSO/OIDC option for larger tenants
-   - Rate limiting beyond selected routes where appropriate
-   - Expanded operations runbook (`docs/`) for Render + incident response
+   - Rate limiting with distributed/Redis-backed store when scaling beyond a single worker
+   - Token refresh endpoint (shorter-lived access tokens)
+   - Expanded OpenTelemetry / metrics hooks
 
 ## Branch Protection Rules
 
