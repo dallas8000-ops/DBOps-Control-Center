@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from io import StringIO
 from typing import Annotated, Any, TypeAlias
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.security import OAuth2PasswordRequestForm
@@ -48,7 +48,6 @@ from .report_catalog import REPORTS
 from .rate_limit import check_api_rate_limit, check_auth_rate_limit
 from .report_runner import execute_whitelisted_report, prepare_report_request
 from .request_context import reset_request_id, set_request_id
-from .scheduler import compute_next_run_at, get_scheduler_runtime_status, run_scheduler_loop
 from .schemas import (
     ActivityTrendPointRead,
     AdminMetricsRead,
@@ -970,8 +969,10 @@ def oidc_config_endpoint():
 
 
 @app.post("/auth/oidc/callback", response_model=Token)
-def oidc_callback(payload: OidcCallbackRequest, db: DbDep):
+def oidc_callback(payload: OidcCallbackRequest, request: Request, db: DbDep):
     """Exchange a PKCE authorization code for a DBOps access token."""
+    if not check_auth_rate_limit(request.client.host if request.client else None, "oidc_callback"):
+        raise HTTPException(status_code=429, detail=AUTH_RATE_LIMIT_DETAIL)
     if not _oidc.oidc_configured():
         raise HTTPException(status_code=503, detail="OIDC is not configured")
     try:
