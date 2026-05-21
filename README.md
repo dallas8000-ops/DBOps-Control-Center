@@ -53,6 +53,7 @@ Overall project completion is approximately **87%** toward a production-ready in
 - **Authentication and RBAC**
   - JWT login with bcrypt-hashed passwords
   - Bootstrap first DBA when DB has no users
+  - Optional OIDC SSO sign-in flow (`/auth/oidc/config` + `/auth/oidc/callback`) with role mapping fallback
   - Role-gated API and UI behavior
   - Disabled users are blocked from authenticated access
   - Centralized frontend 401/disabled-session handling with clear re-login messaging
@@ -65,6 +66,7 @@ Overall project completion is approximately **87%** toward a production-ready in
   - Delete users (self-protection prevents deleting/disable own account)
 
 - **Incident operations**
+  - Accordion-style dashboard sections for summary, reports, AI assist, scheduling/audit (DBA), create incident, and incident list
   - Create, list with filters (status, severity, owner, search, date range, **`overdue`** for open items past **`due_at`**) and sort (`newest` / `oldest` / `severity`)
   - Optional **target due** (`due_at`) on create/edit; Analyst/DBA updates logged with before/after field diffs
   - DBA resolve workflow; resolve events logged (idempotent if already resolved)
@@ -74,6 +76,7 @@ Overall project completion is approximately **87%** toward a production-ready in
 - **Safe reporting and audit trail**
   - Report catalog defined in code (`backend/app/report_catalog.py`)
   - Parameterized, whitelisted, read-only SQL execution (**rate-limited** per IP on run + CSV export)
+  - Essential dependency bundle helper (`POST /reports/run/bundle`) for linked report recommendations
   - Execution logging to `report_execution_logs` (optional **retention** purge via env)
   - DBA-managed report schedules with daily or weekly UTC run windows
   - Delivery: `none`, **`email` via optional SMTP env** (stdlib; no vendor SDK required), or `webhook` POST
@@ -120,12 +123,61 @@ Endpoints:
 - API: `http://localhost:8000`
 - API docs: `http://localhost:8000/docs`
 
+### One-click local stack automation (Windows PowerShell)
+
+If you want repeatable local startup with the same environment every run, use:
+
+```powershell
+./scripts/local_dev_stack.ps1
+```
+
+What it does:
+
+- stops existing listeners on API/web ports
+- loads env vars from root `.env`
+- forces local SQLite for backend runtime
+- seeds demo data
+- starts backend (`uvicorn --reload`), frontend (`vite`), and Stripe listener (if configured)
+
+Useful modes:
+
+```powershell
+# health/status check
+./scripts/local_dev_stack.ps1 -Mode status
+
+# stop API/web/listener started by automation
+./scripts/local_dev_stack.ps1 -Mode stop
+```
+
+Optional ports:
+
+```powershell
+./scripts/local_dev_stack.ps1 -ApiPort 8000 -WebPort 5173
+```
+
+Optional Windows wrapper (double-click friendly):
+
+```bat
+scripts\local_dev_stack.bat
+```
+
+Pass-through mode examples:
+
+```bat
+scripts\local_dev_stack.bat -Mode status
+scripts\local_dev_stack.bat -Mode stop
+```
+
 Environment variables (Compose/root `.env`):
 
 - `JWT_SECRET_KEY` — signing secret
 - `FRONTEND_ORIGINS` — comma-separated allowed origins
 - `AUTH_RATE_LIMIT_MAX_REQUESTS` — max auth requests allowed per IP in window (default: `20`)
 - `AUTH_RATE_LIMIT_WINDOW_SECONDS` — auth rate-limit window size in seconds (default: `60`)
+- `VITE_OIDC_REDIRECT_URI` — optional frontend override for SSO redirect URI (must exactly match provider allowlist)
+- `OPENAI_API_KEY` — optional; enables AI report routing and incident summarization
+- `AI_REPORT_ROUTER_MODEL` — optional; model name for natural-language report selection (default: `gpt-4o-mini`)
+- `AI_INCIDENT_SUMMARY_MODEL` — optional; model name for incident handoff summaries (default: `gpt-4o-mini`)
 
 > Note: backend image normalizes `entrypoint.sh` line endings during build for Windows compatibility.
 
@@ -184,12 +236,16 @@ docker compose exec backend python -m app
 
 - **Health**
   - `GET /health`
+  - `GET /health/oidc`
+  - `GET /health/billing`
 
 - **Auth**
   - `POST /auth/register` (bootstrap first DBA only)
   - `POST /auth/login`
   - `POST /auth/token`
   - `GET /auth/me`
+  - `GET /auth/oidc/config`
+  - `POST /auth/oidc/callback`
 
 - **User administration (DBA)**
   - `GET /auth/users`
@@ -211,11 +267,16 @@ docker compose exec backend python -m app
   - `GET /reports/summary`
   - `GET /reports/catalog`
   - `POST /reports/run` (rate-limited per IP)
+  - `POST /reports/run/bundle`
   - `POST /reports/export/csv` (rate-limited per IP)
   - `GET /reports/runs`
   - `POST /reports/schedules`
   - `GET /reports/schedules`
   - `PATCH /reports/schedules/{schedule_id}/status`
+
+- **AI Assist**
+  - `POST /api/ai/find-report`
+  - `POST /api/ai/summarize-incident/{incident_id}`
 
 Protected routes accept `Authorization: Bearer …`. Responses include **`X-Request-ID`** (or echo a client-provided `X-Request-ID`). See `backend/.env.example` for **`API_RATE_LIMIT_*`**, **SMTP_***, **`REPORT_EXECUTION_LOG_RETENTION_DAYS`**, etc.
 
@@ -230,6 +291,19 @@ Protected routes accept `Authorization: Bearer …`. Responses include **`X-Requ
 - **Multi-instance APIs (PostgreSQL):** a **session advisory lock** ensures only one replica processes due schedules per tick. SQLite / tests skip locking.
 - Optional: **`REPORT_EXECUTION_LOG_RETENTION_DAYS`** prunes old execution log rows at the start of a scheduler tick (leader only on Postgres).
 - Known limitation: schedules are owned by the creating DBA account. If that user is disabled, the schedule remains enabled but future runs log a failure until the owner is re-enabled or the schedule is replaced.
+
+## AI assist feature
+
+The dashboard includes two safe AI helpers:
+
+- **Natural language to report** maps a request to an existing whitelisted report key only.
+- **Incident handoff summary** summarizes an existing incident and its history into a concise three-line handoff.
+
+Operational notes:
+
+- If `OPENAI_API_KEY` is not set, both helpers automatically fall back to deterministic heuristic mode.
+- The AI routing helper only considers reports visible to the signed-in user’s role.
+- No raw SQL generation or execution path is exposed by the AI feature.
 
 ## Commercial assets package
 

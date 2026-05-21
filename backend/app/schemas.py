@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, List
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 class Token(BaseModel):
@@ -32,8 +32,7 @@ class UserRead(BaseModel):
     role: str
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IncidentCreate(BaseModel):
@@ -62,8 +61,7 @@ class IncidentRead(BaseModel):
     created_at: datetime
     due_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class IncidentHistoryRead(BaseModel):
@@ -73,6 +71,10 @@ class IncidentHistoryRead(BaseModel):
     action: str
     details: dict[str, Any]
     created_at: datetime
+
+
+class IncidentCommentCreate(BaseModel):
+    comment: str = Field(min_length=1, max_length=2000)
 
 
 class IncidentBulkActionRequest(BaseModel):
@@ -237,8 +239,7 @@ class BillingSettingsRead(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BillingSettingsUpdate(BaseModel):
@@ -313,3 +314,35 @@ class AdminOverviewRead(BaseModel):
     plan_usage: PlanUsageRead
     onboarding: list[OnboardingItemRead]
     activity_trend: list[ActivityTrendPointRead]
+
+
+class AiFindReportRequest(BaseModel):
+    user_query: str = Field(min_length=3, max_length=500)
+
+
+class AiFindReportResponse(BaseModel):
+    report_key: str
+    title: str
+    description: str
+    matched_by: str
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class AiIncidentSummaryResponse(BaseModel):
+    incident_id: int
+    source: str
+    summary_lines: list[str] = Field(min_length=3, max_length=3)
+
+
+class LinkedReport(BaseModel):
+    report_id: str
+    report_name: str
+
+
+class EssentialDependencyBundleRequest(BaseModel):
+    primary_report_id: str
+
+
+class EssentialDependencyBundleResponse(BaseModel):
+    primary_report: LinkedReport
+    linked_reports: List[LinkedReport]

@@ -23,6 +23,15 @@ function presetStorageKeyForUser(userKey = "") {
   return `${INCIDENT_FILTER_PRESETS_KEY_PREFIX}:${safe}`;
 }
 
+function formatIncidentDue(iso) {
+  if (!iso) return "-";
+  try {
+    return new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+  } catch {
+    return "-";
+  }
+}
+
 function IncidentResolveCell({ incident, canResolve, onResolve }) {
   if (incident.status === "open" && canResolve) {
     return (
@@ -67,6 +76,7 @@ export function IncidentsSection({
   incidentHistoryError,
   onToggleIncidentHistory,
   onDownloadIncidentHistoryCsv,
+  onAddIncidentComment,
   hasActiveFilters,
   canCreateIncident,
   presetStorageKey,
@@ -78,15 +88,6 @@ export function IncidentsSection({
 
   function canSelectIncident(incident) {
     return canUseBulkSelection && incident.status === "open";
-  }
-
-  function formatIncidentDue(iso) {
-    if (!iso) return "—";
-    try {
-      return new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
-    } catch {
-      return "—";
-    }
   }
 
   function renderEditActions(incident) {
@@ -129,6 +130,9 @@ export function IncidentsSection({
   const [newPresetName, setNewPresetName] = useState("");
   const [selectedIncidentIds, setSelectedIncidentIds] = useState([]);
   const [bulkAssignOwner, setBulkAssignOwner] = useState("");
+  const [commentDraft, setCommentDraft] = useState("");
+  const [commentBusy, setCommentBusy] = useState(false);
+  const [commentError, setCommentError] = useState("");
 
   const userPresetStorageKey = presetStorageKeyForUser(presetStorageKey);
 
@@ -229,7 +233,7 @@ export function IncidentsSection({
     .map((incident) => incident.id)
     .join(",");
   const eligibleIncidentIds = eligibleIncidentIdsKey
-    ? eligibleIncidentIdsKey.split(",").map((id) => Number(id))
+    ? eligibleIncidentIdsKey.split(",").map(Number)
     : [];
   const eligibleIncidentIdSet = new Set(eligibleIncidentIds);
   const selectedEligibleCount = selectedIncidentIds.filter((id) => eligibleIncidentIdSet.has(id)).length;
@@ -250,6 +254,12 @@ export function IncidentsSection({
       return next;
     });
   }, [canUseBulkSelection, eligibleIncidentIdsKey]);
+
+  useEffect(() => {
+    setCommentDraft("");
+    setCommentError("");
+    setCommentBusy(false);
+  }, [incidentHistoryOpenId]);
 
   function toggleIncidentSelected(incidentId, nextChecked) {
     setSelectedIncidentIds((prev) => {
@@ -279,6 +289,24 @@ export function IncidentsSection({
     if (action === "assign") {
       setBulkAssignOwner("");
     }
+  }
+
+  async function submitIncidentComment() {
+    if (!incidentHistoryOpenId || typeof onAddIncidentComment !== "function") return;
+    const comment = commentDraft.trim();
+    if (!comment) {
+      setCommentError("Enter a comment before posting.");
+      return;
+    }
+    setCommentBusy(true);
+    setCommentError("");
+    const result = await onAddIncidentComment(incidentHistoryOpenId, comment);
+    setCommentBusy(false);
+    if (!result?.ok) {
+      setCommentError("Comment could not be saved. Please try again.");
+      return;
+    }
+    setCommentDraft("");
   }
 
   return (
@@ -623,7 +651,7 @@ export function IncidentsSection({
                     <tr className="incident-history-row">
                       <td colSpan={canUseBulkSelection ? 8 : 7}>
                         <div className="incident-history-panel">
-                          {incidentHistoryLoading ? <p className="empty-state">Loading history…</p> : null}
+                          {incidentHistoryLoading ? <p className="empty-state">Loading history...</p> : null}
                           {incidentHistoryError ? <p className="error-text">{incidentHistoryError}</p> : null}
                           {!incidentHistoryLoading && !incidentHistoryError && incidentHistoryEntries.length === 0 ? (
                             <p className="empty-state">No history entries yet.</p>
@@ -647,19 +675,49 @@ export function IncidentsSection({
                                             dateStyle: "short",
                                             timeStyle: "short",
                                           })
-                                        : "—"}
+                                        : "-"}
                                     </td>
-                                    <td>{entry.actor_email ? entry.actor_email : "—"}</td>
+                                    <td>{entry.actor_email ? entry.actor_email : "-"}</td>
                                     <td>{entry.action}</td>
                                     <td>
-                                      <div className="incident-history-json">
-                                        {JSON.stringify(entry.details, null, 2)}
-                                      </div>
+                                      {entry.action === "commented" && entry.details?.comment ? (
+                                        <div className="incident-history-comment">
+                                          <strong>Comment</strong>
+                                          <div>{entry.details.comment}</div>
+                                        </div>
+                                      ) : (
+                                        <div className="incident-history-json">
+                                          {JSON.stringify(entry.details, null, 2)}
+                                        </div>
+                                      )}
                                     </td>
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
+                          ) : null}
+                          {!incidentHistoryLoading && !incidentHistoryError && incidentHistoryOpenId && typeof onAddIncidentComment === "function" ? (
+                            <div className="incident-comment-composer">
+                              <h4 className="section-lede">Add a comment</h4>
+                              <textarea
+                                placeholder="Write a handoff note, follow-up, or context update..."
+                                value={commentDraft}
+                                onChange={(e) => setCommentDraft(e.target.value)}
+                              />
+                              {commentError ? <p className="error-text">{commentError}</p> : null}
+                              <div className="action-row">
+                                <button
+                                  type="button"
+                                  className="btn btn-primary"
+                                  disabled={commentBusy}
+                                  onClick={() => {
+                                    submitIncidentComment().catch(() => {});
+                                  }}
+                                >
+                                  {commentBusy ? "Posting..." : "Post comment"}
+                                </button>
+                              </div>
+                            </div>
                           ) : null}
                         </div>
                       </td>
@@ -722,6 +780,7 @@ IncidentsSection.propTypes = {
   incidentHistoryError: PropTypes.string.isRequired,
   onToggleIncidentHistory: PropTypes.func.isRequired,
   onDownloadIncidentHistoryCsv: PropTypes.func.isRequired,
+  onAddIncidentComment: PropTypes.func,
   hasActiveFilters: PropTypes.bool,
   canCreateIncident: PropTypes.bool,
   presetStorageKey: PropTypes.string,

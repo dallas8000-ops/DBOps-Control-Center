@@ -428,6 +428,46 @@ def test_incident_history_records_create_update_resolve() -> None:
         assert missing.status_code == 404
 
 
+def test_incident_comments_are_recorded_and_visible_to_viewers() -> None:
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+        _create_user(client, dba_token, "analyst@example.com", "Analyst")
+        _create_user(client, dba_token, "viewer@example.com", "Viewer")
+        analyst_token = _login_token(client, "analyst@example.com", "Password123!")
+        viewer_token = _login_token(client, "viewer@example.com", "Password123!")
+
+        create_resp = client.post(
+            "/incidents",
+            json={
+                "title": "Slow deploy",
+                "description": "Deployment needs a handoff note",
+                "severity": "medium",
+                "owner": "analyst@example.com",
+            },
+            headers=_auth_headers(analyst_token),
+        )
+        assert create_resp.status_code == 201
+        incident_id = create_resp.json()["id"]
+
+        comment_resp = client.post(
+            f"/incidents/{incident_id}/comments",
+            json={"comment": "Investigating with the app team now."},
+            headers=_auth_headers(viewer_token),
+        )
+        assert comment_resp.status_code == 200
+        body = comment_resp.json()
+        assert body["action"] == "commented"
+        assert body["details"]["comment"] == "Investigating with the app team now."
+        assert body["actor_email"] == "viewer@example.com"
+
+        history_resp = client.get(f"/incidents/{incident_id}/history", headers=_auth_headers(analyst_token))
+        assert history_resp.status_code == 200
+        history = history_resp.json()
+        assert len(history) == 2
+        assert history[-1]["action"] == "commented"
+        assert history[-1]["details"]["comment"] == "Investigating with the app team now."
+
+
 def test_list_overdue_open_incidents() -> None:
     for client in _client():
         dba_token = _bootstrap_dba(client)
@@ -1221,6 +1261,114 @@ def test_billing_health_reports_stripe_env_flags(monkeypatch) -> None:
         body = resp.json()
         assert body["status"] == "ok"
         assert all(body["billing"].values())
+
+
+def test_oidc_health_reports_degraded_and_ready_states(monkeypatch) -> None:
+    monkeypatch.delenv("OIDC_ISSUER", raising=False)
+    monkeypatch.delenv("OIDC_CLIENT_ID", raising=False)
+    monkeypatch.delenv("OIDC_CLIENT_SECRET", raising=False)
+    for client in _client():
+        resp = client.get("/health/oidc")
+        assert resp.status_code == 503
+        body = resp.json()
+        assert body["status"] == "degraded"
+        assert body["oidc"]["oidc_issuer"] is False
+        assert body["oidc"]["oidc_client_id"] is False
+
+    monkeypatch.setenv("OIDC_ISSUER", "https://login.example.com/tenant/v2.0")
+    monkeypatch.setenv("OIDC_CLIENT_ID", "oidc-client-id")
+    monkeypatch.setenv("OIDC_CLIENT_SECRET", "oidc-client-secret")
+    for client in _client():
+        resp = client.get("/health/oidc")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "ok"
+        assert body["oidc"]["oidc_issuer"] is True
+        assert body["oidc"]["oidc_client_id"] is True
+
+
+def test_smtp_health_reports_degraded_and_ready_states(monkeypatch) -> None:
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.delenv("SMTP_USER", raising=False)
+    monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+    monkeypatch.delenv("SMTP_FROM", raising=False)
+    for client in _client():
+        resp = client.get("/health/smtp")
+        assert resp.status_code == 503
+        body = resp.json()
+        assert body["status"] == "degraded"
+        assert body["smtp"]["smtp_host"] is False
+
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_USER", "mailer@example.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "smtp-password")
+    monkeypatch.setenv("SMTP_FROM", "noreply@example.com")
+    for client in _client():
+        resp = client.get("/health/smtp")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "ok"
+        assert body["smtp"]["smtp_host"] is True
+
+
+def test_oidc_config_endpoint_returns_404_when_not_configured(monkeypatch) -> None:
+    monkeypatch.delenv("OIDC_ISSUER", raising=False)
+    monkeypatch.delenv("OIDC_CLIENT_ID", raising=False)
+    monkeypatch.delenv("OIDC_CLIENT_SECRET", raising=False)
+    for client in _client():
+        resp = client.get("/auth/oidc/config")
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "OIDC is not configured"
+
+
+def test_oidc_config_endpoint_reports_discovery_failure(monkeypatch) -> None:
+    def _raise_discovery_failure() -> str:
+        raise ValueError("discovery failed")
+
+    monkeypatch.setattr("app.main._oidc.oidc_configured", lambda: True)
+    monkeypatch.setattr("app.main._oidc.get_authorization_endpoint", _raise_discovery_failure)
+    for client in _client():
+        resp = client.get("/auth/oidc/config")
+        assert resp.status_code == 503
+        assert resp.json()["detail"] == "OIDC provider discovery failed"
+
+
+def test_scheduler_delivery_failures_are_swallowed(monkeypatch) -> None:
+    from app.scheduler import _dispatch_notification_hook
+
+    def _raise_smtp_failure(**_kwargs) -> None:
+        raise RuntimeError("smtp down")
+
+    def _raise_webhook_failure(*_args, **_kwargs) -> None:
+        raise RuntimeError("webhook down")
+
+    schedule = SimpleNamespace(
+        id=101,
+        report_key="incidents_recent",
+        delivery_kind="email",
+        delivery_target="ops@example.com",
+        notify_on_success=True,
+        notify_on_failure=True,
+        next_run_at=datetime(2026, 5, 9, 12, 0, 0),
+    )
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr("app.scheduler.send_smtp_text_email", _raise_smtp_failure)
+    _dispatch_notification_hook(schedule, ok=True, run_at=datetime(2026, 5, 9, 12, 0, 0), detail=None)
+
+    schedule_webhook = SimpleNamespace(
+        id=102,
+        report_key="incidents_recent",
+        delivery_kind="webhook",
+        delivery_target="https://hooks.example.com/dbops",
+        notify_on_success=True,
+        notify_on_failure=True,
+        next_run_at=datetime(2026, 5, 9, 12, 5, 0),
+    )
+    monkeypatch.setattr(
+        "app.scheduler._send_webhook_notification_with_retry",
+        _raise_webhook_failure,
+    )
+    _dispatch_notification_hook(schedule_webhook, ok=False, run_at=datetime(2026, 5, 9, 12, 5, 0), detail="failure")
 
 
 def test_due_schedule_retries_transient_execution_failure(monkeypatch) -> None:

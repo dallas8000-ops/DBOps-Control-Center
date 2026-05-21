@@ -8,11 +8,19 @@ import { formatSchedulerStamp, formatUtcIsoAsLocal, utcWallClockToLocalPreview }
 
 const API_URL = String(import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 const IS_VITEST = Boolean(import.meta.env.VITEST);
+const OIDC_REDIRECT_URI = String(import.meta.env.VITE_OIDC_REDIRECT_URI || "").trim();
 
 const CREATE_USER_FETCH_MS = 25_000;
 const REPORT_AUDIT_VIEW_LIMIT_KEY = "dbops_report_audit_view_limit";
 const REPORT_AUDIT_VIEW_LIMIT_OPTIONS = new Set(["3", "10", "25", "all"]);
 const THEME_PREFERENCE_KEY = "dbops_theme_preference";
+
+function getOidcRedirectUri() {
+  if (OIDC_REDIRECT_URI) {
+    return OIDC_REDIRECT_URI;
+  }
+  return globalThis.location?.origin || "";
+}
 
 /** Hosted site (e.g. Render) still pointing at loopback — browser will block or fail the request. */
 function apiUrlMismatchForHostedPage(apiUrl) {
@@ -186,16 +194,16 @@ function csvFilenameFromContentDisposition(contentDisposition, fallbackReportKey
 function _oidcGenerateCodeVerifier() {
   const arr = new Uint8Array(32);
   crypto.getRandomValues(arr);
-  return btoa(String.fromCharCode(...arr)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+  return btoa(String.fromCodePoint(...arr)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }
 
 async function _oidcComputeCodeChallenge(verifier) {
   const data = new TextEncoder().encode(verifier);
   const digest = await crypto.subtle.digest("SHA-256", data);
-  return btoa(String.fromCharCode(...new Uint8Array(digest)))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=/g, "");
+  return btoa(String.fromCodePoint(...new Uint8Array(digest)))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
 }
 
 function _oidcGenerateState() {
@@ -601,6 +609,11 @@ function SchedulerHealthPanel({ schedulerHealth, smtpHealth }) {
   const statusClass = lastError ? "health-strip health-strip--warn" : "health-strip health-strip--ok";
   const smtpOk = smtpHealth?.status === "ok";
   const smtpClass = smtpOk ? "health-strip health-strip--ok" : "health-strip health-strip--warn";
+  const smtpUserState = smtpHealth?.smtp?.smtp_user ? "set" : "not set";
+  let smtpText = "not configured — set SMTP_HOST on the API server to enable email notifications";
+  if (smtpOk) {
+    smtpText = `configured · host set · user ${smtpUserState}`;
+  }
 
   return (
     <section className="panel">
@@ -618,10 +631,7 @@ function SchedulerHealthPanel({ schedulerHealth, smtpHealth }) {
       </div>
       {smtpHealth ? (
         <div className={smtpClass} style={{ marginTop: "0.75rem" }}>
-          <strong>Email delivery (SMTP):</strong>{" "}
-          {smtpOk
-            ? `configured · host set · user ${smtpHealth.smtp?.smtp_user ? "set" : "not set"}`
-            : "not configured — set SMTP_HOST on the API server to enable email notifications"}
+          <strong>Email delivery (SMTP):</strong> {smtpText}
         </div>
       ) : null}
     </section>
@@ -1104,6 +1114,110 @@ ReportAuditSection.propTypes = {
   reportRunsStatus: PropTypes.string.isRequired,
 };
 
+function AiAssistSection({
+  aiRouteQuery,
+  setAiRouteQuery,
+  aiRouteBusy,
+  aiRouteError,
+  aiRouteResult,
+  onAiRouteReport,
+  onUseAiReport,
+  aiSummaryIncidentId,
+  setAiSummaryIncidentId,
+  aiSummaryBusy,
+  aiSummaryError,
+  aiSummaryResult,
+  onAiSummarizeIncident,
+}) {
+  return (
+    <section className="panel">
+      <h2 className="panel-title">AI Operations Assist</h2>
+      <p className="panel-sub">
+        Safe-by-design helper tools: report routing only maps to approved report keys, and incident summaries read existing
+        audit history only.
+      </p>
+      <div className="ai-grid">
+        <form className="form-grid" onSubmit={onAiRouteReport}>
+          <h3 className="section-lede">Natural language to report</h3>
+          <textarea
+            placeholder="Example: Are there any high severity incidents still open right now?"
+            value={aiRouteQuery}
+            onChange={(e) => setAiRouteQuery(e.target.value)}
+          />
+          {aiRouteError ? <p className="error-text">{aiRouteError}</p> : null}
+          {aiRouteResult ? (
+            <div className="ai-result">
+              <p>
+                <strong>Suggested:</strong> {aiRouteResult.title}
+              </p>
+              <p className="hint">{aiRouteResult.description}</p>
+              <p className="hint">
+                key: {aiRouteResult.report_key} · matched by {aiRouteResult.matched_by} · confidence {aiRouteResult.confidence}
+              </p>
+              <button type="button" className="btn btn-ghost" onClick={onUseAiReport}>
+                Use this report
+              </button>
+            </div>
+          ) : null}
+          <button type="submit" className="btn btn-primary" disabled={aiRouteBusy}>
+            {aiRouteBusy ? "Matching..." : "Find report"}
+          </button>
+        </form>
+
+        <form className="form-grid" onSubmit={onAiSummarizeIncident}>
+          <h3 className="section-lede">Incident handoff summary</h3>
+          <input
+            type="number"
+            min="1"
+            placeholder="Incident ID"
+            value={aiSummaryIncidentId}
+            onChange={(e) => setAiSummaryIncidentId(e.target.value)}
+          />
+          {aiSummaryError ? <p className="error-text">{aiSummaryError}</p> : null}
+          {aiSummaryResult ? (
+            <div className="ai-result">
+              <p className="hint">Source: {aiSummaryResult.source}</p>
+              <ul className="onboarding-quickstart">
+                {aiSummaryResult.summary_lines.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <button type="submit" className="btn btn-primary" disabled={aiSummaryBusy}>
+            {aiSummaryBusy ? "Summarizing..." : "Summarize incident"}
+          </button>
+        </form>
+      </div>
+    </section>
+  );
+}
+
+AiAssistSection.propTypes = {
+  aiRouteQuery: PropTypes.string.isRequired,
+  setAiRouteQuery: PropTypes.func.isRequired,
+  aiRouteBusy: PropTypes.bool.isRequired,
+  aiRouteError: PropTypes.string.isRequired,
+  aiRouteResult: PropTypes.shape({
+    report_key: PropTypes.string.isRequired,
+    title: PropTypes.string.isRequired,
+    description: PropTypes.string.isRequired,
+    matched_by: PropTypes.string.isRequired,
+    confidence: PropTypes.number.isRequired,
+  }),
+  onAiRouteReport: PropTypes.func.isRequired,
+  onUseAiReport: PropTypes.func.isRequired,
+  aiSummaryIncidentId: PropTypes.string.isRequired,
+  setAiSummaryIncidentId: PropTypes.func.isRequired,
+  aiSummaryBusy: PropTypes.bool.isRequired,
+  aiSummaryError: PropTypes.string.isRequired,
+  aiSummaryResult: PropTypes.shape({
+    source: PropTypes.string.isRequired,
+    summary_lines: PropTypes.arrayOf(PropTypes.string).isRequired,
+  }),
+  onAiSummarizeIncident: PropTypes.func.isRequired,
+};
+
 CreateUserSection.propTypes = {
   apiBaseUrl: PropTypes.string.isRequired,
   existingUsers: PropTypes.arrayOf(
@@ -1188,12 +1302,37 @@ function DashboardBody({
   incidentHistoryError,
   onToggleIncidentHistory,
   onDownloadIncidentHistoryCsv,
+  onAddIncidentComment,
   incidentPresetStorageKey,
   hasActiveFilters,
   currentUserEmail,
   bulkIncidentActionBusy,
   onBulkIncidentAction,
+  aiRouteQuery,
+  setAiRouteQuery,
+  aiRouteBusy,
+  aiRouteError,
+  aiRouteResult,
+  onAiRouteReport,
+  onUseAiReport,
+  aiSummaryIncidentId,
+  setAiSummaryIncidentId,
+  aiSummaryBusy,
+  aiSummaryError,
+  aiSummaryResult,
+  onAiSummarizeIncident,
 }) {
+  const [accordionOpen, setAccordionOpen] = useState({
+    summary: true,
+    scheduler: false,
+    reports: false,
+    ai: false,
+    schedules: false,
+    audit: false,
+    createIncident: false,
+    incidents: false,
+  });
+
   const [reportAuditViewLimit, setReportAuditViewLimit] = useState(() => {
     const store = globalThis.window?.localStorage;
     if (!store || typeof store.getItem !== "function") return "3";
@@ -1216,11 +1355,40 @@ function DashboardBody({
     store.setItem(REPORT_AUDIT_VIEW_LIMIT_KEY, reportAuditViewLimit);
   }, [reportAuditViewLimit]);
 
+  function toggleAccordion(sectionKey) {
+    setAccordionOpen((prev) => ({ ...prev, [sectionKey]: !prev[sectionKey] }));
+  }
+
+  function renderAccordionSection(sectionKey, title, content) {
+    const isOpen = Boolean(accordionOpen[sectionKey]);
+    const contentId = `accordion-content-${sectionKey}`;
+    return (
+      <section className={`accordion-item${isOpen ? " is-open" : ""}`}>
+        <button
+          type="button"
+          className="accordion-toggle"
+          onClick={() => toggleAccordion(sectionKey)}
+          aria-expanded={isOpen}
+          aria-controls={contentId}
+        >
+          <span>{title}</span>
+          <span className="accordion-toggle__chevron" aria-hidden="true">
+            {isOpen ? "\u25be" : "\u25b8"}
+          </span>
+        </button>
+        <div id={contentId} className="accordion-content" hidden={!isOpen}>
+          {content}
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <>
-      <section className="stack-gap">
-        <h2 className="panel-title">Operational Summary</h2>
-        {summary ? (
+    <div className="accordion-stack">
+      {renderAccordionSection(
+        "summary",
+        "Operational Summary",
+        summary ? (
           <div className="summary-grid">
             <Card label="Total" value={summary.total_incidents} />
             <Card label="Open" value={summary.open_incidents} />
@@ -1229,57 +1397,97 @@ function DashboardBody({
           </div>
         ) : (
           <p className="empty-state">Loading summary...</p>
-        )}
-      </section>
-
-      {canManageUsers ? <SchedulerHealthPanel schedulerHealth={schedulerHealth} smtpHealth={smtpHealth} /> : null}
-      <SqlReportsSection
-        reportCatalog={reportCatalog}
-        selectedReportKey={selectedReportKey}
-        setSelectedReportKey={setSelectedReportKey}
-        selectedReport={selectedReport}
-        reportParams={reportParams}
-        setReportParams={setReportParams}
-        reportNotice={reportNotice}
-        reportError={reportError}
-        reportBusy={reportBusy}
-        onRunReport={onRunReport}
-        onExportReportCsv={onExportReportCsv}
-        reportResult={reportResult}
-      />
+        ),
+      )}
 
       {canManageUsers ? (
-        <ScheduledReportsSection
+        renderAccordionSection(
+          "scheduler",
+          "Scheduler Health (DBA)",
+          <SchedulerHealthPanel schedulerHealth={schedulerHealth} smtpHealth={smtpHealth} />,
+        )
+      ) : null}
+
+      {renderAccordionSection(
+        "reports",
+        "SQL Reports",
+        <SqlReportsSection
           reportCatalog={reportCatalog}
-          scheduleForm={scheduleForm}
-          setScheduleForm={setScheduleForm}
-          scheduleLocalPreview={scheduleLocalPreview}
-          onCreateSchedule={onCreateSchedule}
-          scheduleBusy={scheduleBusy}
-          scheduleFeedback={scheduleFeedback}
-          reportSchedules={reportSchedules}
-          scheduleActionBusyId={scheduleActionBusyId}
-          onToggleSchedule={onToggleSchedule}
-          billing={adminOverview?.billing}
-          planUsage={adminOverview?.plan_usage}
-        />
+          selectedReportKey={selectedReportKey}
+          setSelectedReportKey={setSelectedReportKey}
+          selectedReport={selectedReport}
+          reportParams={reportParams}
+          setReportParams={setReportParams}
+          reportNotice={reportNotice}
+          reportError={reportError}
+          reportBusy={reportBusy}
+          onRunReport={onRunReport}
+          onExportReportCsv={onExportReportCsv}
+          reportResult={reportResult}
+        />,
+      )}
+
+      {renderAccordionSection(
+        "ai",
+        "AI Operations Assist",
+        <AiAssistSection
+          aiRouteQuery={aiRouteQuery}
+          setAiRouteQuery={setAiRouteQuery}
+          aiRouteBusy={aiRouteBusy}
+          aiRouteError={aiRouteError}
+          aiRouteResult={aiRouteResult}
+          onAiRouteReport={onAiRouteReport}
+          onUseAiReport={onUseAiReport}
+          aiSummaryIncidentId={aiSummaryIncidentId}
+          setAiSummaryIncidentId={setAiSummaryIncidentId}
+          aiSummaryBusy={aiSummaryBusy}
+          aiSummaryError={aiSummaryError}
+          aiSummaryResult={aiSummaryResult}
+          onAiSummarizeIncident={onAiSummarizeIncident}
+        />,
+      )}
+
+      {canManageUsers ? (
+        renderAccordionSection(
+          "schedules",
+          "Scheduled Reports (DBA)",
+          <ScheduledReportsSection
+            reportCatalog={reportCatalog}
+            scheduleForm={scheduleForm}
+            setScheduleForm={setScheduleForm}
+            scheduleLocalPreview={scheduleLocalPreview}
+            onCreateSchedule={onCreateSchedule}
+            scheduleBusy={scheduleBusy}
+            scheduleFeedback={scheduleFeedback}
+            reportSchedules={reportSchedules}
+            scheduleActionBusyId={scheduleActionBusyId}
+            onToggleSchedule={onToggleSchedule}
+            billing={adminOverview?.billing}
+            planUsage={adminOverview?.plan_usage}
+          />,
+        )
       ) : null}
 
       {canManageUsers ? (
-        <ReportAuditSection
-          reportAuditViewLimit={reportAuditViewLimit}
-          setReportAuditViewLimit={setReportAuditViewLimit}
-          onRefreshReportRuns={onRefreshReportRuns}
-          reportRunsLoading={reportRunsLoading}
-          visibleReportRuns={visibleReportRuns}
-          reportRuns={reportRuns}
-          reportRunsStatus={reportRunsStatus}
-        />
+        renderAccordionSection(
+          "audit",
+          "Report Audit Trail (DBA)",
+          <ReportAuditSection
+            reportAuditViewLimit={reportAuditViewLimit}
+            setReportAuditViewLimit={setReportAuditViewLimit}
+            onRefreshReportRuns={onRefreshReportRuns}
+            reportRunsLoading={reportRunsLoading}
+            visibleReportRuns={visibleReportRuns}
+            reportRuns={reportRuns}
+            reportRunsStatus={reportRunsStatus}
+          />,
+        )
       ) : null}
 
       {canCreateIncident ? (
-        <section className="panel">
-          <h2 className="panel-title">Create Incident</h2>
+        renderAccordionSection(
+          "createIncident",
+          "Create Incident",
           <form className="form-grid" onSubmit={onCreateIncident}>
             <input
               required
@@ -1314,43 +1522,61 @@ function DashboardBody({
             <button type="submit" className="btn btn-primary">
               Create
             </button>
-          </form>
-        </section>
+          </form>,
+        )
       ) : (
         <p className="hint stack-gap">
           Your role (Viewer) can list incidents, use the summary, and run predefined read-only SQL reports.
         </p>
       )}
 
-      <IncidentsSection
-        incidents={incidents}
-        incidentFilters={incidentFilters}
-        onIncidentFilterChange={onIncidentFilterChange}
-        onClearIncidentFilters={onClearIncidentFilters}
-        canEditIncidents={canEditIncidents}
-        editingIncidentId={editingIncidentId}
-        incidentEditForm={incidentEditForm}
-        incidentEditError={incidentEditError}
-        onStartIncidentEdit={onStartIncidentEdit}
-        onChangeIncidentEditField={onChangeIncidentEditField}
-        onSaveIncidentEdit={onSaveIncidentEdit}
-        onCancelIncidentEdit={onCancelIncidentEdit}
-        canResolve={canResolve}
-        onResolveIncident={onResolveIncident}
-        incidentHistoryOpenId={incidentHistoryOpenId}
-        incidentHistoryLoading={incidentHistoryLoading}
-        incidentHistoryEntries={incidentHistoryEntries}
-        incidentHistoryError={incidentHistoryError}
-        onToggleIncidentHistory={onToggleIncidentHistory}
-        onDownloadIncidentHistoryCsv={onDownloadIncidentHistoryCsv}
-        presetStorageKey={incidentPresetStorageKey}
-        hasActiveFilters={hasActiveFilters}
-        canCreateIncident={canCreateIncident}
-        currentUserEmail={currentUserEmail}
-        bulkActionBusy={bulkIncidentActionBusy}
-        onBulkIncidentAction={onBulkIncidentAction}
-      />
-    </>
+      {renderAccordionSection(
+        "incidents",
+        "Incidents",
+        <IncidentsSection
+          incidents={incidents}
+          incidentFilters={incidentFilters}
+          onIncidentFilterChange={onIncidentFilterChange}
+          onClearIncidentFilters={onClearIncidentFilters}
+          canEditIncidents={canEditIncidents}
+          editingIncidentId={editingIncidentId}
+          incidentEditForm={incidentEditForm}
+          incidentEditError={incidentEditError}
+          onStartIncidentEdit={onStartIncidentEdit}
+          onChangeIncidentEditField={onChangeIncidentEditField}
+          onSaveIncidentEdit={onSaveIncidentEdit}
+          onCancelIncidentEdit={onCancelIncidentEdit}
+          canResolve={canResolve}
+          onResolveIncident={onResolveIncident}
+          incidentHistoryOpenId={incidentHistoryOpenId}
+          incidentHistoryLoading={incidentHistoryLoading}
+          incidentHistoryEntries={incidentHistoryEntries}
+          incidentHistoryError={incidentHistoryError}
+          onToggleIncidentHistory={onToggleIncidentHistory}
+          onDownloadIncidentHistoryCsv={onDownloadIncidentHistoryCsv}
+          onAddIncidentComment={onAddIncidentComment}
+          presetStorageKey={incidentPresetStorageKey}
+          hasActiveFilters={hasActiveFilters}
+          canCreateIncident={canCreateIncident}
+          currentUserEmail={currentUserEmail}
+          bulkIncidentActionBusy={bulkIncidentActionBusy}
+          onBulkIncidentAction={onBulkIncidentAction}
+          aiRouteQuery={aiRouteQuery}
+          setAiRouteQuery={setAiRouteQuery}
+          aiRouteBusy={aiRouteBusy}
+          aiRouteError={aiRouteError}
+          aiRouteResult={aiRouteResult}
+          onAiRouteReport={onAiRouteReport}
+          onUseAiReport={onUseAiReport}
+          aiSummaryIncidentId={aiSummaryIncidentId}
+          setAiSummaryIncidentId={setAiSummaryIncidentId}
+          aiSummaryBusy={aiSummaryBusy}
+          aiSummaryError={aiSummaryError}
+          aiSummaryResult={aiSummaryResult}
+          onAiSummarizeIncident={onAiSummarizeIncident}
+        />,
+      )}
+    </div>
   );
 }
 
@@ -1408,11 +1634,25 @@ DashboardBody.propTypes = {
   incidentHistoryError: PropTypes.string.isRequired,
   onToggleIncidentHistory: PropTypes.func.isRequired,
   onDownloadIncidentHistoryCsv: PropTypes.func.isRequired,
+  onAddIncidentComment: PropTypes.func.isRequired,
   incidentPresetStorageKey: PropTypes.string,
   hasActiveFilters: PropTypes.bool,
   currentUserEmail: PropTypes.string,
   bulkIncidentActionBusy: PropTypes.bool,
   onBulkIncidentAction: PropTypes.func,
+  aiRouteQuery: PropTypes.string.isRequired,
+  setAiRouteQuery: PropTypes.func.isRequired,
+  aiRouteBusy: PropTypes.bool.isRequired,
+  aiRouteError: PropTypes.string.isRequired,
+  aiRouteResult: PropTypes.object,
+  onAiRouteReport: PropTypes.func.isRequired,
+  onUseAiReport: PropTypes.func.isRequired,
+  aiSummaryIncidentId: PropTypes.string.isRequired,
+  setAiSummaryIncidentId: PropTypes.func.isRequired,
+  aiSummaryBusy: PropTypes.bool.isRequired,
+  aiSummaryError: PropTypes.string.isRequired,
+  aiSummaryResult: PropTypes.object,
+  onAiSummarizeIncident: PropTypes.func.isRequired,
 };
 
 export default function App() {
@@ -1482,6 +1722,14 @@ export default function App() {
   const [scheduleActionBusyId, setScheduleActionBusyId] = useState(null);
   const [scheduleBusy, setScheduleBusy] = useState(false);
   const [scheduleFeedback, setScheduleFeedback] = useState("");
+  const [aiRouteQuery, setAiRouteQuery] = useState("");
+  const [aiRouteBusy, setAiRouteBusy] = useState(false);
+  const [aiRouteError, setAiRouteError] = useState("");
+  const [aiRouteResult, setAiRouteResult] = useState(null);
+  const [aiSummaryIncidentId, setAiSummaryIncidentId] = useState("");
+  const [aiSummaryBusy, setAiSummaryBusy] = useState(false);
+  const [aiSummaryError, setAiSummaryError] = useState("");
+  const [aiSummaryResult, setAiSummaryResult] = useState(null);
   const [incidentFilters, setIncidentFilters] = useState({
     search: "",
     status: "",
@@ -1558,6 +1806,14 @@ export default function App() {
     setIncidentHistoryLoading(false);
     setIncidentHistoryError("");
     setIncidentActionToast({ kind: "", text: "" });
+    setAiRouteQuery("");
+    setAiRouteBusy(false);
+    setAiRouteError("");
+    setAiRouteResult(null);
+    setAiSummaryIncidentId("");
+    setAiSummaryBusy(false);
+    setAiSummaryError("");
+    setAiSummaryResult(null);
   }
 
   useEffect(() => {
@@ -1756,7 +2012,11 @@ export default function App() {
       const res = await fetch(`${API_URL}/auth/oidc/config`);
       if (res.ok) {
         const body = await res.json().catch(() => null);
-        if (body) setOidcConfig(body);
+        if (body?.enabled && body.authorization_endpoint && body.client_id && body.scope) {
+          setOidcConfig(body);
+        } else {
+          setOidcConfig(null);
+        }
       }
     } catch {
       // OIDC not configured or unreachable — silently ignore
@@ -1771,7 +2031,12 @@ export default function App() {
       const verifier = _oidcGenerateCodeVerifier();
       const challenge = await _oidcComputeCodeChallenge(verifier);
       const state = _oidcGenerateState();
-      const redirectUri = globalThis.location?.origin || "";
+      const redirectUri = getOidcRedirectUri();
+      if (!redirectUri) {
+        setOidcError("SSO redirect URI is not configured.");
+        setOidcBusy(false);
+        return;
+      }
       globalThis.sessionStorage?.setItem("oidc_state", state);
       globalThis.sessionStorage?.setItem("oidc_code_verifier", verifier);
       globalThis.sessionStorage?.setItem("oidc_redirect_uri", redirectUri);
@@ -2204,6 +2469,58 @@ export default function App() {
     }
   }
 
+  async function aiRouteReport(e) {
+    e.preventDefault();
+    if (!aiRouteQuery.trim()) {
+      setAiRouteError("Please enter a request before routing.");
+      return;
+    }
+    setAiRouteError("");
+    setAiRouteBusy(true);
+    const { res, body } = await apiJson("/api/ai/find-report", {
+      method: "POST",
+      body: { user_query: aiRouteQuery.trim() },
+    });
+    setAiRouteBusy(false);
+    if (!res.ok) {
+      setAiRouteResult(null);
+      setAiRouteError(formatApiDetail(body));
+      return;
+    }
+    setAiRouteResult(body);
+    setAiRouteError("");
+  }
+
+  function useAiSuggestedReport() {
+    if (!aiRouteResult?.report_key) return;
+    setSelectedReportKey(aiRouteResult.report_key);
+    setReportNotice(`AI selected ${aiRouteResult.title}. Ready to run.`);
+    setReportError("");
+  }
+
+  async function aiSummarizeIncident(e) {
+    e.preventDefault();
+    const incidentId = Number.parseInt(aiSummaryIncidentId, 10);
+    if (!Number.isFinite(incidentId) || incidentId < 1) {
+      setAiSummaryError("Enter a valid incident id.");
+      return;
+    }
+    setAiSummaryBusy(true);
+    setAiSummaryError("");
+    const { res, body } = await apiJson(`/api/ai/summarize-incident/${incidentId}`, {
+      method: "POST",
+      body: {},
+    });
+    setAiSummaryBusy(false);
+    if (!res.ok) {
+      setAiSummaryResult(null);
+      setAiSummaryError(formatApiDetail(body));
+      return;
+    }
+    setAiSummaryResult(body);
+    setAiSummaryError("");
+  }
+
   async function exportReportCsv() {
     setReportError("");
     setReportNotice("");
@@ -2392,6 +2709,20 @@ export default function App() {
       return;
     }
     setIncidentHistoryEntries(Array.isArray(body) ? body : []);
+  }
+
+  async function addIncidentComment(incidentId, comment) {
+    const { res, body } = await apiJson(`/incidents/${incidentId}/comments`, {
+      method: "POST",
+      body: { comment },
+    });
+    if (!res.ok) {
+      return { ok: false, detail: formatApiDetail(body) };
+    }
+    if (incidentHistoryOpenId === incidentId) {
+      await loadIncidentHistory(incidentId);
+    }
+    return { ok: true, body };
   }
 
   async function toggleIncidentHistory(incidentId) {
@@ -2683,11 +3014,25 @@ export default function App() {
             incidentHistoryError={incidentHistoryError}
             onToggleIncidentHistory={toggleIncidentHistory}
             onDownloadIncidentHistoryCsv={downloadIncidentHistoryCsv}
+            onAddIncidentComment={addIncidentComment}
             incidentPresetStorageKey={me?.email || "anonymous"}
             hasActiveFilters={hasActiveIncidentFilters}
             currentUserEmail={me?.email || ""}
             bulkIncidentActionBusy={bulkIncidentActionBusy}
             onBulkIncidentAction={runBulkIncidentAction}
+            aiRouteQuery={aiRouteQuery}
+            setAiRouteQuery={setAiRouteQuery}
+            aiRouteBusy={aiRouteBusy}
+            aiRouteError={aiRouteError}
+            aiRouteResult={aiRouteResult}
+            onAiRouteReport={aiRouteReport}
+            onUseAiReport={useAiSuggestedReport}
+            aiSummaryIncidentId={aiSummaryIncidentId}
+            setAiSummaryIncidentId={setAiSummaryIncidentId}
+            aiSummaryBusy={aiSummaryBusy}
+            aiSummaryError={aiSummaryError}
+            aiSummaryResult={aiSummaryResult}
+            onAiSummarizeIncident={aiSummarizeIncident}
           />
         </>
       ) : (

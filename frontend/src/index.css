@@ -331,6 +331,29 @@ textarea:focus {
   gap: 0.25rem;
 }
 
+.ai-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .ai-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ai-result {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  padding: 0.7rem 0.8rem;
+}
+
+.ai-result p {
+  margin: 0.2rem 0;
+}
+
 .error-text {
   margin: 0 0 0.25rem;
   color: var(--danger);
@@ -770,6 +793,57 @@ table.data-table {
 .oidc-divider {
   text-align: center;
   margin: 0.5rem 0;
+}
+
+.accordion-stack {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.accordion-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.accordion-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 650;
+  text-align: left;
+  padding: 0.8rem 0.95rem;
+  cursor: pointer;
+}
+
+.accordion-toggle:hover {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.accordion-item.is-open .accordion-toggle {
+  border-bottom: 1px solid var(--border);
+}
+
+.accordion-toggle__chevron {
+  font-size: 0.95rem;
+  color: var(--muted);
+  line-height: 1;
+}
+
+.accordion-content {
+  padding: 0.95rem;
+}
+
+.accordion-content > .panel,
+.accordion-content > .stack-gap {
+  margin: 0;
 }
 
 .incident-filters {

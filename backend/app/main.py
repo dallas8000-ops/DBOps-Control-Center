@@ -5,13 +5,14 @@ import csv
 import json
 import logging
 import os
+import re
 import uuid
 from csv import DictWriter
 from datetime import UTC, date, datetime, time, timedelta
 from io import StringIO
 from typing import Annotated, Any, TypeAlias
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.security import OAuth2PasswordRequestForm
@@ -22,6 +23,11 @@ try:
     import stripe
 except ImportError:  # pragma: no cover - surfaced via HTTP 503 when feature is used.
     stripe = None
+
+try:
+    from openai import OpenAI
+except ImportError:  # pragma: no cover - optional dependency for AI assist.
+    OpenAI = None
 
 from jose import JWTError
 from .auth_utils import create_access_token, hash_password, verify_password
@@ -47,6 +53,9 @@ from .schemas import (
     ActivityTrendPointRead,
     AdminMetricsRead,
     AdminOverviewRead,
+    AiFindReportRequest,
+    AiFindReportResponse,
+    AiIncidentSummaryResponse,
     BillingCheckoutSessionCreate,
     BillingCheckoutSessionRead,
     BillingSettingsRead,
@@ -54,6 +63,7 @@ from .schemas import (
     IncidentCreate,
     IncidentBulkActionRequest,
     IncidentBulkActionResult,
+    IncidentCommentCreate,
     IncidentHistoryRead,
     IncidentRead,
     IncidentUpdate,
@@ -76,7 +86,11 @@ from .schemas import (
     UserPasswordReset,
     UserRead,
     UserStatusUpdate,
+    EssentialDependencyBundleRequest,
+    EssentialDependencyBundleResponse,
+    LinkedReport,
 )
+from .scheduler import compute_next_run_at, get_scheduler_runtime_status, run_scheduler_loop
 
 
 @asynccontextmanager
@@ -106,6 +120,207 @@ USER_NOT_FOUND_DETAIL = "User not found"
 INCIDENT_NOT_FOUND_DETAIL = "Incident not found"
 REPORT_PERMISSION_DETAIL = "Insufficient permissions for this report"
 UNKNOWN_REPORT_PREFIX = "Unknown report:"
+
+AI_ROUTE_SYSTEM_PROMPT = (
+    "You map user operational requests to exactly one pre-approved report key. "
+    "Never generate SQL. Return JSON only with fields report_key and confidence."
+)
+
+
+def _tokenize(text_value: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9_]+", text_value.lower()))
+
+
+def _reports_visible_to_role(role: str) -> list[tuple[str, dict[str, Any]]]:
+    visible: list[tuple[str, dict[str, Any]]] = []
+    for key, spec in REPORTS.items():
+        if role in spec["roles"]:
+            visible.append((key, spec))
+    return visible
+
+
+ESSENTIAL_REPORT_BUNDLES: dict[str, tuple[str, ...]] = {
+    "incidents_by_status": (
+        "incidents_recent",
+        "incidents_by_severity",
+        "incidents_open_by_owner",
+        "open_high_severity",
+    ),
+    "incidents_recent": (
+        "incidents_by_status",
+        "open_high_severity",
+    ),
+    "open_high_severity": (
+        "incidents_recent",
+        "incidents_open_by_owner",
+    ),
+    "report_runs_by_report_key": (
+        "schedules_overview",
+        "admin_audit_by_action",
+    ),
+    "users_by_role": (
+        "admin_audit_by_action",
+    ),
+}
+
+
+def _ai_client() -> Any | None:
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key or OpenAI is None:
+        return None
+    return OpenAI(api_key=api_key)
+
+
+def _heuristic_report_match(user_query: str, visible_reports: list[tuple[str, dict[str, Any]]]) -> AiFindReportResponse:
+    query_tokens = _tokenize(user_query)
+    if not query_tokens:
+        query_tokens = {"incidents"}
+
+    best_key = visible_reports[0][0]
+    best_score = -1
+    best_spec = visible_reports[0][1]
+
+    for key, spec in visible_reports:
+        report_tokens = _tokenize(f"{key} {spec['title']} {spec['description']}")
+        score = len(query_tokens & report_tokens)
+        if score > best_score:
+            best_score = score
+            best_key = key
+            best_spec = spec
+
+    denominator = max(len(query_tokens), 1)
+    confidence = min(1.0, max(0.35, best_score / denominator))
+    return AiFindReportResponse(
+        report_key=best_key,
+        title=best_spec["title"],
+        description=best_spec["description"],
+        matched_by="heuristic",
+        confidence=round(confidence, 2),
+    )
+
+
+def _llm_report_match(user_query: str, visible_reports: list[tuple[str, dict[str, Any]]]) -> AiFindReportResponse | None:
+    client = _ai_client()
+    if client is None:
+        return None
+
+    report_list = [
+        {
+            "report_key": key,
+            "title": spec["title"],
+            "description": spec["description"],
+        }
+        for key, spec in visible_reports
+    ]
+    try:
+        response = client.chat.completions.create(
+            model=os.getenv("AI_REPORT_ROUTER_MODEL", "gpt-4o-mini"),
+            temperature=0,
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "system",
+                    "content": f"{AI_ROUTE_SYSTEM_PROMPT}\nAllowed reports: {json.dumps(report_list)}",
+                },
+                {"role": "user", "content": user_query},
+            ],
+        )
+        raw_content = response.choices[0].message.content or "{}"
+        payload = json.loads(raw_content)
+        report_key = str(payload.get("report_key", "")).strip()
+        confidence = float(payload.get("confidence", 0.7))
+    except Exception:
+        logger.exception("LLM report routing failed")
+        return None
+
+    for key, spec in visible_reports:
+        if key == report_key:
+            return AiFindReportResponse(
+                report_key=key,
+                title=spec["title"],
+                description=spec["description"],
+                matched_by="llm",
+                confidence=max(0.0, min(1.0, confidence)),
+            )
+    return None
+
+
+def _heuristic_incident_summary(incident: Incident, history_rows: list[tuple[IncidentHistory, str | None]]) -> list[str]:
+    total_events = len(history_rows)
+    recent_rows = history_rows[-3:]
+    action_counts: dict[str, int] = {}
+    for row, _ in history_rows:
+        action_counts[row.action] = action_counts.get(row.action, 0) + 1
+
+    top_actions = sorted(action_counts.items(), key=lambda item: (-item[1], item[0]))[:2]
+    top_actions_text = ", ".join(f"{name} ({count})" for name, count in top_actions) if top_actions else "no recorded actions"
+
+    line_one = (
+        f"Incident {incident.id} is {incident.status} with {incident.severity} severity, owned by "
+        f"{incident.owner}, and has {total_events} history event(s)."
+    )
+    line_two = f"Most frequent workflow actions: {top_actions_text}."
+
+    if recent_rows:
+        recent_parts = []
+        for hist, actor_email in recent_rows:
+            actor = actor_email or "system"
+            stamp = hist.created_at.isoformat() if hist.created_at else "unknown-time"
+            recent_parts.append(f"{stamp}: {hist.action} by {actor}")
+        line_three = "Recent timeline: " + " | ".join(recent_parts)
+    else:
+        line_three = "No timeline entries are available yet for this incident."
+
+    return [line_one, line_two, line_three]
+
+
+def _llm_incident_summary(
+    incident: Incident,
+    history_rows: list[tuple[IncidentHistory, str | None]],
+) -> list[str] | None:
+    client = _ai_client()
+    if client is None:
+        return None
+
+    lines = []
+    for hist, actor_email in history_rows:
+        actor = actor_email or "system"
+        lines.append(f"[{hist.created_at}] action={hist.action} actor={actor} details={hist.details_json}")
+    prompt_body = "\n".join(lines) if lines else "No history entries"
+
+    try:
+        response = client.chat.completions.create(
+            model=os.getenv("AI_INCIDENT_SUMMARY_MODEL", "gpt-4o-mini"),
+            temperature=0.2,
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Create exactly three concise, professional bullet lines for an engineering handoff. "
+                        "Return JSON as {\"summary_lines\": [\"...\", \"...\", \"...\"]}."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Incident id={incident.id}, title={incident.title}, status={incident.status}, "
+                        f"severity={incident.severity}, owner={incident.owner}.\nHistory:\n{prompt_body}"
+                    ),
+                },
+            ],
+        )
+        raw = response.choices[0].message.content or "{}"
+        parsed = json.loads(raw)
+        summary_lines = parsed.get("summary_lines", [])
+        if isinstance(summary_lines, list):
+            cleaned = [str(line).strip() for line in summary_lines if str(line).strip()]
+            if len(cleaned) >= 3:
+                return cleaned[:3]
+    except Exception:
+        logger.exception("LLM incident summarization failed")
+        return None
+    return None
 
 ERROR_RESPONSES_AUTH_LOGIN = {
     401: {"description": "Incorrect credentials"},
@@ -747,6 +962,7 @@ def oidc_config_endpoint():
         logger.warning("OIDC discovery failed: %s", exc)
         raise HTTPException(status_code=503, detail="OIDC provider discovery failed")
     return {
+        "enabled": True,
         "authorization_endpoint": auth_endpoint,
         "client_id": _oidc.get_oidc_client_id(),
         "scope": "openid email profile",
@@ -1461,6 +1677,45 @@ def get_incident_history(
     return out
 
 
+@app.post(
+    "/incidents/{incident_id}/comments",
+    response_model=IncidentHistoryRead,
+    responses=ERROR_RESPONSES_INCIDENT_READ,
+)
+def add_incident_comment(
+    incident_id: int,
+    payload: IncidentCommentCreate,
+    db: DbDep,
+    current: Annotated[User, Depends(require_roles("DBA", "Analyst", "Viewer"))],
+):
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail=INCIDENT_NOT_FOUND_DETAIL)
+
+    comment_text = payload.comment.strip()
+    if not comment_text:
+        raise HTTPException(status_code=400, detail="comment must not be empty")
+
+    history_row = IncidentHistory(
+        incident_id=incident.id,
+        actor_user_id=current.id,
+        action="commented",
+        details_json=json.dumps({"comment": comment_text}, sort_keys=True),
+    )
+    db.add(history_row)
+    db.commit()
+    db.refresh(history_row)
+
+    return IncidentHistoryRead(
+        id=history_row.id,
+        incident_id=history_row.incident_id,
+        actor_email=current.email,
+        action=history_row.action,
+        details={"comment": comment_text},
+        created_at=history_row.created_at,
+    )
+
+
 @app.get(
     "/incidents/{incident_id}/history/export",
     response_class=PlainTextResponse,
@@ -1515,6 +1770,58 @@ def report_catalog(current: CurrentUserDep):
             )
         )
     return entries
+
+
+@app.post(
+    "/api/ai/find-report",
+    response_model=AiFindReportResponse,
+    dependencies=[Depends(_api_rate_limit_dependency("ai_find_report"))],
+)
+def ai_find_report(
+    body: AiFindReportRequest,
+    current: CurrentUserDep,
+):
+    visible_reports = _reports_visible_to_role(current.role)
+    if not visible_reports:
+        raise HTTPException(status_code=403, detail=REPORT_PERMISSION_DETAIL)
+
+    llm_result = _llm_report_match(body.user_query, visible_reports)
+    if llm_result is not None:
+        return llm_result
+    return _heuristic_report_match(body.user_query, visible_reports)
+
+
+@app.post(
+    "/api/ai/summarize-incident/{incident_id}",
+    response_model=AiIncidentSummaryResponse,
+    dependencies=[Depends(_api_rate_limit_dependency("ai_summarize_incident"))],
+)
+def ai_summarize_incident(
+    incident_id: int,
+    db: DbDep,
+    _: Annotated[User, Depends(require_roles("DBA", "Analyst", "Viewer"))],
+):
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if incident is None:
+        raise HTTPException(status_code=404, detail=INCIDENT_NOT_FOUND_DETAIL)
+
+    history_rows = (
+        db.query(IncidentHistory, User.email)
+        .outerjoin(User, IncidentHistory.actor_user_id == User.id)
+        .filter(IncidentHistory.incident_id == incident_id)
+        .order_by(IncidentHistory.created_at.asc(), IncidentHistory.id.asc())
+        .all()
+    )
+
+    llm_lines = _llm_incident_summary(incident, history_rows)
+    if llm_lines is not None:
+        return AiIncidentSummaryResponse(incident_id=incident_id, source="llm", summary_lines=llm_lines)
+
+    return AiIncidentSummaryResponse(
+        incident_id=incident_id,
+        source="heuristic",
+        summary_lines=_heuristic_incident_summary(incident, history_rows),
+    )
 
 
 @app.post(
@@ -1721,3 +2028,39 @@ def report_summary(
         "resolved_incidents": resolved_count,
         "high_severity_incidents": high_severity,
     }
+
+
+@app.post("/reports/run/bundle", response_model=EssentialDependencyBundleResponse)
+def run_essential_dependency_bundle(
+    request: EssentialDependencyBundleRequest,
+    current: CurrentUserDep,
+):
+    primary_key = request.primary_report_id.strip()
+    primary_spec = REPORTS.get(primary_key)
+    if primary_spec is None:
+        raise HTTPException(status_code=404, detail=f"{UNKNOWN_REPORT_PREFIX} {primary_key}")
+    if current.role not in primary_spec["roles"]:
+        raise HTTPException(status_code=403, detail=REPORT_PERMISSION_DETAIL)
+
+    configured_links = ESSENTIAL_REPORT_BUNDLES.get(primary_key, ())
+    linked_keys = [
+        key
+        for key in configured_links
+        if key in REPORTS and key != primary_key and current.role in REPORTS[key]["roles"]
+    ]
+
+    if not linked_keys:
+        primary_prefix = primary_key.split("_", 1)[0]
+        linked_keys = [
+            key
+            for key, spec in REPORTS.items()
+            if key != primary_key and current.role in spec["roles"] and key.split("_", 1)[0] == primary_prefix
+        ][:4]
+
+    return EssentialDependencyBundleResponse(
+        primary_report=LinkedReport(report_id=primary_key, report_name=primary_spec["title"]),
+        linked_reports=[
+            LinkedReport(report_id=key, report_name=REPORTS[key]["title"])
+            for key in linked_keys
+        ],
+    )

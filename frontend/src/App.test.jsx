@@ -47,6 +47,24 @@ function createFetchMock({
   auditRuns = [],
   bulkActionStatus = 200,
   loginResponse = jsonResponse({ access_token: "token-123", token_type: "bearer" }),
+  aiFindReportStatus = 200,
+  aiFindReportResponse = {
+    report_key: "incidents_by_status",
+    title: "Incidents by status",
+    description: "Aggregated incident status counts",
+    matched_by: "heuristic",
+    confidence: 0.66,
+  },
+  aiIncidentSummaryStatus = 200,
+  aiIncidentSummaryResponse = {
+    incident_id: 1,
+    source: "heuristic",
+    summary_lines: [
+      "Incident 1 remains open and high severity.",
+      "Most recent actions include create and acknowledge.",
+      "Next handoff should confirm ownership and mitigation ETA.",
+    ],
+  },
 } = {}) {
   let incidentRow = {
     id: 1,
@@ -57,6 +75,23 @@ function createFetchMock({
     status: "open",
     created_at: "2026-05-08T10:00:00",
   };
+  let incidentHistoryEntries = [
+    {
+      id: 1,
+      incident_id: 1,
+      actor_email: meEmail,
+      action: "created",
+      details: {
+        title: "Replication lag",
+        description: "Lag exceeded threshold",
+        severity: "high",
+        owner: "ops",
+        status: "open",
+        due_at: null,
+      },
+      created_at: "2026-05-08T10:00:00",
+    },
+  ];
 
   const schedules = [
     {
@@ -191,6 +226,32 @@ function createFetchMock({
         ),
     },
     {
+      match: (path, method) => path === "/incidents/1/history" && method === "GET",
+      respond: () => jsonResponse(incidentHistoryEntries),
+    },
+    {
+      match: (path, method) => path === "/incidents/1/comments" && method === "POST",
+      respond: (reqOptions = {}) => {
+        let parsed = {};
+        try {
+          parsed = JSON.parse(String(reqOptions.body || "{}"));
+        } catch {
+          parsed = {};
+        }
+        const comment = String(parsed.comment || "").trim();
+        const entry = {
+          id: incidentHistoryEntries.length + 1,
+          incident_id: 1,
+          actor_email: meEmail,
+          action: "commented",
+          details: { comment },
+          created_at: "2026-05-08T10:05:00",
+        };
+        incidentHistoryEntries = [...incidentHistoryEntries, entry];
+        return jsonResponse(entry, 200);
+      },
+    },
+    {
       match: (path, method) => path === "/reports/run" && method === "POST",
       respond: () =>
         jsonResponse({
@@ -201,6 +262,14 @@ function createFetchMock({
           truncated: false,
           duration_ms: 7,
         }),
+    },
+    {
+      match: (path, method) => path === "/api/ai/find-report" && method === "POST",
+      respond: () => jsonResponse(aiFindReportResponse, aiFindReportStatus),
+    },
+    {
+      match: (path, method) => path.startsWith("/api/ai/summarize-incident/") && method === "POST",
+      respond: () => jsonResponse(aiIncidentSummaryResponse, aiIncidentSummaryStatus),
     },
     {
       match: (path, method) => path === "/reports/export/csv" && method === "POST",
@@ -535,6 +604,48 @@ describe("App smoke", () => {
     });
   });
 
+  it("posts a comment from the incident history drawer", async () => {
+    const fetchMock = createFetchMock({ meRole: "Viewer", meEmail: "viewer@example.com" });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderApp();
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "viewer@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "Password123!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Login" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Incidents" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Add a comment" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Write a handoff note, follow-up, or context update..."), {
+      target: { value: "Investigating with the app team now." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post comment" }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, options]) =>
+            String(url).includes("/incidents/1/comments") &&
+            (options?.method || "GET").toUpperCase() === "POST" &&
+            String(options?.body || "").includes("Investigating with the app team now."),
+        ),
+      ).toBe(true);
+      expect(screen.getByText("Investigating with the app team now.")).toBeInTheDocument();
+    });
+  });
+
   it("shows bulk selection controls for Analyst on eligible incidents", async () => {
     vi.stubGlobal("fetch", createFetchMock({ meRole: "Analyst", meEmail: "analyst@example.com" }));
 
@@ -672,6 +783,163 @@ describe("App smoke", () => {
             (options?.method || "GET").toUpperCase() === "POST",
         ),
       ).toBe(true);
+    });
+  });
+
+  it("routes a natural-language query to a suggested report", async () => {
+    const fetchMock = createFetchMock({
+      aiFindReportResponse: {
+        report_key: "incidents_by_status",
+        title: "Incidents by status",
+        description: "Aggregated incident status counts",
+        matched_by: "llm",
+        confidence: 0.92,
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderApp();
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "analyst@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "Password123!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Login" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "AI Operations Assist" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Example: Are there any high severity incidents still open right now?"), {
+      target: { value: "Show me incident counts by status" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Find report" }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, options]) =>
+            String(url).includes("/api/ai/find-report") &&
+            (options?.method || "GET").toUpperCase() === "POST" &&
+            String(options?.body || "").includes("Show me incident counts by status"),
+        ),
+      ).toBe(true);
+      expect(screen.getByText(/Suggested:/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/Incidents by status/i).length).toBeGreaterThan(0);
+    });
+  });
+
+  it("applies the AI-suggested report to the SQL reports panel", async () => {
+    vi.stubGlobal("fetch", createFetchMock());
+
+    renderApp();
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "analyst@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "Password123!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Login" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "AI Operations Assist" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Example: Are there any high severity incidents still open right now?"), {
+      target: { value: "status counts" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Find report" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Use this report" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Use this report" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("AI selected Incidents by status. Ready to run.")).toBeInTheDocument();
+    });
+  });
+
+  it("renders incident handoff summary lines from AI endpoint", async () => {
+    const fetchMock = createFetchMock({
+      aiIncidentSummaryResponse: {
+        incident_id: 1,
+        source: "heuristic",
+        summary_lines: [
+          "Incident 1 is open and high severity.",
+          "Most frequent workflow action is acknowledge.",
+          "Recent timeline confirms owner handoff completed.",
+        ],
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderApp();
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "analyst@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "Password123!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Login" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "AI Operations Assist" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Incident ID"), {
+      target: { value: "1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Summarize incident" }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, options]) =>
+            String(url).includes("/api/ai/summarize-incident/1") &&
+            (options?.method || "GET").toUpperCase() === "POST",
+        ),
+      ).toBe(true);
+      expect(screen.getByText("Incident 1 is open and high severity.")).toBeInTheDocument();
+      expect(screen.getByText("Most frequent workflow action is acknowledge.")).toBeInTheDocument();
+    });
+  });
+
+  it("shows incident summary API errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      createFetchMock({
+        aiIncidentSummaryStatus: 404,
+        aiIncidentSummaryResponse: { detail: "Incident not found" },
+      }),
+    );
+
+    renderApp();
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "analyst@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "Password123!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Login" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "AI Operations Assist" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Incident ID"), {
+      target: { value: "999" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Summarize incident" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Incident not found")).toBeInTheDocument();
     });
   });
 
