@@ -1048,6 +1048,32 @@ def admin_overview(
     return overview
 
 
+@app.get("/admin/export", response_class=PlainTextResponse, responses=ERROR_RESPONSES_DBA_ONLY)
+def admin_export(
+    db: DbDep,
+    _: DbaUserDep,
+):
+    """DBA-only: export all table data as a JSON snapshot for backup purposes."""
+    tables = [
+        "users", "incidents", "incident_history", "report_schedules",
+        "report_execution_logs", "user_admin_audit_logs", "billing_settings",
+        "onboarding_events",
+    ]
+    snapshot: dict[str, Any] = {"exported_at": datetime.now(UTC).isoformat()}
+    for table in tables:
+        try:
+            rows = db.execute(text(f"SELECT * FROM {table}")).mappings().all()  # noqa: S608
+            snapshot[table] = [dict(r) for r in rows]
+        except Exception as exc:
+            snapshot[table] = {"error": str(exc)}
+    payload = json.dumps(snapshot, indent=2, default=str)
+    return PlainTextResponse(
+        content=payload,
+        media_type="application/json",
+        headers={"Content-Disposition": f"attachment; filename=dbops-export-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.json"},
+    )
+
+
 @app.put("/admin/billing", response_model=BillingSettingsRead, responses=ERROR_RESPONSES_DBA_ONLY)
 def update_billing_settings(
     payload: BillingSettingsUpdate,
