@@ -873,10 +873,12 @@ def health(response: Response):
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
+            row = conn.execute(text("SELECT version()")).fetchone()
+            pg_version = row[0] if row else "unknown"
     except Exception:
         response.status_code = 503
         return {"status": "degraded", "database": "unreachable"}
-    return {"status": "ok", "database": "reachable"}
+    return {"status": "ok", "database": "reachable", "postgres_version": pg_version}
 
 
 @app.get("/health/scheduler")
