@@ -1,4 +1,4 @@
-/* DBOps Control Center — global styles (HTML/CSS over inline demo styles) */
+/* DBOps Control Center — product UI styles */
 
 :root {
   color-scheme: light dark;
@@ -114,6 +114,15 @@ body {
   margin-bottom: 1.75rem;
 }
 
+.page-eyebrow {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
 .page-title {
   margin: 0 0 0.35rem;
   font-size: clamp(1.65rem, 4vw, 2rem);
@@ -123,10 +132,26 @@ body {
 
 .page-lede {
   margin: 0;
-  max-width: 54ch;
+  max-width: 62ch;
   color: var(--muted);
   line-height: 1.55;
   font-size: 1rem;
+}
+
+.app-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.app-footer__sep {
+  opacity: 0.55;
 }
 
 .panel {

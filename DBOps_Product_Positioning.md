@@ -7,10 +7,6 @@
 Give your operations team safe visibility into your database — without handing
 anyone a SQL prompt.
 
-**Positioning note:** This is a **licensable, deployable product** (source + migrations + CI + runbooks), not a portfolio sample or coursework artifact. The README and commercial package describe buyer deployment on **your** infrastructure.
-
----
-
 ## The problem it solves
 
 Every growing team hits the same wall.

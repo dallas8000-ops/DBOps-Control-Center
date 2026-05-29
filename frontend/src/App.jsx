@@ -280,9 +280,10 @@ function LoginPanel({
 
       <h2 className="panel-title">Sign in</h2>
       <p className="panel-sub">
-        Demo accounts in the seeded database are <strong>barney@example.com</strong> (DBA), <strong>analyst@example.com</strong>,
-        and <strong>viewer@example.com</strong>. If the database is brand new, use the bootstrap DBA form below to create the first
-        admin account.
+        Sign in with credentials issued by your administrator. On a new database, use <strong>First-time setup</strong> below to
+        create the initial DBA. Evaluation deployments may include{" "}
+        <strong>barney@example.com</strong> (DBA), <strong>analyst@example.com</strong> (Analyst), and{" "}
+        <strong>viewer@example.com</strong> (Viewer) after running the onboarding seed — see your deployment guide.
       </p>
       {authError ? <p className="error-text">{authError}</p> : null}
       {oidcError ? <p className="error-text">{oidcError}</p> : null}
@@ -2931,9 +2932,11 @@ export default function App() {
   return (
     <main className="app-shell">
       <header className="page-header">
+        <p className="page-eyebrow">Database Operations Platform</p>
         <h1 className="page-title">DBOps Control Center</h1>
         <p className="page-lede">
-          Render-first database operations dashboard (JWT, RBAC, whitelisted SQL reports).
+          Secure operations console for PostgreSQL — incidents, audited read-only reporting, schedules, and
+          role-based access without exposing raw SQL.
         </p>
       </header>
 
@@ -3105,6 +3108,14 @@ export default function App() {
           onOidcLogin={startOidcLogin}
         />
       )}
+
+      <footer className="app-footer">
+        <span>DBOps Control Center</span>
+        <span className="app-footer__sep" aria-hidden="true">
+          ·
+        </span>
+        <span>Proprietary software · Licensed deployment</span>
+      </footer>
     </main>
   );
 }

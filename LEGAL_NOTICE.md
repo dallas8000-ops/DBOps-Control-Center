@@ -1,6 +1,6 @@
 # Legal notice — proprietary software
 
-**This repository is private.** The software, documentation, configuration, commercial materials, and all other contents (collectively, the “**Materials**”) are **proprietary and confidential** unless and until the copyright owner publishes them under a different license in writing.
+**DBOps Control Center** is proprietary commercial software. Private source access, documentation, configuration, commercial materials, and all other contents (collectively, the “**Materials**”) are **proprietary and confidential** unless and until the copyright owner publishes them under a different license in writing.
 
 ## Unauthorized use is prohibited
 

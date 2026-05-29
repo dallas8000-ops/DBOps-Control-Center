@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/dallas8000-ops/DBOps-Control-Center/actions/workflows/ci.yml/badge.svg)](https://github.com/dallas8000-ops/DBOps-Control-Center/actions/workflows/ci.yml)
 
-**Private / proprietary.** This project is maintained in a **private** repository. **Sale, redistribution, download for others, or disclosure of this codebase or related materials without the copyright owner’s express written consent is prohibited.** See [`LEGAL_NOTICE.md`](./LEGAL_NOTICE.md) for the full notice.
+**Private / proprietary software product.** Source and documentation are maintained in a **private** repository. **Sale, redistribution, download for others, or disclosure of this codebase or related materials without the copyright owner’s express written consent is prohibited.** See [`LEGAL_NOTICE.md`](./LEGAL_NOTICE.md) for the full notice.
 
 **DBOps Control Center** is a **buyer-deployable, licensable operations platform** for teams that need safe database visibility without handing out SQL credentials. Commercial terms: [`DBOps_LICENSE.md`](./DBOps_LICENSE.md). Buyer positioning and pitch: [`DBOps_Product_Positioning.md`](./DBOps_Product_Positioning.md).
 
@@ -146,7 +146,7 @@ What it does:
 - stops existing listeners on API/web ports
 - loads env vars from root `.env`
 - forces local SQLite for backend runtime
-- seeds demo data
+- loads optional onboarding sample data (when configured)
 - starts backend (`uvicorn --reload`), frontend (`vite`), and Stripe listener (if configured)
 
 Useful modes:
