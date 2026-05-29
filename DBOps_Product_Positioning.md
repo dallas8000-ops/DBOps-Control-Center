@@ -69,7 +69,7 @@ No cron job to maintain. No manual query to remember.
 
 - Complete FastAPI backend with 30+ production-ready API routes
 - React + Vite frontend dashboard
-- PostgreSQL schema with Alembic migrations (9 migration versions)
+- PostgreSQL schema with Alembic migrations (10 migration versions through `010_refresh_tokens`)
 - JWT authentication with bcrypt password hashing
 - Three-tier RBAC (DBA / Analyst / Viewer) enforced at every endpoint
 - Whitelisted SQL reporting engine with parameterized queries and CSV export
@@ -90,10 +90,13 @@ No cron job to maintain. No manual query to remember.
 
 ## What it is not
 
-DBOps Control Center is an internal operations tool, not a compliance
-certification product. It does not include SSO/OIDC integration out of the box
-(available as a Tier 3 engagement), penetration testing, or custom compliance
-certification work. Buyer deploys and operates on their own infrastructure.
+DBOps Control Center is a **licensable operations product**, not a compliance
+certification or penetration-tested offering. OIDC SSO is included in source
+(env-configured); buyer hardens identity and production operations. It does not
+include SOC 2 certification work or custom compliance projects unless contracted
+separately. Buyer deploys and operates on their own infrastructure.
+
+**Remaining ~5% (specific):** See `docs/commercial-assets/REMAINING_5_PERCENT.md`.
 
 ---
 

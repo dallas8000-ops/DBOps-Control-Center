@@ -14,6 +14,14 @@ and all associated materials as delivered (the "Software").
 
 ---
 
+## Sale model (how this license is sold)
+
+**Default — non-exclusive:** Licensor may license the Software to **multiple buyers**. Each buyer receives the rights below for their variant only. Buyers may not redistribute source. See `docs/commercial-assets/LICENSE_SALE_MODEL.md` for listing guidance.
+
+**Exclusive — by written addendum only:** A single buyer may purchase an **exclusive** license. That requires a signed **Exclusive License Addendum** stating that Licensor will not license the same Software version to other parties for the agreed term (and optionally assigning copyright). Exclusive deals are **not** created by default checkout or Variant 1/2 alone.
+
+---
+
 ## License Variants
 
 ### Variant 1 — Internal Use License

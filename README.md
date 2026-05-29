@@ -333,6 +333,13 @@ Operational notes:
 
 ## Commercial assets package
 
+**Before listing for sale:** [`docs/commercial-assets/LISTING_PREP_CHECKLIST.md`](./docs/commercial-assets/LISTING_PREP_CHECKLIST.md) (demo video, live URL, pitch, 5% gaps, license model).
+
+- **One-page pitch:** [`docs/commercial-assets/ONE_PAGE_PITCH.md`](./docs/commercial-assets/ONE_PAGE_PITCH.md)
+- **Remaining ~5% (named gaps):** [`docs/commercial-assets/REMAINING_5_PERCENT.md`](./docs/commercial-assets/REMAINING_5_PERCENT.md)
+- **Demo video script (5–8 min):** [`docs/commercial-assets/DEMO_VIDEO_5-8MIN.md`](./docs/commercial-assets/DEMO_VIDEO_5-8MIN.md)
+- **Live demo on Render:** [`docs/commercial-assets/LIVE_DEMO_RENDER_CHECKLIST.md`](./docs/commercial-assets/LIVE_DEMO_RENDER_CHECKLIST.md)
+- **Exclusive vs non-exclusive license:** [`docs/commercial-assets/LICENSE_SALE_MODEL.md`](./docs/commercial-assets/LICENSE_SALE_MODEL.md)
 - **Proprietary notice / redistribution:** [`LEGAL_NOTICE.md`](./LEGAL_NOTICE.md)
 - Pricing sheet: `docs/commercial-assets/pricing-sheet.md`
 - Source license + product outline (template): `docs/commercial-assets/source-license-product-outline.md`
