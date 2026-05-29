@@ -64,7 +64,15 @@ Render shell or one-off job on **dbops-api**:
 python -m app seed-demo
 ```
 
-Default users: `barney@example.com` (DBA), `analyst@example.com`, `viewer@example.com` — set passwords via bootstrap or your seed docs.
+Default users after `python -m app seed-demo` (default `SEED_PASSWORD_SALT=dbops-local-seed`):
+
+| Role | Email | Password |
+|------|-------|----------|
+| DBA | `barney@example.com` | `dba-b91b26064ea0a8!` |
+| Analyst | `analyst@example.com` | `analyst-6550bc46675e96!` |
+| Viewer | `viewer@example.com` | `viewer-77e8e75cf1c20e!` |
+
+Override via `SEED_DBA_PASSWORD`, `SEED_ANALYST_PASSWORD`, `SEED_VIEWER_PASSWORD` on Render if needed.
 
 ### 5. Smoke-test the public demo
 

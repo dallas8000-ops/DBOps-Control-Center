@@ -4,7 +4,10 @@
 
 **https://dbops-web.onrender.com**
 
-**DBA login:** `barney@example.com`
+**DBA login:** `barney@example.com`  
+**Password:** `dba-b91b26064ea0a8!` *(default `seed-demo` password; derived from `SEED_PASSWORD_SALT`)*
+
+**Other evaluation roles:** `analyst@example.com` / `analyst-6550bc46675e96!` · `viewer@example.com` / `viewer-77e8e75cf1c20e!`
 
 API health: https://dbops-api.onrender.com/health
 
@@ -241,11 +244,11 @@ What gets seeded on each run:
 
 Seeded incidents have **no** `incident_history` rows (history is recorded for activity after migration `008_incident_history` is applied).
 
-Seeded default user emails:
+Seeded default user emails (passwords from `seed_demo` with default `SEED_PASSWORD_SALT=dbops-local-seed`):
 
-- `barney@example.com` (DBA)
-- `analyst@example.com` (Analyst)
-- `viewer@example.com` (Viewer)
+- `barney@example.com` (DBA) — `dba-b91b26064ea0a8!`
+- `analyst@example.com` (Analyst) — `analyst-6550bc46675e96!`
+- `viewer@example.com` (Viewer) — `viewer-77e8e75cf1c20e!`
 
 The seeder is idempotent, so rerunning it updates the same demo records instead of creating duplicates.
 

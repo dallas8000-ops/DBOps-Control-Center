@@ -2,7 +2,7 @@
 
 **Purpose:** Listing/sales video. Buyers of source code should **see it work** before reading docs. Record at **1920×1080**, browser zoom 100%, dark or system theme — match your live demo.
 
-**Suggested accounts (after onboarding seed):** `barney@example.com` (DBA), `analyst@example.com` (Analyst), `viewer@example.com` (Viewer). Password: your demo secret (never use production data).
+**Evaluation accounts (after `seed-demo`, default salt):** `barney@example.com` / `dba-b91b26064ea0a8!` (DBA), `analyst@example.com` / `analyst-6550bc46675e96!`, `viewer@example.com` / `viewer-77e8e75cf1c20e!`
 
 ---
 
