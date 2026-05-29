@@ -57,9 +57,15 @@ Not a compliance certification product, not penetration-tested as part of sale, 
 
 ## Before you buy — see it work
 
-1. **Live demo URL** — [LIVE_DEMO_RENDER_CHECKLIST.md](./LIVE_DEMO_RENDER_CHECKLIST.md)  
-2. **Demo video (5–8 min)** — [DEMO_VIDEO_5-8MIN.md](./DEMO_VIDEO_5-8MIN.md)  
-3. **Full positioning** — [`DBOps_Product_Positioning.md`](../../DBOps_Product_Positioning.md)  
+| Asset | URL |
+|--------|-----|
+| **Live demo (Render)** | https://dbops-web.onrender.com |
+| **API / health** | https://dbops-api.onrender.com/health |
+| **Demo video (5–8 min)** | Record using [DEMO_VIDEO_5-8MIN.md](./DEMO_VIDEO_5-8MIN.md) against the live URL |
+| **Deploy / refresh** | [LIVE_DEMO_RENDER_CHECKLIST.md](./LIVE_DEMO_RENDER_CHECKLIST.md) |
+| **Full positioning** | [`DBOps_Product_Positioning.md`](../../DBOps_Product_Positioning.md) |
+
+Production stack is already deployed (`dbops-db`, `dbops-api`, `dbops-web` per `render.yaml`). Redeploy **dbops-web** after frontend changes so buyers see the latest commercial UI copy.
 
 ---
 

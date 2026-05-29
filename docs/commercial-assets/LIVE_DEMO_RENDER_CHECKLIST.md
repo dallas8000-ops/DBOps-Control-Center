@@ -1,18 +1,26 @@
-# Live demo URL — Render deployment checklist
+# Live demo URL — Render (production)
 
-A **clickable HTTPS demo** converts skeptics into buyers. This repo ships `render.yaml` for a Postgres + API + static frontend stack.
+**Status: deployed and reachable** (verified May 2026).
+
+| Service | URL |
+|---------|-----|
+| **Web (buyers click this)** | https://dbops-web.onrender.com |
+| **API** | https://dbops-api.onrender.com |
+| **Health** | https://dbops-api.onrender.com/health → `status: ok`, PostgreSQL reachable |
+| **Stripe webhook** | https://dbops-api.onrender.com/billing/webhook |
+
+Use this URL in marketplace listings today. Optional: custom domain (e.g. `demo.yourdomain.com` → `dbops-web`).
 
 ---
 
-## Target outcome
+## Refresh deploy (after code changes)
 
-| Service | Typical URL |
-|---------|-------------|
-| **Web (buyers click this)** | `https://dbops-web.onrender.com` |
-| **API** | `https://dbops-api.onrender.com` |
-| **Health** | `https://dbops-api.onrender.com/health` |
+When you push UI or API updates to `main`, redeploy on Render so the live demo matches the repo:
 
-Use custom subdomain if you brand the listing (e.g. `demo.yourdomain.com` → web service).
+1. Render Dashboard → **dbops-web** → **Manual Deploy** (required after any `VITE_*` change — rebuild bakes API URL into the bundle).
+2. **dbops-api** → redeploy if backend changed; migrations run on startup.
+
+A **clickable HTTPS demo** converts skeptics into buyers. This repo ships `render.yaml` for the Postgres + API + static frontend stack already running above.
 
 ---
 

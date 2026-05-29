@@ -8,6 +8,8 @@
 
 Give operations and engineering leads controlled access to PostgreSQL: incidents with audit history, whitelisted read-only reports, scheduled delivery, DBA user administration, optional OIDC SSO, and Stripe-backed plan limits — with JWT + RBAC enforced on every API route.
 
+**Live demo (Render):** https://dbops-web.onrender.com · **API health:** https://dbops-api.onrender.com/health
+
 ## Overview
 
 `DBOps Control Center` is a **production-oriented full-stack product** (FastAPI, React, PostgreSQL), not a tutorial or sample repo. Buyers receive deployable source, migrations, CI, and operational docs intended for **their** infrastructure (Docker Compose locally; Render or equivalent in production via `render.yaml`).
