@@ -187,9 +187,9 @@ Definition of done:
 
 ## Execution Checklist (Owner View)
 
-- [ ] Week 1 complete and green in CI.
-- [ ] Week 2 security and audit trail complete.
-- [ ] Week 3 reporting value upgrades complete.
+- [x] Week 1 complete and green in CI.
+- [x] Week 2 security and audit trail complete.
+- [x] Week 3 reporting value upgrades complete.
 - [x] Week 4 scheduling MVP complete.
 - [x] Commercial assets package complete and reviewed.
 

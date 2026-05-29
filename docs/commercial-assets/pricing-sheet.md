@@ -32,10 +32,10 @@
 - Team size: 20+ users
 - Included:
   - Everything in Growth
-  - SSO/OIDC integration spike and implementation
-  - Advanced report package (up to 10 reports)
-  - Runbook and operational readiness package
-  - Stakeholder enablement workshop
+  - SSO/OIDC integration (Google PKCE, auto-provisioning, role mapping)
+  - Advanced report package (10 whitelisted reports with parameters)
+  - Comprehensive operational readiness package (deployment, monitoring, disaster recovery, security hardening)
+  - Stakeholder enablement workshop (2-hour training with hands-on exercises)
 - Exclusions:
   - Custom legal/compliance certification projects
   - Data warehouse migration work

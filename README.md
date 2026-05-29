@@ -181,6 +181,7 @@ Environment variables (Compose/root `.env`):
 - `OPENAI_API_KEY` — optional; enables AI report routing and incident summarization
 - `AI_REPORT_ROUTER_MODEL` — optional; model name for natural-language report selection (default: `gpt-4o-mini`)
 - `AI_INCIDENT_SUMMARY_MODEL` — optional; model name for incident handoff summaries (default: `gpt-4o-mini`)
+- `TRELLO_API_KEY`, `TRELLO_TOKEN`, `TRELLO_BOARD_ID` — optional; enables Trello board sync via `python scripts/trello_sync.py`
 
 > Note: backend image normalizes `entrypoint.sh` line endings during build for Windows compatibility.
 
