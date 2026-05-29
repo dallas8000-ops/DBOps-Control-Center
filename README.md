@@ -34,17 +34,18 @@ Overall project completion is approximately **95%** toward a production-ready in
   - User lifecycle controls (create, reset password, enable/disable, delete)
   - User admin audit log (`GET /auth/users/audit`)
   - Incident create, filtered/list/sort, optional **`due_at`** and **`overdue=true`** filter (open + past due), Analyst/DBA edit, DBA resolve
-  - **Audit history** (`GET /incidents/{id}/history`, CSV export, in-app History + **History CSV**)
+  - **Audit history** (`GET /incidents/{id}/history`, CSV export, in-app History + **History CSV**); **comments** on incidents (`POST /incidents/{id}/comments`, shown in history drawer)
+  - **Bulk incident actions** (`PATCH /incidents/actions/bulk`) — acknowledge, assign, escalate, resolve (Analyst/DBA; DBA for resolve)
   - Whitelisted report execution, CSV export, and execution audit trail; optional **report log retention** purge (`REPORT_EXECUTION_LOG_RETENTION_DAYS`)
   - DBA-managed scheduled reports (daily/weekly UTC) with **`none` / `email` (SMTP when configured)** / `webhook` delivery
   - **PostgreSQL advisory lock** so only one API replica runs the due-schedule sweep per tick (no paid coordinator)
   - **Stripe billing** — checkout session creation, webhook lifecycle (`checkout.session.completed`, `customer.subscription.*`), billing settings persistence, `GET /health/billing`
   - Idempotent demo seed (`python -m app` / `seed-demo`) and **`python -m app reset-demo --yes`** (clears operational data; keeps users/billing)
-  - Backend pytest suite + frontend smoke tests + CI gates
+  - Backend pytest suite (**69 tests**) + frontend Vitest smoke suite (**21 tests**) + CI gates (all passing on `main`)
   - Local Docker Compose workflow and Render deployment path
 - **Partially complete**
   - Operational observability (access log + request ID; no full metrics/tracing stack yet)
-  - Incident workflow (due dates shipped; **no** comments thread, attachments, or formal escalation states yet)
+  - Incident workflow (due dates + comments shipped; **no** attachments or formal escalation states yet)
   - Scheduler production hardening beyond Postgres locking (e.g. external worker / Redis lease) if you outgrow the current pattern
 - **Not complete yet**
   - Broad automated coverage (failure paths, billing edge cases if used in production)
@@ -72,7 +73,8 @@ Overall project completion is approximately **95%** toward a production-ready in
   - Create, list with filters (status, severity, owner, search, date range, **`overdue`** for open items past **`due_at`**) and sort (`newest` / `oldest` / `severity`)
   - Optional **target due** (`due_at`) on create/edit; Analyst/DBA updates logged with before/after field diffs
   - DBA resolve workflow; resolve events logged (idempotent if already resolved)
-  - **History**: chronological `created` / `updated` / `resolved`; JSON in API; **CSV export**; dashboard **History** + **History CSV**
+  - **History**: chronological `created` / `updated` / `resolved` / `commented`; JSON in API; **CSV export**; dashboard **History** + **History CSV**; **add comment** from history drawer
+  - **Bulk actions** (Analyst/DBA): multi-select acknowledge, assign, escalate; DBA bulk resolve with optimistic UI + rollback on failure
   - Operational summary cards (total/open/resolved/high severity)
 
 - **Safe reporting and audit trail**
@@ -102,10 +104,12 @@ Overall project completion is approximately **95%** toward a production-ready in
 |------------|--------|---------|-----|
 | `GET /incidents` (filters/sort), `GET /reports/summary` | Yes | Yes | Yes |
 | `GET /incidents/{id}/history` (audit trail), `GET /incidents/{id}/history/export` (CSV) | Yes | Yes | Yes |
+| `POST /incidents/{id}/comments` | Yes | Yes | Yes |
 | `GET /reports/catalog`, `POST /reports/run`, `POST /reports/export/csv` | Yes (filtered catalog) | Yes | Yes |
 | `POST /incidents` | No | Yes | Yes |
 | `PATCH /incidents/{id}` (edit fields) | No | Yes | Yes |
-| `PATCH /incidents/{id}/resolve` | No | No | Yes |
+| `PATCH /incidents/actions/bulk` (acknowledge, assign, escalate) | No | Yes | Yes |
+| `PATCH /incidents/{id}/resolve`, bulk `resolve` | No | No | Yes |
 | User management (`/auth/users*`, `/auth/users/audit`) | No | No | Yes |
 | Report schedules (`POST/GET /reports/schedules`, status patch) | No | No | Yes |
 | `GET /reports/runs` (audit trail) | No | No | Yes |
@@ -263,11 +267,13 @@ docker compose exec backend python -m app
 
 - **Incidents**
   - `GET /incidents` (supports `status`, `severity`, `owner`, `search`, `start_date`, `end_date`, `sort`, **`overdue`**)
-  - `GET /incidents/{id}/history` (chronological audit: create, field updates, resolve)
+  - `GET /incidents/{id}/history` (chronological audit: create, field updates, resolve, comments)
   - `GET /incidents/{id}/history/export` (CSV download)
+  - `POST /incidents/{id}/comments` (handoff notes; recorded in history)
   - `POST /incidents` (optional `due_at`; rate-limited per IP)
   - `PATCH /incidents/{id}` (optional `due_at` updates)
   - `PATCH /incidents/{id}/resolve`
+  - `PATCH /incidents/actions/bulk` (`acknowledge`, `assign`, `escalate`, `resolve`)
 
 - **Reports**
   - `GET /reports/summary`
@@ -331,25 +337,43 @@ Operational notes:
 
 ## Testing and validation status
 
+**Last verified:** May 2026 on `main` (commit `95f1f1d` and later). The [CI badge](#dbops-control-center) above reflects the latest GitHub Actions run.
+
 ### Latest verified checks
 
 | Area | Test / Validation | Status |
 |------|-------------------|--------|
+| **GitHub Actions CI** | `.github/workflows/ci.yml` — `backend`, `frontend`, `migration_sanity` | ✅ Passing |
+| Backend lint | `ruff check backend/app backend/tests --select E9,F63,F7,F8,E4,E7,W` | ✅ Passing |
+| Backend integration tests | `pytest -q` — **69 tests** (auth/RBAC, incidents, history, comments, bulk, CSV, rate limits, schedules, billing, AI assist, etc.) | ✅ Passing |
+| Frontend lint | `npm run lint` | ✅ Passing |
+| Frontend smoke tests | `npm run test:run` — **21 tests** (see [Frontend smoke coverage](#frontend-smoke-coverage) below) | ✅ Passing |
 | Frontend build | `npm run build` | ✅ Passing |
-| Frontend smoke tests | `npm run test:run` | ✅ Passing (4 smoke tests) |
-| Frontend lint health | IDE lint diagnostics on edited files | ✅ Passing |
+| Backend migration chain | Alembic upgrades through head (through `010_refresh_tokens`) | ✅ Passing (CI `migration_sanity` on PostgreSQL) |
 | Docker local stack | `docker compose up --build` | ✅ Passing |
-| Backend migration chain | Alembic upgrades through head (includes `009_incident_due_at`) | ✅ Passing |
-| Backend integration tests | `pytest -q` (auth/RBAC, incidents, history, CSV, rate limits, schedules, billing paths, etc.) | ✅ Passing |
-| API health | `GET /health` | ✅ Passing |
+| API health | `GET /health` (PostgreSQL or SQLite) | ✅ Passing |
 | Auth smoke tests | Bootstrap/login/create-user/manual role checks | ✅ Passing |
 | DBA admin actions | Reset password, enable/disable, delete user (manual) | ✅ Passing |
 
+### Frontend smoke coverage
+
+Vitest suite: `frontend/src/App.test.jsx` (`npm run test:run`). All **21** tests passing:
+
+- Login panel, sign-in, token restore, disabled account, rate limit, bootstrap message, expired session
+- Create incident (accordion-expanded UI)
+- Incident history comment
+- Bulk selection (Analyst vs Viewer), bulk acknowledge, bulk resolve rollback
+- Run report, export CSV
+- AI find report, apply suggested report, incident summarize, AI error handling
+- DBA schedules, billing/checkout, report audit trail limits, scheduler health
+
+Tests expand collapsed dashboard accordions before assertions (matches production UI).
+
 ### Test gaps (planned)
 
-- ⚠️ Backend suite covers core paths including incident history; expand coverage for schedules, CSV export edge cases, and billing/admin routes if used in production
-- ⚠️ Frontend smoke tests are starter-level; add deeper integration or Playwright/Cypress flows when UI stabilizes
-- ⚠️ Optional CI hardening: migration drift checks, coverage thresholds, dependency audit gates
+- ⚠️ Expand backend coverage for billing webhooks, SMTP failure paths, and rare schedule edge cases if used in production
+- ⚠️ Add Playwright/Cypress end-to-end flows for full browser regression (Vitest smoke suite covers critical journeys headlessly)
+- ⚠️ Optional CI hardening: coverage thresholds, dependency audit gates
 
 ### Local quality checks
 
@@ -373,11 +397,11 @@ npm run build
 
 GitHub Actions workflow: `.github/workflows/ci.yml`
 
-The CI pipeline runs on push and pull requests to `main`/`master` with three required jobs:
+The CI pipeline runs on push and pull requests to `main`/`master` with three required jobs (all must pass):
 
-- `backend`: installs backend deps, runs `ruff` (syntax + unused imports + style), then `pytest -q`
-- `frontend`: runs `npm ci`, `npm run lint`, `npm run test:run`, and `npm run build`
-- `migration_sanity`: starts PostgreSQL and runs `alembic upgrade head` with CI `DATABASE_URL`
+- `backend`: installs backend deps, runs `ruff check backend/app backend/tests --select E9,F63,F7,F8,E4,E7,W`, then `pytest -q` (**69 tests**)
+- `frontend`: runs `npm ci`, `npm run lint`, `npm run test:run` (**21 smoke tests**), and `npm run build`
+- `migration_sanity`: starts PostgreSQL and runs `alembic upgrade head` with CI `DATABASE_URL` (through `010_refresh_tokens`)
 
 Recommended branch protection for production safety:
 
@@ -406,7 +430,7 @@ Target window: **~2 weeks** (items below are **not** duplicates of what is alrea
 
 1. **Workflow and product depth**
    - Formal escalation states or SLA policies beyond optional `due_at` / overdue filter
-   - Richer incident timeline (comments, attachments)
+   - Incident attachments and richer timeline beyond comments
    - Optional “wipe demo data” is available via `reset-demo`; consider a **DBA-only HTTP** helper behind env if you want it in the UI
 
 2. **Reporting and scheduler production readiness**
