@@ -889,16 +889,21 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
 
 @app.get("/health")
 def health(response: Response):
-    """Liveness plus PostgreSQL connectivity (SELECT 1). Returns 503 if DB unreachable."""
+    """Liveness plus database connectivity (SELECT 1). Returns 503 if DB unreachable."""
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-            row = conn.execute(text("SELECT version()")).fetchone()
-            pg_version = row[0] if row else "unknown"
+            # Try to get version if PostgreSQL, otherwise use generic info
+            try:
+                row = conn.execute(text("SELECT version()")).fetchone()
+                db_version = row[0] if row else "unknown"
+                return {"status": "ok", "database": "reachable", "postgres_version": db_version}
+            except Exception:
+                # SQLite or other database - use generic version
+                return {"status": "ok", "database": "reachable", "database_type": "sqlite"}
     except Exception:
         response.status_code = 503
         return {"status": "degraded", "database": "unreachable"}
-    return {"status": "ok", "database": "reachable", "postgres_version": pg_version}
 
 
 @app.get("/health/scheduler")

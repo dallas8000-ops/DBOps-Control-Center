@@ -64,7 +64,7 @@ function Get-StripeExePath {
     return ""
 }
 
-function Start-DetachedPowerShell {
+function Start-BackgroundProcess {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Title,
@@ -72,8 +72,9 @@ function Start-DetachedPowerShell {
         [string]$CommandText
     )
 
-    $wrapped = "$host.UI.RawUI.WindowTitle = '$Title';`n$CommandText"
-    Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", $wrapped | Out-Null
+    $scriptFile = Join-Path $env:TEMP "$Title.ps1"
+    $CommandText | Out-File -FilePath $scriptFile -Encoding UTF8
+    Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", $scriptFile -WindowStyle Hidden
 }
 
 function Stop-ListenerOnPort {
@@ -135,6 +136,7 @@ if ($Mode -eq "stop") {
     Stop-ListenerOnPort -Port $ApiPort
     Stop-ListenerOnPort -Port $WebPort
     Stop-StripeForwarder -Port $ApiPort
+    Get-Job | Stop-Job | Remove-Job
     Write-Host "Local dev stack stopped."
     exit 0
 }
@@ -204,11 +206,13 @@ if ($stripeApiKey -and $stripeExe) {
 
 $apiCommand = @"
 Set-Location '$backendDir'
+`$env:DATABASE_URL = 'sqlite:///$dbUrlPath'
 Get-Content '$rootEnv' | Where-Object { `$_ -match '^[A-Za-z_][A-Za-z0-9_]*=' } | ForEach-Object {
     `$name, `$value = `$_ -split '=', 2
-    Set-Item -Path ('Env:' + `$name.Trim()) -Value `$value
+    if (`$name.Trim() -ne 'DATABASE_URL') {
+        Set-Item -Path ('Env:' + `$name.Trim()) -Value `$value
+    }
 }
-`$env:DATABASE_URL = 'sqlite:///$dbUrlPath'
 "@
 
 if ($webhookSecret) {
@@ -225,8 +229,8 @@ Set-Location '$frontendDir'
 npm run dev -- --host $WebHost --port $WebPort
 "@
 
-Start-DetachedPowerShell -Title "DBOps API ($ApiPort)" -CommandText $apiCommand
-Start-DetachedPowerShell -Title "DBOps Web ($WebPort)" -CommandText $frontendCommand
+Start-BackgroundProcess -Title "DBOps API ($ApiPort)" -CommandText $apiCommand
+Start-BackgroundProcess -Title "DBOps Web ($WebPort)" -CommandText $frontendCommand
 
 if ($stripeApiKey -and $stripeExe) {
     $listenerCommand = @"
@@ -234,8 +238,8 @@ if ($stripeApiKey -and $stripeExe) {
 `$apiKey = '$stripeApiKey'
 & `$stripeExe listen --api-key `$apiKey --forward-to http://localhost:$ApiPort/billing/webhook
 "@
-    Start-DetachedPowerShell -Title "Stripe Listener -> $ApiPort" -CommandText $listenerCommand
-    Write-Host "Started Stripe listener window."
+    Start-BackgroundProcess -Title "Stripe Listener -> $ApiPort" -CommandText $listenerCommand
+    Write-Host "Started Stripe listener in background."
 }
 else {
     Write-Host "Stripe listener not started (missing stripe CLI or STRIPE_SECRET_KEY)."

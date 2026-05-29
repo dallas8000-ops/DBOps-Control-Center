@@ -40,6 +40,29 @@ function installLocalStorageMock() {
   });
 }
 
+async function login(email, password = "Password123!") {
+  fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: email } });
+  fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: password } });
+  fireEvent.click(screen.getByRole("button", { name: "Login" }));
+  await waitFor(() => {
+    expect(screen.getByText(/Signed in as/i)).toBeInTheDocument();
+  });
+}
+
+function expandAccordion(sectionTitle) {
+  const toggle = screen.getByRole("button", { name: sectionTitle });
+  if (toggle.getAttribute("aria-expanded") === "false") {
+    fireEvent.click(toggle);
+  }
+}
+
+async function expandAccordionAndWaitForHeading(sectionTitle, headingName) {
+  expandAccordion(sectionTitle);
+  await waitFor(() => {
+    expect(screen.getByRole("heading", { name: headingName })).toBeInTheDocument();
+  });
+}
+
 function createFetchMock({
   meRole = "Analyst",
   meEmail = "analyst@example.com",
@@ -130,6 +153,10 @@ function createFetchMock({
         last_iteration_error: null,
         consecutive_failures: 0,
       },
+    }),
+    "GET /health/smtp": jsonResponse({
+      status: "ok",
+      smtp: { smtp_host: null, smtp_port: null, smtp_user: null, smtp_from: null },
     }),
     "GET /admin/overview": jsonResponse({
       metrics: {
@@ -569,17 +596,10 @@ describe("App smoke", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderApp();
-
-    fireEvent.change(screen.getByPlaceholderText("Email"), {
-      target: { value: "analyst@example.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Password"), {
-      target: { value: "Password123!" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Login" }));
-
+    await login("analyst@example.com");
+    expandAccordion("Create Incident");
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Create Incident" })).toBeInTheDocument();
+      expect(screen.getByPlaceholderText("Title")).toBeInTheDocument();
     });
 
     fireEvent.change(screen.getByPlaceholderText("Title"), {
@@ -609,18 +629,8 @@ describe("App smoke", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderApp();
-
-    fireEvent.change(screen.getByPlaceholderText("Email"), {
-      target: { value: "viewer@example.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Password"), {
-      target: { value: "Password123!" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Login" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Incidents" })).toBeInTheDocument();
-    });
+    await login("viewer@example.com");
+    await expandAccordionAndWaitForHeading("Incidents", "Incidents");
 
     fireEvent.click(screen.getByRole("button", { name: "History" }));
 
@@ -650,18 +660,8 @@ describe("App smoke", () => {
     vi.stubGlobal("fetch", createFetchMock({ meRole: "Analyst", meEmail: "analyst@example.com" }));
 
     renderApp();
-
-    fireEvent.change(screen.getByPlaceholderText("Email"), {
-      target: { value: "analyst@example.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Password"), {
-      target: { value: "Password123!" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Login" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Incidents" })).toBeInTheDocument();
-    });
+    await login("analyst@example.com");
+    await expandAccordionAndWaitForHeading("Incidents", "Incidents");
 
     expect(screen.getByLabelText("Select all eligible incidents")).toBeInTheDocument();
     expect(screen.getByLabelText("Select incident 1")).toBeInTheDocument();
@@ -671,18 +671,8 @@ describe("App smoke", () => {
     vi.stubGlobal("fetch", createFetchMock({ meRole: "Viewer", meEmail: "viewer@example.com" }));
 
     renderApp();
-
-    fireEvent.change(screen.getByPlaceholderText("Email"), {
-      target: { value: "viewer@example.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Password"), {
-      target: { value: "Password123!" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Login" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Incidents" })).toBeInTheDocument();
-    });
+    await login("viewer@example.com");
+    await expandAccordionAndWaitForHeading("Incidents", "Incidents");
 
     expect(screen.queryByLabelText("Select all eligible incidents")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Select incident 1")).not.toBeInTheDocument();
@@ -693,18 +683,8 @@ describe("App smoke", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderApp();
-
-    fireEvent.change(screen.getByPlaceholderText("Email"), {
-      target: { value: "analyst@example.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Password"), {
-      target: { value: "Password123!" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Login" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Incidents" })).toBeInTheDocument();
-    });
+    await login("analyst@example.com");
+    await expandAccordionAndWaitForHeading("Incidents", "Incidents");
 
     fireEvent.click(screen.getByLabelText("Select incident 1"));
     fireEvent.click(screen.getByRole("button", { name: "Acknowledge selected" }));
@@ -732,18 +712,8 @@ describe("App smoke", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderApp();
-
-    fireEvent.change(screen.getByPlaceholderText("Email"), {
-      target: { value: "dba@example.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Password"), {
-      target: { value: "Password123!" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Login" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Incidents" })).toBeInTheDocument();
-    });
+    await login("dba@example.com");
+    await expandAccordionAndWaitForHeading("Incidents", "Incidents");
 
     fireEvent.click(screen.getByLabelText("Select incident 1"));
     fireEvent.click(screen.getByRole("button", { name: "Resolve selected" }));
@@ -760,18 +730,8 @@ describe("App smoke", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderApp();
-
-    fireEvent.change(screen.getByPlaceholderText("Email"), {
-      target: { value: "analyst@example.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Password"), {
-      target: { value: "Password123!" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Login" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "SQL reports (read-only)" })).toBeInTheDocument();
-    });
+    await login("analyst@example.com");
+    await expandAccordionAndWaitForHeading("SQL Reports", "SQL reports (read-only)");
 
     fireEvent.click(screen.getByRole("button", { name: "Run report" }));
 
@@ -799,18 +759,8 @@ describe("App smoke", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderApp();
-
-    fireEvent.change(screen.getByPlaceholderText("Email"), {
-      target: { value: "analyst@example.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Password"), {
-      target: { value: "Password123!" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Login" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "AI Operations Assist" })).toBeInTheDocument();
-    });
+    await login("analyst@example.com");
+    await expandAccordionAndWaitForHeading("AI Operations Assist", "AI Operations Assist");
 
     fireEvent.change(screen.getByPlaceholderText("Example: Are there any high severity incidents still open right now?"), {
       target: { value: "Show me incident counts by status" },
@@ -835,18 +785,8 @@ describe("App smoke", () => {
     vi.stubGlobal("fetch", createFetchMock());
 
     renderApp();
-
-    fireEvent.change(screen.getByPlaceholderText("Email"), {
-      target: { value: "analyst@example.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Password"), {
-      target: { value: "Password123!" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Login" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "AI Operations Assist" })).toBeInTheDocument();
-    });
+    await login("analyst@example.com");
+    await expandAccordionAndWaitForHeading("AI Operations Assist", "AI Operations Assist");
 
     fireEvent.change(screen.getByPlaceholderText("Example: Are there any high severity incidents still open right now?"), {
       target: { value: "status counts" },
@@ -858,6 +798,7 @@ describe("App smoke", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Use this report" }));
+    await expandAccordionAndWaitForHeading("SQL Reports", "SQL reports (read-only)");
 
     await waitFor(() => {
       expect(screen.getByText("AI selected Incidents by status. Ready to run.")).toBeInTheDocument();
@@ -879,18 +820,8 @@ describe("App smoke", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderApp();
-
-    fireEvent.change(screen.getByPlaceholderText("Email"), {
-      target: { value: "analyst@example.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Password"), {
-      target: { value: "Password123!" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Login" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "AI Operations Assist" })).toBeInTheDocument();
-    });
+    await login("analyst@example.com");
+    await expandAccordionAndWaitForHeading("AI Operations Assist", "AI Operations Assist");
 
     fireEvent.change(screen.getByPlaceholderText("Incident ID"), {
       target: { value: "1" },
@@ -920,18 +851,8 @@ describe("App smoke", () => {
     );
 
     renderApp();
-
-    fireEvent.change(screen.getByPlaceholderText("Email"), {
-      target: { value: "analyst@example.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Password"), {
-      target: { value: "Password123!" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Login" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "AI Operations Assist" })).toBeInTheDocument();
-    });
+    await login("analyst@example.com");
+    await expandAccordionAndWaitForHeading("AI Operations Assist", "AI Operations Assist");
 
     fireEvent.change(screen.getByPlaceholderText("Incident ID"), {
       target: { value: "999" },
@@ -948,20 +869,13 @@ describe("App smoke", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderApp();
-
-    fireEvent.change(screen.getByPlaceholderText("Email"), {
-      target: { value: "dba@example.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Password"), {
-      target: { value: "Password123!" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Login" }));
+    await login("dba@example.com");
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Scheduled reports (DBA)" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Business Metrics (DBA)" })).toBeInTheDocument();
     });
-
-    expect(screen.getByRole("heading", { name: "Business Metrics (DBA)" })).toBeInTheDocument();
+    await expandAccordionAndWaitForHeading("Scheduled Reports (DBA)", "Scheduled reports (DBA)");
+    expandAccordion("Scheduler Health (DBA)");
     expect(screen.getByText(/Create first team member/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue("starter")).toBeInTheDocument();
     expect(screen.getByText(/7 remaining/i)).toBeInTheDocument();
@@ -1041,18 +955,8 @@ describe("App smoke", () => {
     vi.stubGlobal("fetch", createFetchMock({ meRole: "DBA", meEmail: "dba@example.com", auditRuns: runs }));
 
     renderApp();
-
-    fireEvent.change(screen.getByPlaceholderText("Email"), {
-      target: { value: "dba@example.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Password"), {
-      target: { value: "Password123!" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Login" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Report audit trail (DBA)" })).toBeInTheDocument();
-    });
+    await login("dba@example.com");
+    await expandAccordionAndWaitForHeading("Report Audit Trail (DBA)", "Report audit trail (DBA)");
 
     expect(screen.getByText("audit-run-1")).toBeInTheDocument();
     expect(screen.getByText("audit-run-2")).toBeInTheDocument();
@@ -1105,18 +1009,8 @@ describe("App smoke", () => {
     URL.revokeObjectURL = revokeObjectURL;
     try {
       renderApp();
-
-      fireEvent.change(screen.getByPlaceholderText("Email"), {
-        target: { value: "analyst@example.com" },
-      });
-      fireEvent.change(screen.getByPlaceholderText("Password"), {
-        target: { value: "Password123!" },
-      });
-      fireEvent.click(screen.getByRole("button", { name: "Login" }));
-
-      await waitFor(() => {
-        expect(screen.getByRole("heading", { name: "SQL reports (read-only)" })).toBeInTheDocument();
-      });
+      await login("analyst@example.com");
+      await expandAccordionAndWaitForHeading("SQL Reports", "SQL reports (read-only)");
 
       fireEvent.click(screen.getByRole("button", { name: "Run report" }));
       await waitFor(() => {
