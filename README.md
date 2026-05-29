@@ -4,25 +4,28 @@
 
 **Private / proprietary.** This project is maintained in a **private** repository. **Sale, redistribution, download for others, or disclosure of this codebase or related materials without the copyright owner’s express written consent is prohibited.** See [`LEGAL_NOTICE.md`](./LEGAL_NOTICE.md) for the full notice.
 
-Commercial terms: [`DBOps_LICENSE.md`](./DBOps_LICENSE.md). Product positioning and pitch: [`DBOps_Product_Positioning.md`](./DBOps_Product_Positioning.md).
+**DBOps Control Center** is a **buyer-deployable, licensable operations platform** for teams that need safe database visibility without handing out SQL credentials. Commercial terms: [`DBOps_LICENSE.md`](./DBOps_LICENSE.md). Buyer positioning and pitch: [`DBOps_Product_Positioning.md`](./DBOps_Product_Positioning.md).
 
-Role-based database operations dashboard for small teams that need safe visibility, incident tracking, and audited reporting without exposing raw SQL access to everyone.
+Give operations and engineering leads controlled access to PostgreSQL: incidents with audit history, whitelisted read-only reports, scheduled delivery, DBA user administration, optional OIDC SSO, and Stripe-backed plan limits — with JWT + RBAC enforced on every API route.
 
 ## Overview
 
-`DBOps Control Center` is a full-stack portfolio app that demonstrates an operations-focused workflow:
+`DBOps Control Center` is a **production-oriented full-stack product** (FastAPI, React, PostgreSQL), not a tutorial or sample repo. Buyers receive deployable source, migrations, CI, and operational docs intended for **their** infrastructure (Docker Compose locally; Render or equivalent in production via `render.yaml`).
 
-- track incidents (including change audit history), and operational summary metrics
-- enforce JWT auth + RBAC (`DBA`, `Analyst`, `Viewer`)
-- execute only whitelisted read-only SQL reports
-- audit report execution history
+Core product capabilities:
+
+- track incidents (including change audit history, comments, and bulk actions) and operational summary metrics
+- enforce JWT auth + RBAC (`DBA`, `Analyst`, `Viewer`) at the API layer
+- execute only whitelisted read-only SQL reports (parameterized, rate-limited, audited)
+- audit report execution history and DBA admin actions
 - manage user lifecycle as a DBA (create, reset password, enable/disable, delete)
+- optional AI assist (report routing and incident handoff summaries) without exposing arbitrary SQL generation
 
-This repo is designed to run locally with Docker Compose and deploy to Render with `render.yaml`.
+An **optional idempotent demo seed** (`python -m app seed-demo`) exists for evaluation and onboarding on a fresh install; it is not a substitute for production data and can be cleared with `reset-demo`.
 
 ## Completion level (current state)
 
-Overall project completion is approximately **95%** toward a production-ready internal tool.
+Overall maturity is approximately **95%** toward a **buyer-operated production deployment** (internal tool or client delivery under license). Remaining gaps are documented under *Partially complete* and *Not complete yet* below — not hidden behind demo-only behavior.
 
 - **Implemented and working**
   - Authentication + RBAC (`DBA`, `Analyst`, `Viewer`)
@@ -198,7 +201,9 @@ If the database is empty:
 3. Create first DBA
 4. Sign in and create additional accounts
 
-### 3) Seed realistic demo data (idempotent)
+### 3) Seed evaluation / onboarding data (idempotent, optional)
+
+Use this on a **fresh install** to populate sample users, incidents, and report runs for demos, workshops, or buyer evaluation — not as production workload.
 
 From `backend` folder:
 
