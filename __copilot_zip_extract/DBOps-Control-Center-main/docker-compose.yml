@@ -1,0 +1,65 @@
+services:
+  db:
+    image: postgres:16
+    container_name: dbops-postgres
+    environment:
+      POSTGRES_USER: dbops
+      POSTGRES_PASSWORD: dbops
+      POSTGRES_DB: dbops
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dbops -d dbops"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    container_name: dbops-backend
+    environment:
+      DATABASE_URL: postgresql+psycopg2://dbops:dbops@db:5432/dbops
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-change-me-use-a-long-random-secret-for-production}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174}
+      SEED_PASSWORD_SALT: ${SEED_PASSWORD_SALT:-dbops-local-seed}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_ID_STARTER: ${STRIPE_PRICE_ID_STARTER:-}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_DEFAULT_ROLE: ${OIDC_DEFAULT_ROLE:-Viewer}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-1}
+      SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-20}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AI_REPORT_ROUTER_MODEL: ${AI_REPORT_ROUTER_MODEL:-gpt-4o-mini}
+      AI_INCIDENT_SUMMARY_MODEL: ${AI_INCIDENT_SUMMARY_MODEL:-gpt-4o-mini}
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./backend/seed_data.json:/app/seed_data.json:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: dbops-frontend
+    ports:
+      - "5174:5173"
+    environment:
+      VITE_API_URL: http://localhost:8001
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

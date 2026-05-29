@@ -157,19 +157,3 @@ class OnboardingEvent(Base):
     )
     details_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
-
-
-class RefreshToken(Base):
-    __tablename__ = "refresh_tokens"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey(USERS_ID_FK, ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
-    revoked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)

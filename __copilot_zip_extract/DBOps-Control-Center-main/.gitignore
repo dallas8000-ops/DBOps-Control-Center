@@ -9,4 +9,3 @@ dist/
 frontend/.env
 frontend/.env.local
 gen_hash.py
-backups/

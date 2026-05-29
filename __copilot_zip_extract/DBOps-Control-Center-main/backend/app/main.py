@@ -30,14 +30,7 @@ except ImportError:  # pragma: no cover - optional dependency for AI assist.
     OpenAI = None
 
 from jose import JWTError
-from .auth_utils import (
-    create_access_token,
-    create_refresh_token,
-    hash_password,
-    hash_refresh_token,
-    verify_password,
-    REFRESH_TOKEN_EXPIRE_DAYS,
-)
+from .auth_utils import create_access_token, hash_password, verify_password
 from . import oidc_verify as _oidc
 from .db import engine, get_db
 from .deps import get_current_user, require_roles
@@ -46,7 +39,6 @@ from .models import (
     Incident,
     IncidentHistory,
     OnboardingEvent,
-    RefreshToken,
     ReportExecutionLog,
     ReportSchedule,
     User,
@@ -76,7 +68,6 @@ from .schemas import (
     IncidentUpdate,
     LoginRequest,
     OidcCallbackRequest,
-    RefreshRequest,
     ReportCatalogEntry,
     ReportExecuteRequest,
     ReportExecuteResponse,
@@ -383,17 +374,6 @@ DbDep: TypeAlias = Annotated[Session, Depends(get_db)]
 CurrentUserDep: TypeAlias = Annotated[User, Depends(get_current_user)]
 DbaUserDep: TypeAlias = Annotated[User, Depends(require_roles("DBA"))]
 RoleUserDep: TypeAlias = Callable[..., User]
-
-
-def _issue_token_pair(db: Session, user: User) -> "Token":
-    """Create an access token + refresh token pair; persists refresh token hash to DB."""
-    access_token = create_access_token(subject=str(user.id), role=user.role)
-    raw_refresh = create_refresh_token()
-    expires_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    rt = RefreshToken(user_id=user.id, token_hash=hash_refresh_token(raw_refresh), expires_at=expires_at)
-    db.add(rt)
-    db.commit()
-    return Token(access_token=access_token, refresh_token=raw_refresh)
 
 ONBOARDING_STEPS: list[tuple[str, str]] = [
     ("first_user_created", "Create first team member"),
@@ -893,12 +873,10 @@ def health(response: Response):
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-            row = conn.execute(text("SELECT version()")).fetchone()
-            pg_version = row[0] if row else "unknown"
     except Exception:
         response.status_code = 503
         return {"status": "degraded", "database": "unreachable"}
-    return {"status": "ok", "database": "reachable", "postgres_version": pg_version}
+    return {"status": "ok", "database": "reachable"}
 
 
 @app.get("/health/scheduler")
@@ -1041,43 +1019,7 @@ def oidc_callback(payload: OidcCallbackRequest, request: Request, db: DbDep):
     except Exception as exc:
         logger.exception("OIDC user provisioning error for %s: %s", email, exc)
         raise HTTPException(status_code=500, detail="OIDC user provisioning failed")
-    return _issue_token_pair(db, user)
-
-
-@app.post("/auth/refresh", response_model=Token)
-def refresh_token_endpoint(payload: RefreshRequest, request: Request, db: DbDep):
-    """Exchange a valid refresh token for a new access + rotated refresh token."""
-    if not check_auth_rate_limit(request.client.host if request.client else None, "auth-refresh"):
-        raise HTTPException(status_code=429, detail=AUTH_RATE_LIMIT_DETAIL)
-    token_hash = hash_refresh_token(payload.refresh_token)
-    rt = (
-        db.query(RefreshToken)
-        .filter(
-            RefreshToken.token_hash == token_hash,
-            RefreshToken.revoked.is_(False),
-            RefreshToken.expires_at > datetime.now(UTC).replace(tzinfo=None),
-        )
-        .first()
-    )
-    if rt is None:
-        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
-    user = db.query(User).filter(User.id == rt.user_id).first()
-    if user is None or not user.is_active:
-        raise HTTPException(status_code=401, detail="User not found or disabled")
-    rt.revoked = True
-    db.commit()
-    return _issue_token_pair(db, user)
-
-
-@app.post("/auth/logout", status_code=204)
-def logout(payload: RefreshRequest, db: DbDep):
-    """Revoke a refresh token. Access tokens expire naturally after 15 minutes."""
-    token_hash = hash_refresh_token(payload.refresh_token)
-    rt = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
-    if rt:
-        rt.revoked = True
-        db.commit()
-    return Response(status_code=204)
+    return Token(access_token=create_access_token(str(user.id), user.role))
 
 
 @app.get("/health/smtp")
@@ -1102,32 +1044,6 @@ def admin_overview(
     overview = _build_admin_overview(db)
     db.commit()
     return overview
-
-
-@app.get("/admin/export", response_class=PlainTextResponse, responses=ERROR_RESPONSES_DBA_ONLY)
-def admin_export(
-    db: DbDep,
-    _: DbaUserDep,
-):
-    """DBA-only: export all table data as a JSON snapshot for backup purposes."""
-    tables = [
-        "users", "incidents", "incident_history", "report_schedules",
-        "report_execution_logs", "user_admin_audit_logs", "billing_settings",
-        "onboarding_events",
-    ]
-    snapshot: dict[str, Any] = {"exported_at": datetime.now(UTC).isoformat()}
-    for table in tables:
-        try:
-            rows = db.execute(text(f"SELECT * FROM {table}")).mappings().all()  # noqa: S608
-            snapshot[table] = [dict(r) for r in rows]
-        except Exception as exc:
-            snapshot[table] = {"error": str(exc)}
-    payload = json.dumps(snapshot, indent=2, default=str)
-    return PlainTextResponse(
-        content=payload,
-        media_type="application/json",
-        headers={"Content-Disposition": f"attachment; filename=dbops-export-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.json"},
-    )
 
 
 @app.put("/admin/billing", response_model=BillingSettingsRead, responses=ERROR_RESPONSES_DBA_ONLY)
@@ -1251,7 +1167,8 @@ def login_json(payload: LoginRequest, request: Request, db: DbDep):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     if not user.is_active:
         raise HTTPException(status_code=403, detail=ACCOUNT_DISABLED_DETAIL)
-    return _issue_token_pair(db, user)
+    token = create_access_token(subject=str(user.id), role=user.role)
+    return Token(access_token=token)
 
 
 @app.post("/auth/token", response_model=Token, responses=ERROR_RESPONSES_AUTH_LOGIN)
@@ -1267,7 +1184,8 @@ def login_form(
         raise HTTPException(status_code=401, detail="Incorrect username or password")
     if not user.is_active:
         raise HTTPException(status_code=403, detail=ACCOUNT_DISABLED_DETAIL)
-    return _issue_token_pair(db, user)
+    token = create_access_token(subject=str(user.id), role=user.role)
+    return Token(access_token=token)
 
 
 @app.get("/auth/me", response_model=UserRead)

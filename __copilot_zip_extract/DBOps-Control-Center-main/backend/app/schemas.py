@@ -7,11 +7,6 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    refresh_token: str | None = None
-
-
-class RefreshRequest(BaseModel):
-    refresh_token: str = Field(min_length=64, max_length=64)
 
 
 class LoginRequest(BaseModel):

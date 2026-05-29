@@ -1858,43 +1858,7 @@ export default function App() {
     const store = globalThis.window?.localStorage;
     if (!store) return;
     if (token && typeof store.setItem === "function") store.setItem("dbops_token", token);
-    if (!token && typeof store.removeItem === "function") {
-      store.removeItem("dbops_token");
-      store.removeItem("dbops_refresh_token");
-    }
-  }, [token]);
-
-  useEffect(() => {
-    if (IS_VITEST || !token) return undefined;
-    const REFRESH_BUFFER_MS = 2 * 60 * 1000;
-    function getTokenExp(t) {
-      try {
-        const payload = JSON.parse(atob(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
-        return payload.exp ? payload.exp * 1000 : null;
-      } catch { return null; }
-    }
-    async function maybeRefresh() {
-      const exp = getTokenExp(token);
-      if (!exp) return;
-      if (Date.now() < exp - REFRESH_BUFFER_MS) return;
-      const store = globalThis.window?.localStorage;
-      const refreshToken = store?.getItem("dbops_refresh_token");
-      if (!refreshToken) return;
-      try {
-        const res = await fetch(`${API_URL}/auth/refresh`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: refreshToken }),
-        });
-        if (!res.ok) { clearClientState(); return; }
-        const body = await res.json();
-        setToken(body.access_token);
-        if (body.refresh_token && store) store.setItem("dbops_refresh_token", body.refresh_token);
-      } catch { /* silent — will retry next tick */ }
-    }
-    maybeRefresh();
-    const interval = setInterval(maybeRefresh, 60_000);
-    return () => clearInterval(interval);
+    if (!token && typeof store.removeItem === "function") store.removeItem("dbops_token");
   }, [token]);
 
   useEffect(() => {
@@ -2124,10 +2088,6 @@ export default function App() {
         return;
       }
       setToken(body.access_token);
-      if (body.refresh_token) {
-        const store = globalThis.window?.localStorage;
-        store?.setItem("dbops_refresh_token", body.refresh_token);
-      }
     } catch (err) {
       const detail = err?.message || String(err);
       setOidcError(`SSO login failed — ${detail} (API: ${API_URL})`);
@@ -2316,10 +2276,6 @@ export default function App() {
 
       const data = await res.json();
       setToken(data.access_token);
-      if (data.refresh_token) {
-        const store = globalThis.window?.localStorage;
-        store?.setItem("dbops_refresh_token", data.refresh_token);
-      }
       setLoginForm({ email: "", password: "" });
     } catch {
       setAuthError(`Could not reach the API (${API_URL}). Check your connection and deployed API URL.`);
@@ -2481,15 +2437,6 @@ export default function App() {
   }
 
   function logout() {
-    const store = globalThis.window?.localStorage;
-    const refreshToken = store?.getItem("dbops_refresh_token");
-    if (refreshToken) {
-      fetch(`${API_URL}/auth/logout`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      }).catch(() => {});
-    }
     clearClientState();
     setAuthError("");
   }

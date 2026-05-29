@@ -1,6 +1,4 @@
-import hashlib
 import os
-import secrets
 from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
@@ -10,8 +8,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-only-change-me-use-long-secret-in-production")
 JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
-REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -37,13 +34,3 @@ def safe_decode_access_token(token: str) -> dict | None:
         return decode_access_token(token)
     except JWTError:
         return None
-
-
-def create_refresh_token() -> str:
-    """Generate a cryptographically secure random 64-char hex refresh token."""
-    return secrets.token_hex(32)
-
-
-def hash_refresh_token(token: str) -> str:
-    """SHA-256 hash a refresh token for safe DB storage."""
-    return hashlib.sha256(token.encode()).hexdigest()

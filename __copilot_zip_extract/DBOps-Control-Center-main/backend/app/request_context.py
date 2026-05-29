@@ -1,0 +1,17 @@
+"""Per-request context (correlation ID) for logging and response headers."""
+
+from contextvars import ContextVar, Token
+
+_request_id: ContextVar[str] = ContextVar("request_id", default="")
+
+
+def get_request_id() -> str:
+    return _request_id.get()
+
+
+def set_request_id(value: str) -> Token:
+    return _request_id.set(value)
+
+
+def reset_request_id(token: Token) -> None:
+    _request_id.reset(token)
