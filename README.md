@@ -1,5 +1,13 @@
 # DBOps Control Center
 
+## Live Demo
+
+**https://dbops-web.onrender.com**
+
+**DBA login:** `barney@example.com`
+
+API health: https://dbops-api.onrender.com/health
+
 [![CI](https://github.com/dallas8000-ops/DBOps-Control-Center/actions/workflows/ci.yml/badge.svg)](https://github.com/dallas8000-ops/DBOps-Control-Center/actions/workflows/ci.yml)
 
 **Private / proprietary software product.** Source and documentation are maintained in a **private** repository. **Sale, redistribution, download for others, or disclosure of this codebase or related materials without the copyright owner’s express written consent is prohibited.** See [`LEGAL_NOTICE.md`](./LEGAL_NOTICE.md) for the full notice.
@@ -7,8 +15,6 @@
 **DBOps Control Center** is a **buyer-deployable, licensable operations platform** for teams that need safe database visibility without handing out SQL credentials. Commercial terms: [`DBOps_LICENSE.md`](./DBOps_LICENSE.md). Buyer positioning and pitch: [`DBOps_Product_Positioning.md`](./DBOps_Product_Positioning.md).
 
 Give operations and engineering leads controlled access to PostgreSQL: incidents with audit history, whitelisted read-only reports, scheduled delivery, DBA user administration, optional OIDC SSO, and Stripe-backed plan limits — with JWT + RBAC enforced on every API route.
-
-**Live demo (Render):** https://dbops-web.onrender.com · **API health:** https://dbops-api.onrender.com/health
 
 **Deployment:** Push to `main` → GitHub Actions CI runs (69 backend + 21 frontend tests, lint, migrations) and Render **auto-deploys** production (`dbops-api`, `dbops-web`). Pipeline live and verified.
 
