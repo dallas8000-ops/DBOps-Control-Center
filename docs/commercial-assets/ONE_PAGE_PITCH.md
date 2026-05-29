@@ -25,7 +25,7 @@ Growing teams need incident counts, status reports, and operational metrics from
 - **Data:** PostgreSQL schema, Alembic migrations (through `010_refresh_tokens`), Docker Compose + **Render blueprint** (`render.yaml`)
 - **Security & ops:** Auth + API rate limits, request IDs, audit trails (users, incidents, report runs)
 - **Product features:** Whitelisted SQL reports + CSV export, schedules (email/webhook), OIDC SSO (PKCE), Stripe billing hooks, optional AI report routing & incident summaries
-- **Quality:** GitHub Actions CI (69 backend tests, 21 frontend smoke tests, lint, migration sanity)
+- **Quality & delivery:** GitHub Actions CI on every push (69 backend tests, 21 frontend smoke tests, lint, migration sanity) + **Render auto-deploy from `main`** — production pipeline live at https://dbops-web.onrender.com
 - **Commercial pack:** License (`DBOps_LICENSE.md`), pricing sheet, onboarding checklist, SLA matrix, demo scripts
 
 **Delivery model:** Source license. Buyer deploys on **their** infrastructure (Render, AWS, self-hosted). No hosted SaaS from seller unless separately contracted.
@@ -36,6 +36,7 @@ Growing teams need incident counts, status reports, and operational metrics from
 2. **RBAC at the API** — Viewer / Analyst / DBA; role escalation via direct API calls is blocked and tested  
 3. **Audit by default** — incident history (incl. comments), admin actions, report execution logs  
 4. **Schedules + delivery** — daily/weekly UTC, email (SMTP) or webhook, execution logging  
+5. **CI/CD included and proven** — push to `main` triggers GitHub Actions (ruff, pytest, frontend lint/test/build, Alembic on Postgres); Render services auto-deploy from the connected repo. **Live production** demonstrates the full loop: https://dbops-web.onrender.com · [CI badge](https://github.com/dallas8000-ops/DBOps-Control-Center/actions/workflows/ci.yml)
 
 ## Maturity: ~95% production-ready
 

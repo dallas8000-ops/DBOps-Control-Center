@@ -11,16 +11,13 @@
 
 Use this URL in marketplace listings today. Optional: custom domain (e.g. `demo.yourdomain.com` → `dbops-web`).
 
+**CI/CD (selling point):** Push to `main` → [GitHub Actions CI](https://github.com/dallas8000-ops/DBOps-Control-Center/actions) runs (69 backend + 21 frontend tests, lint, migrations) and Render **auto-deploys** `dbops-api` + `dbops-web`. Pipeline live and verified on this production URL.
+
 ---
 
 ## Refresh deploy (after code changes)
 
-When you push UI or API updates to `main`, redeploy on Render so the live demo matches the repo:
-
-1. Render Dashboard → **dbops-web** → **Manual Deploy** (required after any `VITE_*` change — rebuild bakes API URL into the bundle).
-2. **dbops-api** → redeploy if backend changed; migrations run on startup.
-
-A **clickable HTTPS demo** converts skeptics into buyers. This repo ships `render.yaml` for the Postgres + API + static frontend stack already running above.
+When you push to `main`, Render auto-deploys; no manual step required for typical code changes. Use **Manual Deploy** on **dbops-web** only when you changed `VITE_*` env vars in the Render dashboard without a new commit (Vite bakes env at build time).
 
 ---
 
@@ -88,10 +85,9 @@ Default users: `barney@example.com` (DBA), `analyst@example.com`, `viewer@exampl
 ## Listing copy (paste-ready)
 
 > **Live demo:** [https://dbops-web.onrender.com](https://dbops-web.onrender.com)  
+> **Deployment:** Auto-deploys to Render on every Git push to `main`; GitHub Actions CI/CD live and verified.  
 > Evaluation login provided after inquiry (or publish read-only Viewer credentials).  
-> Stack: Render + PostgreSQL; same blueprint included in source (`render.yaml`).
-
-Replace URL with your actual Render web service URL.
+> Stack: Render + PostgreSQL; same blueprint and CI workflow included in source.
 
 ---
 

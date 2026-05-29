@@ -10,6 +10,8 @@ Give operations and engineering leads controlled access to PostgreSQL: incidents
 
 **Live demo (Render):** https://dbops-web.onrender.com · **API health:** https://dbops-api.onrender.com/health
 
+**Deployment:** Push to `main` → GitHub Actions CI runs (69 backend + 21 frontend tests, lint, migrations) and Render **auto-deploys** production (`dbops-api`, `dbops-web`). Pipeline live and verified.
+
 ## Overview
 
 `DBOps Control Center` is a **production-oriented full-stack product** (FastAPI, React, PostgreSQL), not a tutorial or sample repo. Buyers receive deployable source, migrations, CI, and operational docs intended for **their** infrastructure (Docker Compose locally; Render or equivalent in production via `render.yaml`).
@@ -411,11 +413,13 @@ npm run build
 
 GitHub Actions workflow: `.github/workflows/ci.yml`
 
-The CI pipeline runs on push and pull requests to `main`/`master` with three required jobs (all must pass):
+The CI pipeline runs on **every push and pull request** to `main`/`master` with three required jobs (all must pass):
 
 - `backend`: installs backend deps, runs `ruff check backend/app backend/tests --select E9,F63,F7,F8,E4,E7,W`, then `pytest -q` (**69 tests**)
 - `frontend`: runs `npm ci`, `npm run lint`, `npm run test:run` (**21 smoke tests**), and `npm run build`
 - `migration_sanity`: starts PostgreSQL and runs `alembic upgrade head` with CI `DATABASE_URL` (through `010_refresh_tokens`)
+
+**Production deploy:** Render services (`dbops-api`, `dbops-web`) are wired to this repo with **auto-deploy on push to `main`**. Production at https://dbops-web.onrender.com reflects the same pipeline buyers receive in source (`render.yaml` + CI workflow).
 
 Recommended branch protection for production safety:
 

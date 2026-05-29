@@ -34,11 +34,15 @@ LEGAL_NOTICE.md
 - Demo video: YouTube/Vimeo unlisted URL (record against live URL above)
 - CI badge / screenshot of green GitHub Actions (optional trust signal)
 
+## Listing bullet — copy/paste
+
+**Deployment:** Auto-deploys to Render on every Git push to `main`. GitHub Actions CI/CD pipeline (backend lint + 69 tests, frontend lint + 21 smoke tests + build, Postgres migration sanity) runs on every push and PR — **live and verified** on production: https://dbops-web.onrender.com
+
 ---
 
 ## One-paragraph listing description (template)
 
-> **DBOps Control Center** — licensable PostgreSQL operations platform (FastAPI + React). Incidents with full audit trail, whitelisted SQL reports, schedules, RBAC, OIDC-ready, Stripe hooks, Docker + Render deploy, 69+21 automated tests. ~95% production-ready; five documented gaps (observability, attachments, scale-out scheduler, distributed rate limits, E2E edge tests). Non-exclusive source license from $8k; exclusive available. **Live demo: https://dbops-web.onrender.com** · **[Video]** · **[Pitch PDF]**
+> **DBOps Control Center** — licensable PostgreSQL operations platform (FastAPI + React). Incidents with full audit trail, whitelisted SQL reports, schedules, RBAC, OIDC-ready, Stripe hooks, Docker + Render deploy, 69+21 automated tests. **Deployment:** auto-deploys to Render on every Git push to `main`; GitHub Actions CI/CD pipeline live and verified ([demo](https://dbops-web.onrender.com)). ~95% production-ready; five documented gaps. Non-exclusive source license from $8k; exclusive available. **Live demo: https://dbops-web.onrender.com** · **[Video]** · **[Pitch PDF]**
 
 ---
 

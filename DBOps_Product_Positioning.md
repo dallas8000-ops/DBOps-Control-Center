@@ -80,8 +80,8 @@ No cron job to maintain. No manual query to remember.
 - User lifecycle management (create, reset password, enable/disable, delete)
 - Admin overview dashboard (metrics, activity trend, onboarding checklist)
 - Docker Compose for local development
-- Render deployment blueprint (render.yaml)
-- GitHub Actions CI workflow
+- Render deployment blueprint (`render.yaml`) with **auto-deploy on Git push** (production verified)
+- GitHub Actions CI/CD (`.github/workflows/ci.yml`) — ruff, pytest, frontend lint/test/build, Alembic migration sanity on every push
 - Day 0 to Day 7 onboarding checklist
 - Support SLA matrix (Essential / Standard / Premium tiers)
 - Commercial source license
