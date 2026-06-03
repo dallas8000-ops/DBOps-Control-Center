@@ -37,6 +37,7 @@ def load_dotenv(path: Path) -> None:
             os.environ[key] = value
 
 
+load_dotenv(REPO_ROOT / "backend" / ".env")
 load_dotenv(ENV_FILE)
 
 API_KEY = os.environ.get("TRELLO_API_KEY")
@@ -48,13 +49,13 @@ AUTH = {"key": API_KEY, "token": TOKEN}
 # Exact card titles on board -> checklist item -> checked (May 2026 board layout)
 CARD_CHECKLISTS: dict[str, dict[str, bool]] = {
     "TASK: Configure Render env vars for Stripe": {
-        "Set STRIPE_SECRET_KEY": False,
-        "Set STRIPE_WEBHOOK_SECRET": False,
-        "Set STRIPE_PRICE_ID_STARTER": False,
+        "Set STRIPE_SECRET_KEY": True,
+        "Set STRIPE_WEBHOOK_SECRET": True,
+        "Set STRIPE_PRICE_ID_STARTER": True,
     },
     "TASK: Add Stripe webhook endpoint and validate delivery": {
         "Create webhook endpoint in Stripe dashboard": True,
-        "Subscribe required events": False,
+        "Subscribe required events": True,
         "Send test event and verify status update": True,
     },
     "FEATURE: Stripe billing integration wiring": {
@@ -63,7 +64,7 @@ CARD_CHECKLISTS: dict[str, dict[str, bool]] = {
         "Verify frontend launch flow": True,
     },
     "OPS: Render + Stripe final wiring": {
-        "Set Render Stripe env vars": False,
+        "Set Render Stripe env vars": True,
         "Redeploy API and web services": True,
         "Validate billing state updates in app": True,
     },
@@ -143,6 +144,10 @@ FORCE_DONE_CARDS = {
 
 # Optional: cards that shipped in repo but may not exist on the board yet
 MOVE_TO_DONE_WHEN_SYNCED = [
+    "TASK: Configure Render env vars for Stripe",
+    "TASK: Add Stripe webhook endpoint and validate delivery",
+    "FEATURE: Stripe billing integration wiring",
+    "OPS: Render + Stripe final wiring",
     "DEVOPS: CI quality gates",
     "DOCS: Production runbook + troubleshooting",
     "FEATURE: Seed demo data CLI for local reset",
@@ -153,14 +158,14 @@ MOVE_TO_DONE_WHEN_SYNCED = [
     "TEST: Frontend App smoke suite stable",
     "FEATURE: User admin audit trail",
     "FEATURE: Report CSV export",
+    "FEATURE: Render upgrade monitor",
+    "FEATURE: Marketing landing page",
+    "DOCS: Terms of Service v1.1 + downgrade billing",
+    "FEATURE: Billing plan catalog + checkout metadata",
+    "OPS: Growth-tier observability and E2E",
 ]
 
-OPEN_SPRINT_CARDS = [
-    "TASK: Configure Render env vars for Stripe",
-    "TASK: Add Stripe webhook endpoint and validate delivery",
-    "FEATURE: Stripe billing integration wiring",
-    "OPS: Render + Stripe final wiring",
-]
+OPEN_SPRINT_CARDS: list[str] = []
 
 NEW_DONE_CARDS = [
     {
@@ -185,6 +190,63 @@ NEW_DONE_CARDS = [
             "Fix IncidentsSection bulk-selection effect loop",
             "Strip UTF-8 BOM / mojibake in App.jsx",
             "Backend lint: remove unused import; models _utcnow()",
+        ],
+        "checked": [True, True, True, True],
+    },
+    {
+        "name": "FEATURE: Render upgrade monitor",
+        "desc": "GET /admin/render-monitor; MRR vs Render cost; SMTP alert at 3x threshold; daily scheduler check.",
+        "labels": ["backend", "devops"],
+        "checklist": [
+            "Add render_monitor.py + DBA endpoint",
+            "Wire scheduler daily check",
+            "SMTP alert to ALERT_EMAIL",
+            "Tests + env vars on Render",
+        ],
+        "checked": [True, True, True, True],
+    },
+    {
+        "name": "FEATURE: Marketing landing page",
+        "desc": "Public landing page before login: hero, features, pricing, contact, terms link.",
+        "labels": ["frontend"],
+        "checklist": [
+            "LandingPage.jsx",
+            "Wire showLanding in App.jsx",
+            "Terms of service footer link",
+        ],
+        "checked": [True, True, True],
+    },
+    {
+        "name": "DOCS: Terms of Service v1.1 + downgrade billing",
+        "desc": "Terms v1.1; POST /billing/downgrade; pending plan on invoice.paid webhook.",
+        "labels": ["docs", "backend"],
+        "checklist": [
+            "Update DBOps_TERMS_OF_SERVICE.md",
+            "Downgrade API + webhook lifecycle",
+            "Frontend downgrade button",
+        ],
+        "checked": [True, True, True],
+    },
+    {
+        "name": "FEATURE: Billing plan catalog + checkout metadata",
+        "desc": "PLAN_CATALOG limits; Stripe checkout session metadata; webhook auto-apply limits.",
+        "labels": ["backend", "frontend"],
+        "checklist": [
+            "billing_plans.py catalog",
+            "Checkout session plan_key metadata",
+            "Webhook applies plan limits",
+        ],
+        "checked": [True, True, True],
+    },
+    {
+        "name": "OPS: Growth-tier observability and E2E",
+        "desc": "Prometheus /metrics, optional Redis rate limits, Playwright E2E, Grafana dashboard template.",
+        "labels": ["devops", "test"],
+        "checklist": [
+            "GET /metrics + observability health",
+            "REDIS_URL optional shared rate limits",
+            "Playwright commercial E2E in CI",
+            "Grafana dashboard JSON + docs",
         ],
         "checked": [True, True, True, True],
     },

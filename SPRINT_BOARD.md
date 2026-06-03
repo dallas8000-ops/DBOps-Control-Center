@@ -5,7 +5,13 @@
 
 ---
 
-## Current batch — Week 6 (Stripe ops)
+## Current batch — shipped (June 2026)
+
+Stripe ops, billing catalog, landing page, Terms v1.1, observability, and Render upgrade monitor are **Done** on Trello. Run `python scripts/trello_sync.py` after future releases.
+
+---
+
+## Previous batch — Week 6 (Stripe ops) — **Done**
 
 ### FEATURE: Stripe billing integration wiring
 **Labels:** `backend` `frontend` `high-priority`
@@ -36,6 +42,22 @@
 ---
 
 ## Shipped (move to Done on Trello)
+
+### FEATURE: Render upgrade monitor
+- [x] `GET /admin/render-monitor` + daily scheduler check
+- [x] SMTP alert at 3× Render cost; deployed on Render
+
+### FEATURE: Marketing landing page
+- [x] `LandingPage.jsx` before login; terms link
+
+### DOCS: Terms of Service v1.1 + downgrade billing
+- [x] `POST /billing/downgrade`; invoice.paid pending plan apply
+
+### FEATURE: Billing plan catalog + checkout metadata
+- [x] `billing_plans.py`; Stripe webhook auto-apply limits
+
+### OPS: Growth-tier observability and E2E
+- [x] Prometheus `/metrics`; optional Redis rate limits; Playwright E2E in CI
 
 ### Release validation — May 10, 2026
 - Live API health, auth, incidents, reports, schedules — production smoke passed

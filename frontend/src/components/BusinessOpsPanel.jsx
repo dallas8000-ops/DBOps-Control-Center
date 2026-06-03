@@ -26,6 +26,15 @@ export function BusinessOpsPanel({
   return (
     <section className="panel">
       <h2 className="panel-title">Business Metrics (DBA)</h2>
+      <p className="hint">
+        <a
+          href="https://trello.com/b/s7LuzRWy/dbops-control-center"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Sprint board (Trello)
+        </a>
+      </p>
       <div className="summary-grid summary-grid--compact">
         <Card label="Active Users" value={`${metrics.active_users}/${metrics.total_users}`} />
         <Card label="Open Incidents" value={metrics.open_incidents} />

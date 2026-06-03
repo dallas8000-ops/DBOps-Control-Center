@@ -3148,6 +3148,12 @@ export default function App() {
         <span className="app-footer__sep" aria-hidden="true">
           ·
         </span>
+        <a href="https://trello.com/b/s7LuzRWy/dbops-control-center" target="_blank" rel="noopener noreferrer">
+          Sprint board
+        </a>
+        <span className="app-footer__sep" aria-hidden="true">
+          ·
+        </span>
         <span>Proprietary software · Licensed deployment</span>
       </footer>
     </main>
