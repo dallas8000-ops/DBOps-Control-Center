@@ -66,3 +66,26 @@ jobs:
       - run: pip install -r backend/requirements.txt alembic
       - working-directory: backend
         run: alembic upgrade head
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/package-lock.json
+      - working-directory: frontend
+        run: npm ci
+      - working-directory: frontend
+        run: npm run build
+      - working-directory: e2e
+        run: npm install
+      - working-directory: e2e
+        run: npx playwright install chromium --with-deps
+      - working-directory: e2e
+        run: npm test

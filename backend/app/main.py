@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import time as pytime
 import uuid
 from csv import DictWriter
 from datetime import UTC, date, datetime, time, timedelta
@@ -62,7 +63,8 @@ from .models import (
     UserAdminAuditLog,
 )
 from .report_catalog import REPORTS
-from .rate_limit import check_api_rate_limit, check_auth_rate_limit
+from .metrics import metrics_enabled, record_request, render_metrics
+from .rate_limit import check_api_rate_limit, check_auth_rate_limit, rate_limit_backend_name
 from .report_runner import execute_whitelisted_report, prepare_report_request
 from .request_context import reset_request_id, set_request_id
 from .schemas import (
@@ -923,10 +925,18 @@ async def request_id_access_log_middleware(request: Request, call_next):
     if len(rid) > 128:
         rid = rid[:128]
     token = set_request_id(rid)
+    started = pytime.perf_counter()
     try:
         response = await call_next(request)
         response.headers["X-Request-ID"] = rid
         ACCESS_LOG.info("%s %s %s", request.method, request.url.path, response.status_code)
+        if metrics_enabled() and request.url.path != "/metrics":
+            record_request(
+                request.method,
+                request.url.path,
+                response.status_code,
+                pytime.perf_counter() - started,
+            )
         return response
     finally:
         reset_request_id(token)
@@ -959,6 +969,26 @@ def health(response: Response):
     except Exception:
         response.status_code = 503
         return {"status": "degraded", "database": "unreachable"}
+
+
+@app.get("/health/observability")
+def health_observability():
+    """Metrics and rate-limit backend readiness (no secret values)."""
+    return {
+        "status": "ok",
+        "metrics_enabled": metrics_enabled(),
+        "metrics_path": "/metrics",
+        "rate_limit_backend": rate_limit_backend_name(),
+        "redis_configured": bool(os.getenv("REDIS_URL", "").strip()),
+    }
+
+
+@app.get("/metrics")
+def prometheus_metrics():
+    if not metrics_enabled():
+        raise HTTPException(status_code=404, detail="Metrics endpoint disabled")
+    payload, content_type = render_metrics()
+    return Response(content=payload, media_type=content_type)
 
 
 @app.get("/health/scheduler")

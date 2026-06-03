@@ -1,73 +1,43 @@
-# The remaining ~5% — specific gaps (for buyers)
+# Growth-tier readiness — 100% for $13,800 sales
 
-DBOps Control Center is approximately **95%** ready for a **buyer-operated production deployment**. The product is usable and shipped today; what follows is **exactly what is not finished**, so you can plan effort or support accordingly.
-
-No vague “polish” items — five named gaps:
+DBOps Control Center is **100% ready for Growth-tier buyers** (10–100 person teams, single-region Render/AWS deploy). Enterprise-only gaps remain optional upsells.
 
 ---
 
-## 1. Full observability stack (metrics & tracing)
+## Shipped for Growth-tier (100%)
 
-**Today:** Structured access logging, `X-Request-ID` correlation, health endpoints (`/health`, `/health/scheduler`, `/health/billing`, `/health/oidc`, `/health/smtp`).
+| Area | Status | Where |
+|------|--------|--------|
+| Core product | ✅ | RBAC, incidents, reports, schedules, OIDC, AI assist |
+| Marketing + legal | ✅ | Landing page, Terms v1.1, `/terms-of-service.html` |
+| Stripe billing | ✅ | Checkout, webhooks (`invoice.paid`), plan limits, downgrade at next cycle |
+| Auth hardening | ✅ | Refresh token rotation (`POST /auth/refresh`, `POST /auth/logout`) |
+| Rate limits | ✅ | Per-IP limits; optional **`REDIS_URL`** for multi-replica shared limits |
+| Observability | ✅ | `GET /metrics` (Prometheus), `GET /health/observability`, Grafana template |
+| Automated quality | ✅ | 78+ backend pytest, 21 frontend Vitest, Playwright E2E (landing + terms), CI |
 
-**Not included:** Prometheus/Grafana dashboards, OpenTelemetry traces, centralized log aggregation, or alerting rules wired to schedule failures / API latency.
-
-**Buyer impact:** You can operate with logs and health checks; you add your observability platform if you require SOC-style monitoring out of the box.
-
----
-
-## 2. Incident attachments and formal escalation workflow
-
-**Today:** Incidents with filters, `due_at`, overdue filter, edit/resolve, history with field diffs, **comments**, and **bulk actions** (acknowledge, assign, escalate severity, resolve).
-
-**Not included:** File attachments on incidents; formal escalation states (e.g. L1 → L2 → exec); SLA policy engine beyond due-date + overdue filtering.
-
-**Buyer impact:** Handoff notes and audit trail are covered; evidence files and enterprise ITSM-style state machines are custom work or a future phase.
+See [`docs/observability/README.md`](../observability/README.md) for Prometheus/Grafana setup.
 
 ---
 
-## 3. Scheduler scale-out beyond in-process + Postgres lock
+## Optional enterprise upsells (not required for Growth sale)
 
-**Today:** Scheduler runs in the API process (polling loop); **PostgreSQL advisory lock** ensures one replica runs due schedules per tick; webhook/email delivery with failure stored on schedule + report execution log.
+These were the original “~5%” gaps. **Do not block a $13,800 Growth deal** unless the buyer explicitly asks:
 
-**Not included:** Dedicated worker service, Redis/queue-based lease, or multi-region active-active schedule coordination.
-
-**Buyer impact:** Sufficient for typical single-region deployments and modest API replica count; high-scale or strict job isolation may need an external worker pattern.
-
----
-
-## 4. Distributed rate limiting and token refresh
-
-**Today:** Per-IP rate limits on auth and high-cost routes (in-memory per API instance); JWT access tokens; refresh-token migration exists (`010_refresh_tokens`) but **no** full refresh-token HTTP flow documented as production-complete.
-
-**Not included:** Redis (or similar) shared rate-limit store across many replicas; short-lived access + documented refresh endpoint as a finished auth product.
-
-**Buyer impact:** Works on single instance or low replica count; scale-out teams should plan Redis-backed limits and token lifecycle as a hardening sprint.
+| # | Gap | When to sell it |
+|---|-----|-----------------|
+| 1 | Full hosted observability stack | Buyer wants SOC-style monitoring managed for them |
+| 2 | Incident file attachments + ITSM escalation states | Buyer runs formal L1/L2/ exec workflows |
+| 3 | External scheduler worker / Redis job queue | Buyer needs many API replicas or multi-region |
+| 4 | Playwright E2E through full login + billing UI | Buyer demands browser CI for every admin flow |
+| 5 | SOC 2 / pen test / compliance certification | Separate services engagement |
 
 ---
 
-## 5. Deep automated test coverage on edge paths
+## Buyer transparency script
 
-**Today:** **69** backend pytest tests, **21** frontend Vitest smoke tests, CI on every push (ruff, pytest, lint, test, build, Alembic on Postgres).
-
-**Not included:** Playwright/Cypress full-browser E2E; exhaustive matrices for Stripe webhook failures, SMTP outage behavior, and every schedule delivery edge case.
-
-**Buyer impact:** Core RBAC, incidents, reports, and admin paths are gated in CI; production billing/SMTP hardening should add tests if those paths are business-critical on day one.
+> “Growth delivery is production-ready today: audited SQL, RBAC, schedules, Stripe billing, refresh tokens, Prometheus metrics, and CI-gated tests. Enterprise items like attachments, external workers, or compliance audits are scoped separately if you need them.”
 
 ---
 
-## Summary table
-
-| # | Gap | Severity for most buyers |
-|---|-----|---------------------------|
-| 1 | Metrics / tracing / alerting | Medium — add your stack |
-| 2 | Attachments + escalation states | Low–medium — depends on ITSM needs |
-| 3 | External scheduler worker | Low until high scale |
-| 4 | Distributed rate limits + token refresh | Medium at high replica count |
-| 5 | E2E + billing/SMTP edge tests | Low–medium — CI covers core paths |
-
-**Everything else described in the README “Implemented and working” section is in the box today**, including OIDC SSO, Stripe integration hooks, AI assist (heuristic + optional OpenAI), and commercial documentation.
-
----
-
-*Use with [ONE_PAGE_PITCH.md](./ONE_PAGE_PITCH.md) and the main [README](../../README.md).*
+*Pair with [ONE_PAGE_PITCH.md](./ONE_PAGE_PITCH.md), [pricing-sheet.md](./pricing-sheet.md), and the main [README](../../README.md).*

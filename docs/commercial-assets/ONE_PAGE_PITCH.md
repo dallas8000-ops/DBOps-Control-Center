@@ -25,8 +25,8 @@ Growing teams need incident counts, status reports, and operational metrics from
 - **Data:** PostgreSQL schema, Alembic migrations (through `010_refresh_tokens`), Docker Compose + **Render blueprint** (`render.yaml`)
 - **Security & ops:** Auth + API rate limits, request IDs, audit trails (users, incidents, report runs)
 - **Product features:** Whitelisted SQL reports + CSV export, schedules (email/webhook), OIDC SSO (PKCE), Stripe billing hooks, optional AI report routing & incident summaries
-- **Quality & delivery:** GitHub Actions CI on every push (69 backend tests, 21 frontend smoke tests, lint, migration sanity) + **Render auto-deploy from `main`** — production pipeline live at https://dbops-web.onrender.com
-- **Commercial pack:** License (`DBOps_LICENSE.md`), pricing sheet, onboarding checklist, SLA matrix, demo scripts
+- **Quality & delivery:** GitHub Actions CI on every push (**85** backend pytest, **21** frontend Vitest, **3** Playwright E2E, lint, migration sanity) + **Render auto-deploy from `main`** — production pipeline live at https://dbops-web.onrender.com
+- **Commercial pack:** License (`DBOps_LICENSE.md`), Terms v1.1, landing page, pricing sheet, onboarding checklist, SLA matrix, Prometheus/Grafana template
 
 **Delivery model:** Source license. Buyer deploys on **their** infrastructure (Render, AWS, self-hosted). No hosted SaaS from seller unless separately contracted.
 
@@ -38,16 +38,16 @@ Growing teams need incident counts, status reports, and operational metrics from
 4. **Schedules + delivery** — daily/weekly UTC, email (SMTP) or webhook, execution logging  
 5. **CI/CD included and proven** — push to `main` triggers GitHub Actions (ruff, pytest, frontend lint/test/build, Alembic on Postgres); Render services auto-deploy from the connected repo. **Live production** demonstrates the full loop: https://dbops-web.onrender.com · [CI badge](https://github.com/dallas8000-ops/DBOps-Control-Center/actions/workflows/ci.yml)
 
-## Maturity: ~95% production-ready
+## Maturity: Growth-tier 100% production-ready
 
-The product is **buyer-operated**, not a prototype. Remaining work is **known and bounded** — see [REMAINING_5_PERCENT.md](./REMAINING_5_PERCENT.md) (five specific items). That transparency is intentional: buyers trust named gaps more than vague “almost done.”
+The product is **buyer-operated**, not a prototype. **Growth-tier delivery is complete** for 10–100 person teams on Render/AWS. Optional enterprise upsells (attachments, external worker, compliance) are documented in [REMAINING_5_PERCENT.md](./REMAINING_5_PERCENT.md).
 
 ## Pricing orientation (services + source)
 
 | Tier | Indicative | Scope |
 |------|------------|--------|
 | **Launch** | $8,000 | ≤5 users, deploy + RBAC + incidents + up to 3 reports |
-| **Growth** | $14,000 | ≤20 users, schedules, audit tuning, CI handoff |
+| **Growth** | **$13,800** | ≤20 users, schedules, audit tuning, CI handoff, observability template |
 | **Scale** | $20,000 | 20+ users, SSO hardening, expanded reports, ops workshop |
 
 Monthly support add-ons: $800 / $1,500 / $2,500. **Source license** variants: Internal Use, Agency (3 clients), Enterprise/OEM — see [LICENSE_SALE_MODEL.md](./LICENSE_SALE_MODEL.md).

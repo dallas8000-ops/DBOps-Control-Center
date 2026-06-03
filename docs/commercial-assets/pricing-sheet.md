@@ -15,7 +15,7 @@
   - 24x7 support
 
 ## Tier 2 - Growth
-- Price: USD 14,000 one-time implementation
+- Price: USD 13,800 one-time implementation *(list $14,000)*
 - Team size: up to 20 users
 - Included:
   - Everything in Launch

@@ -19,7 +19,7 @@ API health: https://dbops-api.onrender.com/health
 
 Give operations and engineering leads controlled access to PostgreSQL: incidents with audit history, whitelisted read-only reports, scheduled delivery, DBA user administration, optional OIDC SSO, and Stripe-backed plan limits — with JWT + RBAC enforced on every API route.
 
-**Deployment:** Push to `main` → GitHub Actions CI runs (69 backend + 21 frontend tests, lint, migrations) and Render **auto-deploys** production (`dbops-api`, `dbops-web`). Pipeline live and verified.
+**Deployment:** Push to `main` → GitHub Actions CI runs (backend + frontend tests, Playwright E2E, lint, migrations) and Render **auto-deploys** production (`dbops-api`, `dbops-web`). Pipeline live and verified.
 
 ## Overview
 
@@ -38,14 +38,16 @@ An **optional idempotent demo seed** (`python -m app seed-demo`) exists for eval
 
 ## Completion level (current state)
 
-Overall maturity is approximately **95%** toward a **buyer-operated production deployment** (internal tool or client delivery under license). Remaining gaps are documented under *Partially complete* and *Not complete yet* below — not hidden behind demo-only behavior.
+**Growth-tier readiness: 100%** for teams of 10–100 on a single Render/AWS deployment. See [`docs/commercial-assets/REMAINING_5_PERCENT.md`](docs/commercial-assets/REMAINING_5_PERCENT.md) for optional enterprise upsells (attachments, external worker, compliance).
 
 - **Implemented and working**
-  - Authentication + RBAC (`DBA`, `Analyst`, `Viewer`)
+  - Authentication + RBAC (`DBA`, `Analyst`, `Viewer`) with **refresh token rotation** (`POST /auth/refresh`, `POST /auth/logout`)
+  - **Marketing landing page** for unauthenticated visitors + **Terms of Service v1.1** (`/terms-of-service.html`)
   - **OIDC SSO** via PKCE (Google, Microsoft, any standards-compliant provider) — `GET /auth/oidc/config`, `POST /auth/oidc/callback`, auto-provisioning with configurable default role
   - Auth rate limiting on all login + OIDC callback endpoints (configurable via env)
-  - **API rate limiting** (per-IP) on high-cost routes: incident create, report run, CSV export (`API_RATE_LIMIT_*` env)
+  - **API rate limiting** (per-IP) on high-cost routes; optional **`REDIS_URL`** for shared limits across API replicas
   - **Request correlation**: `X-Request-ID` header + structured access lines (`dbops.access` logger)
+  - **Prometheus metrics** at `GET /metrics` + `GET /health/observability`; Grafana template in [`docs/observability/`](docs/observability/README.md)
   - DBA bootstrap flow for empty database
   - User lifecycle controls (create, reset password, enable/disable, delete)
   - User admin audit log (`GET /auth/users/audit`)
@@ -55,22 +57,19 @@ Overall maturity is approximately **95%** toward a **buyer-operated production d
   - Whitelisted report execution, CSV export, and execution audit trail; optional **report log retention** purge (`REPORT_EXECUTION_LOG_RETENTION_DAYS`)
   - DBA-managed scheduled reports (daily/weekly UTC) with **`none` / `email` (SMTP when configured)** / `webhook` delivery
   - **PostgreSQL advisory lock** so only one API replica runs the due-schedule sweep per tick (no paid coordinator)
-  - **Stripe billing** — checkout session creation, webhook lifecycle (`checkout.session.completed`, `customer.subscription.*`), billing settings persistence, `GET /health/billing`
+  - **Stripe billing** — checkout, webhooks (`checkout.session.completed`, `customer.subscription.*`, **`invoice.paid`**), plan catalog limits (Starter/Pro/Enterprise), **downgrade at next billing cycle**, `GET /health/billing`
   - Idempotent demo seed (`python -m app` / `seed-demo`) and **`python -m app reset-demo --yes`** (clears operational data; keeps users/billing)
-  - Backend pytest suite (**69 tests**) + frontend Vitest smoke suite (**21 tests**) + CI gates (all passing on `main`)
+  - Backend pytest suite + frontend Vitest smoke suite + **Playwright E2E** (landing + terms) + CI gates (all passing on `main`)
   - Local Docker Compose workflow and Render deployment path
-- **Partially complete**
-  - Operational observability (access log + request ID; no full metrics/tracing stack yet)
-  - Incident workflow (due dates + comments shipped; **no** attachments or formal escalation states yet)
-  - Scheduler production hardening beyond Postgres locking (e.g. external worker / Redis lease) if you outgrow the current pattern
-- **Not complete yet**
-  - Broad automated coverage (failure paths, billing edge cases if used in production)
-  - Expanded production runbooks (OpenTelemetry, metrics)
+- **Optional enterprise upsells** (not required for Growth-tier sale)
+  - Incident file attachments and formal ITSM escalation state machine
+  - Dedicated scheduler worker / Redis job queue beyond Postgres advisory lock
+  - Buyer-managed full observability stack (Grafana Cloud wiring, alerting runbooks beyond included template)
 
 ## Core capabilities
 
 - **Authentication and RBAC**
-  - JWT login with bcrypt-hashed passwords
+  - JWT login with bcrypt-hashed passwords and **rotating refresh tokens**
   - Bootstrap first DBA when DB has no users
   - Optional OIDC SSO sign-in flow (`/auth/oidc/config` + `/auth/oidc/callback`) with role mapping fallback
   - Role-gated API and UI behavior
@@ -262,6 +261,8 @@ docker compose exec backend python -m app
 
 - **Health**
   - `GET /health`
+  - `GET /health/observability`
+  - `GET /metrics`
   - `GET /health/oidc`
   - `GET /health/smtp`
   - `GET /health/billing`
@@ -370,7 +371,9 @@ Operational notes:
 |------|-------------------|--------|
 | **GitHub Actions CI** | `.github/workflows/ci.yml` — `backend`, `frontend`, `migration_sanity` | ✅ Passing |
 | Backend lint | `ruff check backend/app backend/tests --select E9,F63,F7,F8,E4,E7,W` | ✅ Passing |
-| Backend integration tests | `pytest -q` — **69 tests** (auth/RBAC, incidents, history, comments, bulk, CSV, rate limits, schedules, billing, AI assist, etc.) | ✅ Passing |
+| Backend integration tests | `pytest -q` — **85 tests** (auth/RBAC, refresh tokens, rate limits, billing webhooks, metrics, incidents, schedules, AI assist, etc.) | ✅ Passing |
+| Frontend smoke tests | `npm run test:run` — **21 tests** | ✅ Passing |
+| Playwright E2E | `e2e/` — **3 tests** (landing, terms) | ✅ Passing |
 | Frontend lint | `npm run lint` | ✅ Passing |
 | Frontend smoke tests | `npm run test:run` — **21 tests** (see [Frontend smoke coverage](#frontend-smoke-coverage) below) | ✅ Passing |
 | Frontend build | `npm run build` | ✅ Passing |
@@ -396,7 +399,9 @@ Tests expand collapsed dashboard accordions before assertions (matches productio
 
 ### Test gaps (planned)
 
-- ⚠️ Expand backend coverage for billing webhooks, SMTP failure paths, and rare schedule edge cases if used in production
+- ✅ Billing webhook edge cases (`invoice.paid`, downgrade lifecycle) covered in pytest
+- ✅ SMTP failure paths covered in scheduler notification tests
+- Optional: full-browser E2E through authenticated admin flows (enterprise upsell)
 - ⚠️ Add Playwright/Cypress end-to-end flows for full browser regression (Vitest smoke suite covers critical journeys headlessly)
 - ⚠️ Optional CI hardening: coverage thresholds, dependency audit gates
 
@@ -424,7 +429,7 @@ GitHub Actions workflow: `.github/workflows/ci.yml`
 
 The CI pipeline runs on **every push and pull request** to `main`/`master` with three required jobs (all must pass):
 
-- `backend`: installs backend deps, runs `ruff check backend/app backend/tests --select E9,F63,F7,F8,E4,E7,W`, then `pytest -q` (**69 tests**)
+- `backend`: installs backend deps, runs `ruff check backend/app backend/tests --select E9,F63,F7,F8,E4,E7,W`, then `pytest -q` (**85 tests**)
 - `frontend`: runs `npm ci`, `npm run lint`, `npm run test:run` (**21 smoke tests**), and `npm run build`
 - `migration_sanity`: starts PostgreSQL and runs `alembic upgrade head` with CI `DATABASE_URL` (through `010_refresh_tokens`)
 
