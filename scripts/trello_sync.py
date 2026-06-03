@@ -167,6 +167,41 @@ MOVE_TO_DONE_WHEN_SYNCED = [
 
 OPEN_SPRINT_CARDS: list[str] = []
 
+WEEK3_CARD_CHECKLISTS: dict[str, dict[str, bool]] = {
+    "PLAN: Week 3 backlog grooming": {
+        "Review backlog priorities": True,
+        "Estimate effort for upcoming cards": True,
+        "Finalize Week 3 commit plan": True,
+    },
+    "P0: Incident quick actions bar (bulk ops)": {
+        "Define eligible row-selection model and permission gates": True,
+        "Add bulk action API endpoints (acknowledge, resolve, assign, escalate)": True,
+        "Implement backend batch validation and admin audit logging": True,
+        "Build frontend quick-actions bar with selection count and actions": True,
+        "Add optimistic updates, rollback-on-error, and toast feedback": True,
+        "Add integration tests and update operator docs": True,
+    },
+}
+
+WEEK3_MOVE_TO_DONE = [
+    "PLAN: Week 3 backlog grooming",
+    "P0: Saved filter presets (per-user)",
+    "P0: Incident quick actions bar (bulk ops)",
+]
+
+# Backlog cards kept open but overdue — clear stale due dates to remove Trello badges.
+CLEAR_DUE_DATE_CARDS = [
+    "P0: Real-time change toasts + diff highlights",
+    "P1: Incident timeline UX upgrade",
+    "P1: Dashboard personalization (widget order/visibility)",
+]
+
+ARCHIVE_EMPTY_LIST_PREFIXES = (
+    "Week 1",
+    "Week 2",
+    "Week 6",
+)
+
 NEW_DONE_CARDS = [
     {
         "name": "DEVOPS: CI quality gates",
@@ -304,7 +339,7 @@ def load_cards(board_id: str) -> dict[str, dict[str, Any]]:
     cards = api(
         "GET",
         f"/boards/{board_id}/cards",
-        params={"fields": "name,idList", "filter": "open"},
+        params={"fields": "name,idList,due", "filter": "open"},
     )
     return {card["name"]: card for card in cards}
 
@@ -335,6 +370,23 @@ def sync_checklist(card_id: str, card_name: str, desired: dict[str, bool]) -> No
 def move_card(card_id: str, list_id: str, card_name: str, list_name: str) -> None:
     api("PUT", f"/cards/{card_id}", params={"idList": list_id})
     print(f"  -> moved to {list_name}")
+
+
+def clear_card_due_date(card_id: str, card_name: str) -> None:
+    api("PUT", f"/cards/{card_id}", params={"due": ""})
+    print(f"  cleared due date: {card_name}")
+
+
+def archive_empty_week_lists(lists: dict[str, str], cards_by_name: dict[str, dict[str, Any]]) -> None:
+    for list_name, list_id in lists.items():
+        if not any(list_name.startswith(prefix) for prefix in ARCHIVE_EMPTY_LIST_PREFIXES):
+            continue
+        cards_in_list = [card for card in cards_by_name.values() if card["idList"] == list_id]
+        if cards_in_list:
+            print(f"  skip archive {list_name}: {len(cards_in_list)} card(s) remain")
+            continue
+        api("PUT", f"/lists/{list_id}", params={"closed": "true"})
+        print(f"  archived empty list: {list_name}")
 
 
 def ensure_done_card(
@@ -402,7 +454,8 @@ def main() -> None:
     )
 
     print("\nSyncing checklists...")
-    for card_name, checklist in CARD_CHECKLISTS.items():
+    merged_checklists = {**CARD_CHECKLISTS, **WEEK3_CARD_CHECKLISTS}
+    for card_name, checklist in merged_checklists.items():
         card = cards_by_name.get(card_name)
         if not card:
             print(f"  ! Card not found: {card_name}")
@@ -434,6 +487,24 @@ def main() -> None:
             card = cards_by_name.get(card_name)
             if card and card["idList"] == done_id:
                 move_card(card["id"], active_id, card_name, next(k for k, v in lists.items() if v == active_id))
+
+    print("\nWeek 3 cleanup — move shipped cards to Done...")
+    if done_id:
+        for card_name in WEEK3_MOVE_TO_DONE:
+            card = cards_by_name.get(card_name)
+            if card and card["idList"] != done_id:
+                move_card(card["id"], done_id, card_name, "Done")
+            if card and card.get("due"):
+                clear_card_due_date(card["id"], card_name)
+
+    print("\nClearing stale due dates on backlog cards...")
+    for card_name in CLEAR_DUE_DATE_CARDS:
+        card = cards_by_name.get(card_name)
+        if card and card.get("due"):
+            clear_card_due_date(card["id"], card_name)
+
+    print("\nArchiving empty week lists...")
+    archive_empty_week_lists(lists, cards_by_name)
 
     print("\nDone. Open: https://trello.com/b/s7LuzRWy/dbops-control-center")
 
