@@ -3,10 +3,10 @@ from app.billing_plans import (
     PLAN_CATALOG,
     PRO_PLAN_LIMIT,
     apply_plan_catalog_to_settings,
-    compute_downgrade_forfeiture_cents,
     is_plan_downgrade,
     normalize_plan_key,
     plan_key_for_stripe_price_id,
+    pending_plan_key_from_stripe_object,
     resolve_plan_key_from_stripe_object,
 )
 from app.models import BillingSettings
@@ -50,13 +50,13 @@ def test_resolve_plan_key_from_subscription_price_id(monkeypatch) -> None:
     assert plan_key_for_stripe_price_id("price_pro_live") == "pro"
 
 
-def test_downgrade_forfeiture_is_half_of_current_plan_price() -> None:
-    assert compute_downgrade_forfeiture_cents("pro") == 7450
-    assert compute_downgrade_forfeiture_cents("enterprise") == 19950
-
-
 def test_is_plan_downgrade_requires_lower_tier() -> None:
     assert is_plan_downgrade("pro", "starter") is True
     assert is_plan_downgrade("enterprise", "pro") is True
     assert is_plan_downgrade("starter", "pro") is False
     assert is_plan_downgrade("pro", "pro") is False
+
+
+def test_pending_plan_key_from_subscription_metadata() -> None:
+    event_object = {"metadata": {"plan_key": "pro", "pending_plan_key": "starter"}}
+    assert pending_plan_key_from_stripe_object(event_object) == "starter"

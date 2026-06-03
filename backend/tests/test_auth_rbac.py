@@ -120,8 +120,6 @@ def _fake_stripe_module_with_downgrade():
             retrieve=lambda sub_id: subscription,
             modify=modify_subscription,
         ),
-        InvoiceItem=SimpleNamespace(create=lambda **kwargs: {"id": "ii_forfeit", **kwargs}),
-        Invoice=SimpleNamespace(create=lambda **kwargs: {"id": "in_forfeit", **kwargs}),
         Webhook=SimpleNamespace(construct_event=lambda **kwargs: {}),
     )
 
@@ -995,7 +993,7 @@ def test_dba_update_billing_pro_applies_catalog_limits() -> None:
         assert body["monthly_price_cents"] == 14900
 
 
-def test_billing_downgrade_pro_to_starter_charges_forfeiture(monkeypatch) -> None:
+def test_billing_downgrade_pro_to_starter_schedules_next_cycle(monkeypatch) -> None:
     fake_stripe = _fake_stripe_module_with_downgrade()
     monkeypatch.setattr("app.main.stripe", fake_stripe)
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_123")
@@ -1021,25 +1019,24 @@ def test_billing_downgrade_pro_to_starter_charges_forfeiture(monkeypatch) -> Non
 
         missing_confirm = client.post(
             "/billing/downgrade",
-            json={"target_plan_key": "starter", "confirm_forfeiture": False},
+            json={"target_plan_key": "starter", "confirm_downgrade": False},
             headers=_auth_headers(dba_token),
         )
         assert missing_confirm.status_code == 400
 
         downgrade_resp = client.post(
             "/billing/downgrade",
-            json={"target_plan_key": "starter", "confirm_forfeiture": True},
+            json={"target_plan_key": "starter", "confirm_downgrade": True},
             headers=_auth_headers(dba_token),
         )
         assert downgrade_resp.status_code == 200
         body = downgrade_resp.json()
         assert body["from_plan_key"] == "pro"
         assert body["target_plan_key"] == "starter"
-        assert body["forfeiture_cents"] == 7450
-        assert body["stripe_invoice_id"] == "in_forfeit"
-        assert body["billing"]["plan_key"] == "starter"
-        assert body["billing"]["max_users"] == 10
-        assert body["billing"]["max_schedules"] == 10
+        assert body["pending_plan_key"] == "starter"
+        assert "next billing cycle" in body["effective_note"].lower()
+        assert body["billing"]["plan_key"] == "pro"
+        assert body["billing"]["max_users"] == 5000
 
 
 def test_plan_user_limit_blocks_additional_user_creation() -> None:

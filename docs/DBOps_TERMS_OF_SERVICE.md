@@ -1,119 +1,220 @@
-# DBOps Control Center — Terms of Service
+# DBOps Control Center
 
-**Version 1.0 — Effective June 3, 2026**
+## Terms of Service
 
-These Terms of Service (“**Terms**”) govern access to and use of the DBOps Control Center hosted service (“**Service**”) provided by Gilliom Frontline Digital / Barney R. Gilliom (“**Provider**,” “**we**,” “**us**”).
+**Version 1.1**
+**Effective Date: June 3, 2026**
 
-By starting a trial, subscribing, or clicking **Start Free Trial**, **Get Started**, or **Subscribe with Stripe**, the customer organization (“**Customer**,” “**you**”) agrees to these Terms.
+These Terms of Service ("Terms") constitute a legally binding agreement between Gilliom Frontline Digital, operated by Barney R. Gilliom ("Provider," "Company," "we," "our," or "us"), and the individual or entity accessing or using the DBOps Control Center platform ("Customer," "Subscriber," "you," or "your").
 
-> **Not legal advice.** This document is a product template. Have a qualified attorney review it before use in production billing.
-
----
-
-## 1. Service description
-
-DBOps Control Center is a database operations platform offering role-based access, incident management, audited reporting, scheduled reports, and related admin features. Feature availability depends on the plan selected and active subscription status.
+BY ACCESSING, REGISTERING FOR, STARTING A FREE TRIAL OF, PURCHASING, OR USING THE SERVICE, YOU AGREE TO BE BOUND BY THESE TERMS.
 
 ---
 
-## 2. Plans and usage limits
+## 1. Service Description
 
-| Plan | Monthly price (USD) | Users | Scheduled reports |
-|------|---------------------|-------|-------------------|
-| **Starter** | $49 | Up to 10 | Up to 10 |
-| **Pro** | $149 | Up to 5,000 | Up to 5,000 |
-| **Enterprise** | $399 | Up to 10,000 | Up to 10,000 |
+DBOps Control Center is a hosted database operations platform that may include:
 
-Limits are enforced in the Service. Exceeding a limit may block creation of new users or schedules until usage is reduced or the plan is upgraded.
+* User and role management
+* Audit logging
+* Incident management
+* Scheduled reporting
+* Administrative dashboards
+* Database operations tools
+* Related business management features
 
-Enterprise may include custom terms in a separate written agreement.
-
----
-
-## 3. Billing and payment
-
-3.1 **Subscription billing.** Paid plans are billed monthly in advance through Stripe unless otherwise agreed in writing.
-
-3.2 **Free trial.** If offered, a trial converts to a paid subscription at the end of the trial period unless canceled before conversion. Payment method may be required at signup.
-
-3.3 **Taxes.** Prices exclude applicable taxes, which Customer is responsible for where required by law.
-
-3.4 **Failed payment.** If payment fails, we may suspend access after reasonable notice until the account is brought current.
+Feature availability depends on the subscription plan selected.
 
 ---
 
-## 4. Upgrades
+## 2. Subscription Plans
 
-4.1 **Immediate effect.** When Customer upgrades (for example, Starter → Pro), the new plan limits generally take effect when the upgrade is confirmed and payment succeeds.
+| Plan       | Monthly Fee (USD) | Maximum Users | Scheduled Reports |
+| ---------- | ----------------: | ------------: | ----------------: |
+| Starter    |               $49 |            10 |                10 |
+| Pro        |              $149 |         5,000 |             5,000 |
+| Enterprise |              $399 |        10,000 |            10,000 |
 
-4.2 **Charges.** Upgrades may be charged immediately. Any proration or credit for unused time on the prior plan is handled according to Stripe’s billing settings at the time of upgrade unless a separate written agreement states otherwise.
+Provider reserves the right to modify pricing, plan limits, or available features upon reasonable notice.
 
----
-
-## 5. Downgrades (including Pro → Starter)
-
-5.1 **Downgrade request.** To downgrade, Customer must contact Provider at **barney@gilliomfrontlinedigital.com** or use a downgrade flow we make available in the product. Downgrades are not effective until confirmed by Provider or by a completed Stripe subscription change.
-
-5.2 **Forfeiture on downgrade.** If Customer downgrades during a **paid billing period** for which Customer has already been charged (for example, mid-cycle Pro → Starter), Customer **forfeits fifty percent (50%)** of the amount Customer paid for the **current billing period of the plan being left** (the “**Downgrade Forfeiture**”).
-
-   - Example: Customer paid **$149** for Pro on the 1st and downgrades to Starter on the 15th. Customer **forfeits $74.50** (50% of $149) as a non-refundable downgrade fee. Customer does **not** receive a cash refund of that amount.
-   - The remaining **50%** of that period’s plan payment is **not** refunded and is treated as compensation for access already provided during that period.
-
-5.3 **No double credit.** Downgrade Forfeiture is in addition to normal monthly billing for the new (lower) plan starting on the effective downgrade date or next billing cycle, as confirmed at downgrade.
-
-5.4 **New plan limits.** After downgrade takes effect, Starter limits apply (10 users / 10 schedules). Customer must reduce usage to comply. We may restrict new users, schedules, or certain features until usage is within the new plan.
-
-5.5 **No partial refunds by default.** Except where required by law, downgrades do **not** entitle Customer to a pro-rata refund of the current period beyond the policy above.
+Enterprise customers may operate under a separate written agreement that supersedes conflicting provisions of these Terms.
 
 ---
 
-## 6. Cancellation
+## 3. Billing and Payment
 
-6.1 Customer may cancel by contacting Provider or through Stripe/customer portal when available.
+### 3.1 Subscription Billing
 
-6.2 Cancellation stops **future** renewals. Unless required by law, fees already paid for the current billing period are non-refundable, subject to Section 5.2 if cancellation is treated as a downgrade to no paid plan.
+Subscription fees are billed monthly in advance through Stripe or another approved payment processor.
 
-6.3 After cancellation, access may continue until the end of the paid period, then revert to trial/expired status and reduced limits.
+### 3.2 Free Trial
 
----
+If a free trial is offered:
 
-## 7. Acceptable use
+* Trial access expires automatically at the end of the trial period.
+* Billing begins automatically unless canceled before the trial expires.
+* A valid payment method may be required before trial activation.
 
-Customer will use the Service only for lawful business purposes, maintain account security, and not attempt to bypass role-based access, audit, or plan limits.
+### 3.3 Taxes
 
----
+Subscription fees do not include applicable taxes. Customer is responsible for all taxes imposed by governmental authorities, excluding taxes based on Provider's net income.
 
-## 8. Data and availability
+### 3.4 Failed Payments
 
-Customer retains ownership of Customer data. Provider implements reasonable operational practices but does not guarantee uninterrupted availability. See deployment documentation for backup and recovery responsibilities.
+Provider may suspend access to the Service if payment cannot be successfully collected.
 
----
-
-## 9. Limitation of liability
-
-To the maximum extent permitted by law, Provider’s total liability arising from the Service in any twelve-month period is limited to the fees Customer paid in that period. Provider is not liable for indirect, incidental, or consequential damages.
+Service may remain suspended until all outstanding balances are paid.
 
 ---
 
-## 10. Changes to Terms
+## 4. Subscription Changes
 
-We may update these Terms by posting a new version with an updated effective date. Continued use after the effective date constitutes acceptance. Material billing changes will be communicated with reasonable notice where practicable.
+### 4.1 Upgrades
+
+Customers may upgrade their subscription plan at any time.
+
+Upgrades generally become effective immediately upon successful payment processing.
+
+Any prorated charges or credits resulting from an upgrade shall be determined by the billing rules configured within Stripe or another approved payment processor.
+
+### 4.2 Downgrades
+
+Customers may request a downgrade at any time through the Service or by contacting Provider.
+
+Downgrades become effective at the beginning of the next billing cycle following the downgrade request.
+
+Until the current billing cycle expires, Customer will continue receiving the features, limits, and functionality associated with the higher-tier subscription plan.
+
+### 4.3 New Plan Limits
+
+When the downgrade becomes effective, the limits and features of the lower-tier plan shall apply automatically.
+
+Customer is responsible for ensuring compliance with the limits of the downgraded plan.
+
+Provider may restrict the creation of additional users, reports, schedules, or other resources until usage complies with the applicable plan limits.
+
+### 4.4 No Refunds
+
+Except where required by applicable law, subscription fees are non-refundable.
+
+No full or partial refunds shall be provided for:
+
+* Unused subscription time;
+* Downgrades during an active billing cycle;
+* Cancellation during an active billing cycle;
+* Failure to use the Service.
+
+### 4.5 Future Billing
+
+Upon commencement of the next billing cycle, Customer will be charged the subscription fee associated with the newly selected plan.
 
 ---
 
-## 11. Contact
+## 5. Cancellation
 
-**Gilliom Frontline Digital**  
-Barney R. Gilliom  
-Email: barney@gilliomfrontlinedigital.com  
-Web: https://gilliomfrontlinedigital.com
+### 5.1 Customer Cancellation
+
+Customers may cancel subscriptions through available account settings, customer portal functionality, or by contacting Provider.
+
+### 5.2 Effect of Cancellation
+
+Cancellation prevents future renewals but does not entitle Customer to a refund of fees already paid.
+
+Access to paid features may continue through the end of the current billing period.
+
+### 5.3 Account Expiration
+
+After the paid billing period expires, access may be limited, suspended, or terminated according to the account's status and applicable plan restrictions.
 
 ---
 
-## Summary — downgrade at a glance
+## 6. Acceptable Use
 
-| Action | When it takes effect | Charge adjustment |
-|--------|----------------------|-------------------|
-| **Upgrade** | Usually immediately on successful payment | New plan price; Stripe may prorate |
-| **Downgrade (e.g. Pro → Starter)** | On confirmed downgrade date | **50% of current plan period payment forfeited**; no refund of that portion; new Starter rate applies going forward |
-| **Cancel** | End of period or as confirmed | No refund of current period unless required by law |
+Customer agrees not to:
+
+* Violate applicable laws or regulations;
+* Attempt unauthorized access to systems or accounts;
+* Circumvent plan limitations;
+* Interfere with Service security mechanisms;
+* Reverse engineer the Service except where legally permitted.
+
+Provider may suspend or terminate accounts engaged in prohibited activity.
+
+---
+
+## 7. Customer Data
+
+Customer retains ownership of all Customer Data submitted through the Service.
+
+Customer grants Provider a limited license to store, process, transmit, and display Customer Data solely as necessary to provide and improve the Service.
+
+Customer remains responsible for the accuracy, legality, and integrity of all Customer Data.
+
+---
+
+## 8. Service Availability and Disclaimer
+
+THE SERVICE IS PROVIDED "AS IS" AND "AS AVAILABLE."
+
+Provider does not guarantee:
+
+* Continuous availability;
+* Error-free operation;
+* Uninterrupted service;
+* Compatibility with every environment or use case.
+
+To the fullest extent permitted by law, all implied warranties are disclaimed.
+
+---
+
+## 9. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, PROVIDER'S TOTAL LIABILITY ARISING FROM OR RELATED TO THE SERVICE SHALL NOT EXCEED THE TOTAL FEES PAID BY CUSTOMER DURING THE TWELVE (12) MONTHS PRECEDING THE EVENT GIVING RISE TO THE CLAIM.
+
+IN NO EVENT SHALL PROVIDER BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, INCLUDING LOSS OF PROFITS, REVENUE, BUSINESS OPPORTUNITIES, OR DATA.
+
+---
+
+## 10. Indemnification
+
+Customer agrees to defend, indemnify, and hold harmless Provider from claims, damages, liabilities, costs, and expenses arising from:
+
+* Customer's use of the Service;
+* Customer Data;
+* Violation of these Terms;
+* Violation of applicable law.
+
+---
+
+## 11. Governing Law
+
+These Terms shall be governed by and construed in accordance with the laws of the State of Florida, without regard to conflict-of-law principles.
+
+Any legal action arising from these Terms shall be brought exclusively in the state or federal courts located within Florida.
+
+---
+
+## 12. Changes to Terms
+
+Provider may update these Terms from time to time.
+
+Updated Terms become effective upon publication with a revised effective date.
+
+Continued use of the Service after the effective date constitutes acceptance of the revised Terms.
+
+---
+
+## 13. Contact Information
+
+Gilliom Frontline Digital
+Barney R. Gilliom
+
+Email: barney@gilliomfrontlinedigital.com
+
+Website: https://gilliomfrontlinedigital.com
+
+---
+
+## Acceptance
+
+By creating an account, starting a trial, purchasing a subscription, or using the Service, Customer acknowledges that Customer has read, understood, and agrees to be legally bound by these Terms of Service.

@@ -29,7 +29,6 @@ PLAN_CATALOG: dict[str, PlanDefinition] = {
 }
 
 PLAN_TIER_ORDER: dict[str, int] = {"starter": 0, "pro": 1, "enterprise": 2}
-DOWNGRADE_FORFEITURE_RATE = 0.5
 
 STRIPE_PRICE_ENV_BY_PLAN: dict[str, str] = {
     "starter": "STRIPE_PRICE_ID_STARTER",
@@ -99,6 +98,13 @@ def resolve_plan_key_from_stripe_object(event_object: Any) -> str | None:
     return plan_key_for_stripe_price_id(_subscription_price_id(event_object))
 
 
+def pending_plan_key_from_stripe_object(event_object: Any) -> str | None:
+    metadata = _stripe_get(event_object, "metadata")
+    if isinstance(metadata, dict):
+        return normalize_plan_key(metadata.get("pending_plan_key"))
+    return None
+
+
 def apply_plan_catalog_to_settings(settings: BillingSettings, plan_key: str) -> bool:
     normalized = normalize_plan_key(plan_key)
     if normalized is None:
@@ -117,14 +123,6 @@ def is_plan_downgrade(from_plan_key: str, to_plan_key: str) -> bool:
     if from_plan is None or to_plan is None:
         return False
     return PLAN_TIER_ORDER[to_plan] < PLAN_TIER_ORDER[from_plan]
-
-
-def compute_downgrade_forfeiture_cents(from_plan_key: str) -> int:
-    normalized = normalize_plan_key(from_plan_key)
-    if normalized is None:
-        return 0
-    plan = PLAN_CATALOG[normalized]
-    return int(plan.monthly_price_cents * DOWNGRADE_FORFEITURE_RATE)
 
 
 def stripe_price_env_name(plan_key: str) -> str | None:

@@ -2738,10 +2738,8 @@ export default function App() {
       setBillingFeedback("Only Pro or Enterprise plans can be downgraded from this action.");
       return;
     }
-    const forfeitureCents = Math.floor((billingForm.monthly_price_cents || 0) / 2);
-    const forfeitureLabel = formatCurrencyFromCents(forfeitureCents);
     const confirmed = globalThis.window?.confirm(
-      `Downgrade from ${plan} to Starter?\n\nPer our Terms of Service, you forfeit ${forfeitureLabel} (50% of the current plan payment). This is non-refundable.\n\nStarter limits (10 users / 10 schedules) apply immediately.`,
+      `Downgrade from ${plan} to Starter?\n\nPer our Terms of Service (v1.1), downgrades take effect at the start of your next billing cycle. You keep your current plan limits until then. No refund is issued for the current billing period.`,
     );
     if (!confirmed) return;
 
@@ -2749,25 +2747,14 @@ export default function App() {
     setBillingBusy(true);
     const { res, body } = await apiJson("/billing/downgrade", {
       method: "POST",
-      body: { target_plan_key: "starter", confirm_forfeiture: true },
+      body: { target_plan_key: "starter", confirm_downgrade: true },
     });
     if (!res.ok) {
       setBillingFeedback(`Downgrade failed: ${formatApiDetail(body)}`);
       setBillingBusy(false);
       return;
     }
-    setBillingForm({
-      plan_key: body.billing.plan_key,
-      billing_status: body.billing.billing_status,
-      monthly_price_cents: body.billing.monthly_price_cents,
-      max_users: body.billing.max_users,
-      max_schedules: body.billing.max_schedules,
-      stripe_customer_id: body.billing.stripe_customer_id || "",
-      stripe_subscription_id: body.billing.stripe_subscription_id || "",
-    });
-    setBillingFeedback(
-      `Downgraded to Starter. Forfeiture charged: ${formatCurrencyFromCents(body.forfeiture_cents)}.`,
-    );
+    setBillingFeedback(body.effective_note || "Downgrade scheduled for your next billing cycle.");
     setBillingBusy(false);
     await loadAdminOverview();
   }

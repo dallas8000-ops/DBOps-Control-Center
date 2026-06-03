@@ -41,9 +41,9 @@ from .auth_utils import (
 from .billing_plans import (
     ACTIVE_SUBSCRIPTION_STATUSES,
     apply_plan_catalog_to_settings,
-    compute_downgrade_forfeiture_cents,
     is_plan_downgrade,
     normalize_plan_key,
+    pending_plan_key_from_stripe_object,
     resolve_plan_key_from_stripe_object,
     stripe_price_env_name,
 )
@@ -632,9 +632,27 @@ def _apply_subscription_event(settings: BillingSettings, event_object: Any) -> N
     if isinstance(subscription_status, str) and subscription_status:
         settings.billing_status = subscription_status
     if isinstance(subscription_status, str) and subscription_status in ACTIVE_SUBSCRIPTION_STATUSES:
+        pending = pending_plan_key_from_stripe_object(event_object)
+        if pending and is_plan_downgrade(settings.plan_key, pending):
+            return
         plan_key = resolve_plan_key_from_stripe_object(event_object)
         if plan_key:
             apply_plan_catalog_to_settings(settings, plan_key)
+
+
+def _apply_invoice_paid_event(settings: BillingSettings, event_object: Any, stripe_client: Any) -> None:
+    subscription_id = _stripe_get(event_object, "subscription")
+    if not subscription_id or not settings.stripe_subscription_id:
+        return
+    if str(subscription_id) != str(settings.stripe_subscription_id):
+        return
+    try:
+        subscription = stripe_client.Subscription.retrieve(str(subscription_id))
+    except Exception:
+        return
+    pending = pending_plan_key_from_stripe_object(subscription)
+    if pending:
+        apply_plan_catalog_to_settings(settings, pending)
 
 
 def _enforce_plan_limit(db: Session, *, metric: str, current_count: int) -> None:
@@ -962,6 +980,7 @@ STRIPE_WEBHOOK_EVENTS = (
     "customer.subscription.created",
     "customer.subscription.updated",
     "customer.subscription.deleted",
+    "invoice.paid",
 )
 
 
@@ -1249,10 +1268,10 @@ def downgrade_billing_plan(
     db: DbDep,
     _: DbaUserDep,
 ):
-    if not payload.confirm_forfeiture:
+    if not payload.confirm_downgrade:
         raise HTTPException(
             status_code=400,
-            detail="Downgrade requires confirm_forfeiture=true. See Terms of Service for the 50% forfeiture policy.",
+            detail="Downgrade requires confirm_downgrade=true. See Terms of Service (v1.1).",
         )
 
     target_plan_key = normalize_plan_key(payload.target_plan_key)
@@ -1269,7 +1288,6 @@ def downgrade_billing_plan(
             detail=f"Cannot downgrade from {settings.plan_key} to {target_plan_key}. Target plan must be lower tier.",
         )
 
-    forfeiture_cents = compute_downgrade_forfeiture_cents(settings.plan_key)
     from_plan_key = settings.plan_key
 
     try:
@@ -1302,35 +1320,11 @@ def downgrade_billing_plan(
             settings.stripe_subscription_id,
             items=[{"id": subscription_item_id, "price": target_price_id}],
             proration_behavior="none",
-            metadata={"plan_key": target_plan_key},
+            metadata={"plan_key": from_plan_key, "pending_plan_key": target_plan_key},
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Stripe subscription downgrade failed: {str(exc)}")
 
-    stripe_invoice_id: str | None = None
-    if forfeiture_cents > 0:
-        try:
-            stripe_client.InvoiceItem.create(
-                customer=str(customer_id),
-                amount=forfeiture_cents,
-                currency="usd",
-                description=(
-                    f"Downgrade forfeiture — 50% of {from_plan_key} plan period "
-                    f"(${forfeiture_cents / 100:.2f}) per Terms of Service"
-                ),
-            )
-            invoice = stripe_client.Invoice.create(
-                customer=str(customer_id),
-                auto_advance=True,
-                collection_method="charge_automatically",
-            )
-            invoice_id = _stripe_get(invoice, "id")
-            if invoice_id:
-                stripe_invoice_id = str(invoice_id)
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Stripe downgrade forfeiture invoice failed: {str(exc)}")
-
-    apply_plan_catalog_to_settings(settings, target_plan_key)
     if settings.stripe_customer_id is None and customer_id:
         settings.stripe_customer_id = str(customer_id)
     db.add(settings)
@@ -1340,9 +1334,12 @@ def downgrade_billing_plan(
     return BillingDowngradeRead(
         from_plan_key=from_plan_key,
         target_plan_key=target_plan_key,
-        forfeiture_cents=forfeiture_cents,
+        pending_plan_key=target_plan_key,
+        effective_note=(
+            "Downgrade scheduled for the start of your next billing cycle. "
+            "Current plan limits remain until then."
+        ),
         stripe_subscription_id=settings.stripe_subscription_id,
-        stripe_invoice_id=stripe_invoice_id,
         billing=BillingSettingsRead.model_validate(settings),
     )
 
@@ -1384,6 +1381,8 @@ async def handle_billing_webhook(
         "customer.subscription.deleted",
     }:
         _apply_subscription_event(settings, event_object)
+    elif event_type == "invoice.paid":
+        _apply_invoice_paid_event(settings, event_object, stripe_client)
 
     db.add(settings)
     db.commit()

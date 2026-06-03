@@ -10,94 +10,96 @@
       font-family: "Segoe UI", system-ui, sans-serif;
       background: #0a0a0b;
       color: #f0efe8;
-      line-height: 1.6;
+      line-height: 1.65;
       margin: 0;
       padding: 2rem 1.25rem 4rem;
     }
-    main { max-width: 720px; margin: 0 auto; }
-    h1, h2 { font-family: ui-monospace, monospace; }
-    h1 { color: #f0b429; font-size: 1.75rem; }
-    h2 { margin-top: 2rem; font-size: 1.1rem; color: #f0b429; }
+    main { max-width: 760px; margin: 0 auto; }
+    h1, h2, h3 { font-family: ui-monospace, monospace; color: #f0b429; }
+    h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.15rem; margin-top: 2.25rem; }
+    h3 { font-size: 1rem; margin-top: 1.25rem; color: #f0efe8; }
     p, li { color: #c8c8c8; }
+    ul { padding-left: 1.25rem; }
     table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.95rem; }
     th, td { border: 1px solid rgba(255,255,255,0.12); padding: 0.6rem 0.75rem; text-align: left; }
-    th { background: #111113; color: #f0efe8; }
-    .notice {
-      border: 1px solid rgba(240,180,41,0.35);
-      background: rgba(240,180,41,0.08);
-      padding: 0.85rem 1rem;
-      border-radius: 6px;
-      margin: 1.5rem 0;
-      font-size: 0.9rem;
-    }
+    th { background: #111113; }
+    .caps { font-weight: 600; color: #f0efe8; margin: 1.5rem 0; }
     a { color: #f0b429; }
     .back { display: inline-block; margin-bottom: 1.5rem; text-decoration: none; }
+    hr { border: none; border-top: 1px solid rgba(255,255,255,0.12); margin: 2rem 0; }
   </style>
 </head>
 <body>
   <main>
     <a class="back" href="/">← Back to DBOps</a>
-    <h1>Terms of Service</h1>
-    <p><strong>Version 1.0 — Effective June 3, 2026</strong></p>
+    <h1>DBOps Control Center</h1>
+    <h2 style="margin-top: 0.5rem;">Terms of Service</h2>
+    <p><strong>Version 1.1</strong><br /><strong>Effective Date: June 3, 2026</strong></p>
     <p>
-      These Terms govern use of DBOps Control Center (“Service”) by Gilliom Frontline Digital / Barney R. Gilliom (“Provider”).
-      By subscribing or starting a trial, you agree to these Terms.
+      These Terms of Service constitute a legally binding agreement between Gilliom Frontline Digital,
+      operated by Barney R. Gilliom, and you, the Customer using DBOps Control Center.
+    </p>
+    <p class="caps">
+      BY ACCESSING, REGISTERING FOR, STARTING A FREE TRIAL OF, PURCHASING, OR USING THE SERVICE,
+      YOU AGREE TO BE BOUND BY THESE TERMS.
     </p>
 
-    <div class="notice">
-      Template for commercial use — have a qualified attorney review before relying on this in live billing.
-    </div>
+    <hr />
 
-    <h2>Plans</h2>
+    <h2>1. Service Description</h2>
+    <p>DBOps Control Center is a hosted database operations platform that may include user and role management, audit logging, incident management, scheduled reporting, administrative dashboards, database operations tools, and related business management features. Feature availability depends on your subscription plan.</p>
+
+    <h2>2. Subscription Plans</h2>
     <table>
       <thead>
-        <tr><th>Plan</th><th>Price</th><th>Users</th><th>Schedules</th></tr>
+        <tr><th>Plan</th><th>Monthly Fee</th><th>Max Users</th><th>Scheduled Reports</th></tr>
       </thead>
       <tbody>
-        <tr><td>Starter</td><td>$49/mo</td><td>10</td><td>10</td></tr>
-        <tr><td>Pro</td><td>$149/mo</td><td>5,000</td><td>5,000</td></tr>
-        <tr><td>Enterprise</td><td>$399/mo</td><td>10,000</td><td>10,000</td></tr>
+        <tr><td>Starter</td><td>$49</td><td>10</td><td>10</td></tr>
+        <tr><td>Pro</td><td>$149</td><td>5,000</td><td>5,000</td></tr>
+        <tr><td>Enterprise</td><td>$399</td><td>10,000</td><td>10,000</td></tr>
       </tbody>
     </table>
 
-    <h2>Upgrades</h2>
-    <p>
-      Upgrades (e.g. Starter → Pro) take effect when payment succeeds. New limits apply immediately.
-      Stripe may prorate charges according to its settings at the time of upgrade.
-    </p>
+    <h2>3. Billing and Payment</h2>
+    <p>Subscriptions are billed monthly in advance through Stripe. Taxes are your responsibility. We may suspend access if payment cannot be collected.</p>
 
-    <h2>Downgrades — 50% forfeiture</h2>
-    <p>
-      If you <strong>downgrade during a paid billing period</strong> (for example, Pro → Starter mid-cycle),
-      you <strong>forfeit 50% of the amount you paid for the current period of the plan you are leaving</strong>.
-      That forfeited amount is <strong>non-refundable</strong>.
-    </p>
-    <p>
-      <strong>Example:</strong> You paid $149 for Pro and downgrade to Starter mid-month.
-      You forfeit <strong>$74.50</strong> (50% of $149). You do not receive that amount back.
-      Starter limits (10 users / 10 schedules) apply after the downgrade is confirmed.
-      You must reduce usage to fit the new plan.
-    </p>
-    <p>
-      To request a downgrade, contact
-      <a href="mailto:barney@gilliomfrontlinedigital.com">barney@gilliomfrontlinedigital.com</a>.
-    </p>
+    <h2>4. Subscription Changes</h2>
+    <h3>Upgrades</h3>
+    <p>Upgrades generally take effect immediately upon successful payment. Proration is handled by Stripe.</p>
+    <h3>Downgrades</h3>
+    <p>You may request a downgrade through the Service or by contacting us. Downgrades take effect at the <strong>beginning of the next billing cycle</strong>. Until then, you keep your current plan's features and limits.</p>
+    <h3>No Refunds</h3>
+    <p>Except where required by law, fees are non-refundable, including for unused time, downgrades, or cancellation during an active billing cycle.</p>
 
-    <h2>Cancellation</h2>
-    <p>
-      Cancellation stops future renewals. Fees already paid for the current period are generally non-refundable,
-      except where required by law.
-    </p>
+    <h2>5. Cancellation</h2>
+    <p>Cancellation stops future renewals. Paid access may continue through the end of the current billing period. No refund of fees already paid unless required by law.</p>
 
-    <h2>Contact</h2>
+    <h2>6. Acceptable Use</h2>
+    <p>You agree not to violate laws, attempt unauthorized access, circumvent plan limits, interfere with security, or reverse engineer the Service except where legally permitted.</p>
+
+    <h2>7. Customer Data</h2>
+    <p>You retain ownership of your data. You grant us a limited license to process it solely to provide the Service.</p>
+
+    <h2>8–10. Disclaimer, Liability, Indemnification</h2>
+    <p>The Service is provided "AS IS" and "AS AVAILABLE." Our total liability is limited to fees paid in the prior twelve months. We are not liable for indirect or consequential damages. You agree to indemnify us for claims arising from your use of the Service or violation of these Terms.</p>
+
+    <h2>11. Governing Law</h2>
+    <p>These Terms are governed by the laws of the State of Florida. Disputes shall be brought in Florida state or federal courts.</p>
+
+    <h2>12. Changes to Terms</h2>
+    <p>We may update these Terms by publishing a revised version. Continued use after the effective date constitutes acceptance.</p>
+
+    <h2>13. Contact</h2>
     <p>
       Gilliom Frontline Digital · Barney R. Gilliom<br />
-      <a href="mailto:barney@gilliomfrontlinedigital.com">barney@gilliomfrontlinedigital.com</a>
+      <a href="mailto:barney@gilliomfrontlinedigital.com">barney@gilliomfrontlinedigital.com</a><br />
+      <a href="https://gilliomfrontlinedigital.com">gilliomfrontlinedigital.com</a>
     </p>
 
-    <p style="margin-top: 2rem; font-size: 0.85rem; color: #8a8a8a;">
-      Full text maintained in repository: <code>docs/DBOps_TERMS_OF_SERVICE.md</code>
-    </p>
+    <hr />
+    <p><strong>Acceptance:</strong> By creating an account, starting a trial, purchasing a subscription, or using the Service, you agree to these Terms of Service.</p>
   </main>
 </body>
 </html>
