@@ -53,10 +53,10 @@ const PLANS = [
   {
     tier: "Pro",
     price: "$149",
-    period: "Unlimited users · Unlimited schedules",
+    period: "Up to 5,000 users · 5,000 schedules",
     features: [
-      { text: "Unlimited users", ok: true },
-      { text: "Unlimited scheduled reports", ok: true },
+      { text: "Up to 5,000 users", ok: true },
+      { text: "Up to 5,000 scheduled reports", ok: true },
       { text: "Full incident workflows", ok: true },
       { text: "Report audit trail + CSV", ok: true },
       { text: "Google SSO + RBAC", ok: true },
@@ -344,6 +344,7 @@ export default function LandingPage({ onGetStarted }) {
         <p>© 2026 Gilliom Frontline Digital. Built by Barney R. Gilliom.</p>
         <div className="lp-footer-links">
           <a onClick={() => window.open("https://gilliomfrontlinedigital.com", "_blank")}>Portfolio</a>
+          <a onClick={() => window.open("/terms-of-service.html", "_blank")}>Terms of Service</a>
           <a onClick={onGetStarted}>Sign In</a>
           <a onClick={() => window.open("mailto:barney@gilliomfrontlinedigital.com")}>Email</a>
         </div>

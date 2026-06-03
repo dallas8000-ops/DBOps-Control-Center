@@ -269,6 +269,20 @@ class BillingCheckoutSessionRead(BaseModel):
     url: str
 
 
+class BillingDowngradeCreate(BaseModel):
+    target_plan_key: str = Field(default="starter", min_length=2, max_length=80)
+    confirm_forfeiture: bool = False
+
+
+class BillingDowngradeRead(BaseModel):
+    from_plan_key: str
+    target_plan_key: str
+    forfeiture_cents: int
+    stripe_subscription_id: str
+    stripe_invoice_id: str | None = None
+    billing: BillingSettingsRead
+
+
 class StripeWebhookEventRead(BaseModel):
     received: bool
     event_type: str

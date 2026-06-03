@@ -4,7 +4,7 @@ import PropTypes from "prop-types";
 import { BusinessOpsPanel } from "./components/BusinessOpsPanel.jsx";
 import { Card, ReportRunsTrendChart } from "./components/DashboardWidgets.jsx";
 import { IncidentsSection } from "./components/IncidentsSection.jsx";
-import { formatSchedulerStamp, formatUtcIsoAsLocal, utcWallClockToLocalPreview } from "./formatters.js";
+import { formatCurrencyFromCents, formatSchedulerStamp, formatUtcIsoAsLocal, utcWallClockToLocalPreview } from "./formatters.js";
 import LandingPage from "./LandingPage";
 
 const API_URL = String(import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
@@ -2732,6 +2732,46 @@ export default function App() {
     }
   }
 
+  async function downgradeBillingPlan() {
+    const plan = billingForm.plan_key;
+    if (plan !== "pro" && plan !== "enterprise") {
+      setBillingFeedback("Only Pro or Enterprise plans can be downgraded from this action.");
+      return;
+    }
+    const forfeitureCents = Math.floor((billingForm.monthly_price_cents || 0) / 2);
+    const forfeitureLabel = formatCurrencyFromCents(forfeitureCents);
+    const confirmed = globalThis.window?.confirm(
+      `Downgrade from ${plan} to Starter?\n\nPer our Terms of Service, you forfeit ${forfeitureLabel} (50% of the current plan payment). This is non-refundable.\n\nStarter limits (10 users / 10 schedules) apply immediately.`,
+    );
+    if (!confirmed) return;
+
+    setBillingFeedback("");
+    setBillingBusy(true);
+    const { res, body } = await apiJson("/billing/downgrade", {
+      method: "POST",
+      body: { target_plan_key: "starter", confirm_forfeiture: true },
+    });
+    if (!res.ok) {
+      setBillingFeedback(`Downgrade failed: ${formatApiDetail(body)}`);
+      setBillingBusy(false);
+      return;
+    }
+    setBillingForm({
+      plan_key: body.billing.plan_key,
+      billing_status: body.billing.billing_status,
+      monthly_price_cents: body.billing.monthly_price_cents,
+      max_users: body.billing.max_users,
+      max_schedules: body.billing.max_schedules,
+      stripe_customer_id: body.billing.stripe_customer_id || "",
+      stripe_subscription_id: body.billing.stripe_subscription_id || "",
+    });
+    setBillingFeedback(
+      `Downgraded to Starter. Forfeiture charged: ${formatCurrencyFromCents(body.forfeiture_cents)}.`,
+    );
+    setBillingBusy(false);
+    await loadAdminOverview();
+  }
+
   async function downloadIncidentHistoryCsv(incidentId) {
     const res = await fetch(`${API_URL}/incidents/${incidentId}/history/export`, {
       method: "GET",
@@ -2999,6 +3039,7 @@ export default function App() {
               billingFeedback={billingFeedback}
               onSaveBilling={saveBillingSettings}
               onStartBillingCheckout={startBillingCheckout}
+              onDowngradeBilling={downgradeBillingPlan}
             />
           ) : null}
           {canManageUsers ? (

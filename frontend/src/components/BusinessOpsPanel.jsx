@@ -10,6 +10,7 @@ export function BusinessOpsPanel({
   billingFeedback,
   onSaveBilling,
   onStartBillingCheckout,
+  onDowngradeBilling,
 }) {
   if (!adminOverview) {
     return (
@@ -51,6 +52,17 @@ export function BusinessOpsPanel({
       <button type="button" className="btn btn-primary schedule-submit" onClick={onStartBillingCheckout} disabled={billingBusy}>
         {billingBusy ? "Working..." : "Subscribe with Stripe"}
       </button>
+      {(billingForm.plan_key === "pro" || billingForm.plan_key === "enterprise") && onDowngradeBilling ? (
+        <button
+          type="button"
+          className="btn btn-secondary schedule-submit"
+          onClick={onDowngradeBilling}
+          disabled={billingBusy}
+          style={{ marginLeft: "0.75rem" }}
+        >
+          {billingBusy ? "Working..." : "Downgrade to Starter"}
+        </button>
+      ) : null}
       <form className="form-grid schedule-form" onSubmit={onSaveBilling}>
         <label className="field">
           <span className="field-label">Plan key</span>
@@ -148,4 +160,5 @@ BusinessOpsPanel.propTypes = {
   billingFeedback: PropTypes.string.isRequired,
   onSaveBilling: PropTypes.func.isRequired,
   onStartBillingCheckout: PropTypes.func.isRequired,
+  onDowngradeBilling: PropTypes.func,
 };

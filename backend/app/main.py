@@ -38,6 +38,15 @@ from .auth_utils import (
     verify_password,
     REFRESH_TOKEN_EXPIRE_DAYS,
 )
+from .billing_plans import (
+    ACTIVE_SUBSCRIPTION_STATUSES,
+    apply_plan_catalog_to_settings,
+    compute_downgrade_forfeiture_cents,
+    is_plan_downgrade,
+    normalize_plan_key,
+    resolve_plan_key_from_stripe_object,
+    stripe_price_env_name,
+)
 from . import oidc_verify as _oidc
 from .db import engine, get_db
 from .deps import get_current_user, require_roles
@@ -65,6 +74,8 @@ from .schemas import (
     AiIncidentSummaryResponse,
     BillingCheckoutSessionCreate,
     BillingCheckoutSessionRead,
+    BillingDowngradeCreate,
+    BillingDowngradeRead,
     BillingSettingsRead,
     BillingSettingsUpdate,
     IncidentCreate,
@@ -378,6 +389,11 @@ ERROR_RESPONSES_BILLING_WEBHOOK = {
     400: {"description": "Invalid Stripe webhook request"},
     503: {"description": "Stripe billing is not configured"},
 }
+ERROR_RESPONSES_BILLING_DOWNGRADE = {
+    400: {"description": "Invalid downgrade request or missing subscription"},
+    403: {"description": DBA_ROLE_REQUIRED_DESCRIPTION},
+    503: {"description": "Stripe billing is not configured"},
+}
 
 DbDep: TypeAlias = Annotated[Session, Depends(get_db)]
 CurrentUserDep: TypeAlias = Annotated[User, Depends(get_current_user)]
@@ -578,6 +594,20 @@ def _resolve_stripe_checkout_price_id(stripe_client: Any, raw_id: str) -> str:
     )
 
 
+def _required_stripe_price_id_for_plan(stripe_client: Any, plan_key: str) -> str:
+    normalized = normalize_plan_key(plan_key)
+    if normalized is None:
+        raise HTTPException(status_code=400, detail=f"Unknown plan key: {plan_key}")
+    env_name = stripe_price_env_name(normalized)
+    if not env_name:
+        raise HTTPException(status_code=400, detail=f"No Stripe price configured for plan: {normalized}")
+    try:
+        configured = _stripe_required_setting(env_name)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    return _resolve_stripe_checkout_price_id(stripe_client, configured)
+
+
 def _apply_checkout_completed_event(settings: BillingSettings, event_object: Any) -> None:
     customer_id = _stripe_get(event_object, "customer")
     subscription_id = _stripe_get(event_object, "subscription")
@@ -586,6 +616,9 @@ def _apply_checkout_completed_event(settings: BillingSettings, event_object: Any
     if subscription_id:
         settings.stripe_subscription_id = str(subscription_id)
     settings.billing_status = "active"
+    plan_key = resolve_plan_key_from_stripe_object(event_object)
+    if plan_key:
+        apply_plan_catalog_to_settings(settings, plan_key)
 
 
 def _apply_subscription_event(settings: BillingSettings, event_object: Any) -> None:
@@ -598,6 +631,10 @@ def _apply_subscription_event(settings: BillingSettings, event_object: Any) -> N
         settings.stripe_subscription_id = str(subscription_id)
     if isinstance(subscription_status, str) and subscription_status:
         settings.billing_status = subscription_status
+    if isinstance(subscription_status, str) and subscription_status in ACTIVE_SUBSCRIPTION_STATUSES:
+        plan_key = resolve_plan_key_from_stripe_object(event_object)
+        if plan_key:
+            apply_plan_catalog_to_settings(settings, plan_key)
 
 
 def _enforce_plan_limit(db: Session, *, metric: str, current_count: int) -> None:
@@ -1142,13 +1179,14 @@ def update_billing_settings(
     _: DbaUserDep,
 ):
     settings = _get_or_create_billing_settings(db)
-    settings.plan_key = payload.plan_key
     settings.billing_status = payload.billing_status
-    settings.monthly_price_cents = payload.monthly_price_cents
-    settings.max_users = payload.max_users
-    settings.max_schedules = payload.max_schedules
     settings.stripe_customer_id = payload.stripe_customer_id
     settings.stripe_subscription_id = payload.stripe_subscription_id
+    if not apply_plan_catalog_to_settings(settings, payload.plan_key):
+        settings.plan_key = payload.plan_key
+        settings.monthly_price_cents = payload.monthly_price_cents
+        settings.max_users = payload.max_users
+        settings.max_schedules = payload.max_schedules
     db.add(settings)
     db.commit()
     db.refresh(settings)
@@ -1176,6 +1214,7 @@ def create_billing_checkout_session(
         raise HTTPException(status_code=503, detail=str(exc))
 
     price_id = _resolve_stripe_checkout_price_id(stripe_client, configured_price_or_product)
+    checkout_plan_key = payload.plan_key or settings.plan_key
 
     try:
         session = stripe_client.checkout.Session.create(
@@ -1186,7 +1225,8 @@ def create_billing_checkout_session(
             cancel_url=payload.cancel_url,
             customer=settings.stripe_customer_id or None,
             customer_email=current.email if not settings.stripe_customer_id else None,
-            metadata={"plan_key": payload.plan_key or settings.plan_key},
+            metadata={"plan_key": checkout_plan_key},
+            subscription_data={"metadata": {"plan_key": checkout_plan_key}},
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Stripe checkout failed: {str(exc)}")
@@ -1197,6 +1237,114 @@ def create_billing_checkout_session(
         raise HTTPException(status_code=400, detail="Stripe checkout did not return a valid session")
 
     return BillingCheckoutSessionRead(session_id=str(session_id), url=str(checkout_url))
+
+
+@app.post(
+    "/billing/downgrade",
+    response_model=BillingDowngradeRead,
+    responses=ERROR_RESPONSES_BILLING_DOWNGRADE,
+)
+def downgrade_billing_plan(
+    payload: BillingDowngradeCreate,
+    db: DbDep,
+    _: DbaUserDep,
+):
+    if not payload.confirm_forfeiture:
+        raise HTTPException(
+            status_code=400,
+            detail="Downgrade requires confirm_forfeiture=true. See Terms of Service for the 50% forfeiture policy.",
+        )
+
+    target_plan_key = normalize_plan_key(payload.target_plan_key)
+    if target_plan_key is None:
+        raise HTTPException(status_code=400, detail=f"Unknown target plan: {payload.target_plan_key}")
+
+    settings = _get_or_create_billing_settings(db)
+    if not settings.stripe_subscription_id:
+        raise HTTPException(status_code=400, detail="No active Stripe subscription to downgrade.")
+
+    if not is_plan_downgrade(settings.plan_key, target_plan_key):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot downgrade from {settings.plan_key} to {target_plan_key}. Target plan must be lower tier.",
+        )
+
+    forfeiture_cents = compute_downgrade_forfeiture_cents(settings.plan_key)
+    from_plan_key = settings.plan_key
+
+    try:
+        stripe_client = _stripe_client()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    target_price_id = _required_stripe_price_id_for_plan(stripe_client, target_plan_key)
+
+    try:
+        subscription = stripe_client.Subscription.retrieve(settings.stripe_subscription_id)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Stripe subscription lookup failed: {str(exc)}")
+
+    items = _stripe_get(subscription, "items")
+    item_rows = _stripe_get(items, "data") or []
+    if not item_rows:
+        raise HTTPException(status_code=400, detail="Stripe subscription has no billable items.")
+
+    subscription_item_id = _stripe_get(item_rows[0], "id")
+    if not subscription_item_id:
+        raise HTTPException(status_code=400, detail="Stripe subscription item id missing.")
+
+    customer_id = settings.stripe_customer_id or _stripe_get(subscription, "customer")
+    if not customer_id:
+        raise HTTPException(status_code=400, detail="Stripe customer id missing for downgrade billing.")
+
+    try:
+        stripe_client.Subscription.modify(
+            settings.stripe_subscription_id,
+            items=[{"id": subscription_item_id, "price": target_price_id}],
+            proration_behavior="none",
+            metadata={"plan_key": target_plan_key},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Stripe subscription downgrade failed: {str(exc)}")
+
+    stripe_invoice_id: str | None = None
+    if forfeiture_cents > 0:
+        try:
+            stripe_client.InvoiceItem.create(
+                customer=str(customer_id),
+                amount=forfeiture_cents,
+                currency="usd",
+                description=(
+                    f"Downgrade forfeiture — 50% of {from_plan_key} plan period "
+                    f"(${forfeiture_cents / 100:.2f}) per Terms of Service"
+                ),
+            )
+            invoice = stripe_client.Invoice.create(
+                customer=str(customer_id),
+                auto_advance=True,
+                collection_method="charge_automatically",
+            )
+            invoice_id = _stripe_get(invoice, "id")
+            if invoice_id:
+                stripe_invoice_id = str(invoice_id)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Stripe downgrade forfeiture invoice failed: {str(exc)}")
+
+    apply_plan_catalog_to_settings(settings, target_plan_key)
+    if settings.stripe_customer_id is None and customer_id:
+        settings.stripe_customer_id = str(customer_id)
+    db.add(settings)
+    db.commit()
+    db.refresh(settings)
+
+    return BillingDowngradeRead(
+        from_plan_key=from_plan_key,
+        target_plan_key=target_plan_key,
+        forfeiture_cents=forfeiture_cents,
+        stripe_subscription_id=settings.stripe_subscription_id,
+        stripe_invoice_id=stripe_invoice_id,
+        billing=BillingSettingsRead.model_validate(settings),
+    )
 
 
 @app.post("/billing/webhook", response_model=StripeWebhookEventRead, responses=ERROR_RESPONSES_BILLING_WEBHOOK)

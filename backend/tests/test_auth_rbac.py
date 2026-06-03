@@ -99,6 +99,33 @@ def _fake_stripe_module(*, session_payload: dict | None = None, event_payload: d
     )
 
 
+def _fake_stripe_module_with_downgrade():
+    subscription = {
+        "id": "sub_pro_live",
+        "customer": "cus_pro_live",
+        "status": "active",
+        "metadata": {"plan_key": "pro"},
+        "items": {"data": [{"id": "si_pro_item", "price": {"id": "price_pro_live"}}]},
+    }
+
+    def modify_subscription(sub_id, **kwargs):
+        updated = dict(subscription)
+        if kwargs.get("metadata"):
+            updated["metadata"] = kwargs["metadata"]
+        return updated
+
+    return SimpleNamespace(
+        api_key=None,
+        Subscription=SimpleNamespace(
+            retrieve=lambda sub_id: subscription,
+            modify=modify_subscription,
+        ),
+        InvoiceItem=SimpleNamespace(create=lambda **kwargs: {"id": "ii_forfeit", **kwargs}),
+        Invoice=SimpleNamespace(create=lambda **kwargs: {"id": "in_forfeit", **kwargs}),
+        Webhook=SimpleNamespace(construct_event=lambda **kwargs: {}),
+    )
+
+
 def test_bootstrap_requires_first_user_to_be_dba() -> None:
     for client in _client():
         resp = client.post(
@@ -909,6 +936,112 @@ def test_stripe_webhook_updates_billing_settings(monkeypatch) -> None:
         assert billing["billing_status"] == "active"
 
 
+def test_stripe_webhook_checkout_pro_applies_unlimited_user_limit(monkeypatch) -> None:
+    fake_event = {
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "customer": "cus_pro_001",
+                "subscription": "sub_pro_001",
+                "metadata": {"plan_key": "pro"},
+            },
+        },
+    }
+    fake_stripe = _fake_stripe_module(event_payload=fake_event)
+    monkeypatch.setattr("app.main.stripe", fake_stripe)
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_123")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test_123")
+
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+
+        webhook_resp = client.post(
+            "/billing/webhook",
+            content="{}",
+            headers={"Stripe-Signature": "t=1,v1=testsig"},
+        )
+        assert webhook_resp.status_code == 200
+
+        overview = client.get("/admin/overview", headers=_auth_headers(dba_token))
+        billing = overview.json()["billing"]
+        assert billing["plan_key"] == "pro"
+        assert billing["max_users"] == 5_000
+        assert billing["max_schedules"] == 5_000
+        assert billing["monthly_price_cents"] == 14900
+
+
+def test_dba_update_billing_pro_applies_catalog_limits() -> None:
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+
+        resp = client.put(
+            "/admin/billing",
+            json={
+                "plan_key": "pro",
+                "billing_status": "active",
+                "monthly_price_cents": 1,
+                "max_users": 1,
+                "max_schedules": 1,
+                "stripe_customer_id": "cus_pro_admin",
+                "stripe_subscription_id": "sub_pro_admin",
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["plan_key"] == "pro"
+        assert body["max_users"] == 5_000
+        assert body["max_schedules"] == 5_000
+        assert body["monthly_price_cents"] == 14900
+
+
+def test_billing_downgrade_pro_to_starter_charges_forfeiture(monkeypatch) -> None:
+    fake_stripe = _fake_stripe_module_with_downgrade()
+    monkeypatch.setattr("app.main.stripe", fake_stripe)
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_123")
+    monkeypatch.setenv("STRIPE_PRICE_ID_STARTER", "price_starter_live")
+
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+
+        seed_resp = client.put(
+            "/admin/billing",
+            json={
+                "plan_key": "pro",
+                "billing_status": "active",
+                "monthly_price_cents": 14900,
+                "max_users": 5000,
+                "max_schedules": 5000,
+                "stripe_customer_id": "cus_pro_live",
+                "stripe_subscription_id": "sub_pro_live",
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert seed_resp.status_code == 200
+
+        missing_confirm = client.post(
+            "/billing/downgrade",
+            json={"target_plan_key": "starter", "confirm_forfeiture": False},
+            headers=_auth_headers(dba_token),
+        )
+        assert missing_confirm.status_code == 400
+
+        downgrade_resp = client.post(
+            "/billing/downgrade",
+            json={"target_plan_key": "starter", "confirm_forfeiture": True},
+            headers=_auth_headers(dba_token),
+        )
+        assert downgrade_resp.status_code == 200
+        body = downgrade_resp.json()
+        assert body["from_plan_key"] == "pro"
+        assert body["target_plan_key"] == "starter"
+        assert body["forfeiture_cents"] == 7450
+        assert body["stripe_invoice_id"] == "in_forfeit"
+        assert body["billing"]["plan_key"] == "starter"
+        assert body["billing"]["max_users"] == 10
+        assert body["billing"]["max_schedules"] == 10
+
+
 def test_plan_user_limit_blocks_additional_user_creation() -> None:
     for client in _client():
         dba_token = _bootstrap_dba(client)
@@ -916,7 +1049,7 @@ def test_plan_user_limit_blocks_additional_user_creation() -> None:
         update_resp = client.put(
             "/admin/billing",
             json={
-                "plan_key": "starter",
+                "plan_key": "growth",
                 "billing_status": "trialing",
                 "monthly_price_cents": 14900,
                 "max_users": 1,
@@ -944,7 +1077,7 @@ def test_plan_schedule_limit_blocks_additional_schedule_creation() -> None:
         update_resp = client.put(
             "/admin/billing",
             json={
-                "plan_key": "starter",
+                "plan_key": "growth",
                 "billing_status": "trialing",
                 "monthly_price_cents": 14900,
                 "max_users": 10,
