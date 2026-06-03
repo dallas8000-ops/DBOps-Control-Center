@@ -335,6 +335,28 @@ class AdminOverviewRead(BaseModel):
     activity_trend: list[ActivityTrendPointRead]
 
 
+class RenderMonitorRead(BaseModel):
+    timestamp: str
+    mrr: float
+    client_count: int
+    net_profit: float
+    profit_margin_pct: float
+    stripe_fees: float
+    render_cost: float
+    upgrade_threshold: float
+    profit_multiplier: float
+    should_upgrade: bool
+    clients_to_breakeven: int
+    current_tier: str
+    next_tier: str
+    next_tier_cost: float | None
+    recommendation: str
+    alert_email: str
+    smtp_configured: bool
+    alert_sent: bool = False
+    alert_skipped_reason: str | None = None
+
+
 class AiFindReportRequest(BaseModel):
     user_query: str = Field(min_length=3, max_length=500)
 

@@ -24,11 +24,48 @@ _runtime_status = {
     "last_iteration_processed": 0,
     "last_iteration_error": None,
     "consecutive_failures": 0,
+    "last_render_monitor_at": None,
+    "last_render_monitor_should_upgrade": None,
 }
+_last_render_monitor_check_at: datetime | None = None
 
 
 def get_scheduler_runtime_status() -> dict:
     return dict(_runtime_status)
+
+
+def _render_monitor_interval_hours() -> int:
+    try:
+        return max(int(os.getenv("RENDER_MONITOR_INTERVAL_HOURS", "24")), 1)
+    except ValueError:
+        return 24
+
+
+def maybe_run_render_monitor_check() -> None:
+    global _last_render_monitor_check_at
+
+    if os.getenv("RENDER_MONITOR_DISABLE", "").lower() in {"1", "true", "yes"}:
+        return
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    if _last_render_monitor_check_at is not None:
+        elapsed = now - _last_render_monitor_check_at
+        if elapsed < timedelta(hours=_render_monitor_interval_hours()):
+            return
+
+    db = SessionLocal()
+    try:
+        from .render_monitor import scheduled_render_monitor_check
+
+        status = scheduled_render_monitor_check(db)
+        _last_render_monitor_check_at = now
+        _runtime_status["last_render_monitor_at"] = now.isoformat()
+        if status is not None:
+            _runtime_status["last_render_monitor_should_upgrade"] = status.get("should_upgrade")
+    except Exception:
+        logger.exception("Render monitor scheduled check failed")
+    finally:
+        db.close()
 
 
 def _retry_env_int(name: str, default: int, minimum: int = 0) -> int:
@@ -311,6 +348,7 @@ async def run_scheduler_loop(stop_event: asyncio.Event) -> None:
         _runtime_status["last_iteration_started_at"] = datetime.now(UTC).isoformat()
         try:
             processed = process_due_report_schedules()
+            maybe_run_render_monitor_check()
             _runtime_status["last_iteration_processed"] = processed
             _runtime_status["last_iteration_error"] = None
             _runtime_status["consecutive_failures"] = 0

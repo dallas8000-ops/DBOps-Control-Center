@@ -102,6 +102,7 @@ from .schemas import (
     Token,
     OnboardingItemRead,
     PlanUsageRead,
+    RenderMonitorRead,
     UserAdminAuditRead,
     UserCreate,
     UserPasswordReset,
@@ -111,6 +112,7 @@ from .schemas import (
     EssentialDependencyBundleResponse,
     LinkedReport,
 )
+from .render_monitor import evaluate_render_monitor
 from .scheduler import compute_next_run_at, get_scheduler_runtime_status, run_scheduler_loop
 
 
@@ -1193,6 +1195,18 @@ def admin_overview(
     overview = _build_admin_overview(db)
     db.commit()
     return overview
+
+
+@app.get("/admin/render-monitor", response_model=RenderMonitorRead, responses=ERROR_RESPONSES_DBA_ONLY)
+def render_monitor_status(
+    db: DbDep,
+    current: DbaUserDep,
+    send_alert: bool = False,
+):
+    """DBA-only: MRR vs Render hosting cost; optional email when upgrade threshold is met."""
+    status = evaluate_render_monitor(db, actor_user_id=current.id, send_alert=send_alert)
+    db.commit()
+    return status
 
 
 @app.get("/admin/export", response_class=PlainTextResponse, responses=ERROR_RESPONSES_DBA_ONLY)
