@@ -5,6 +5,7 @@ import { BusinessOpsPanel } from "./components/BusinessOpsPanel.jsx";
 import { Card, ReportRunsTrendChart } from "./components/DashboardWidgets.jsx";
 import { IncidentsSection } from "./components/IncidentsSection.jsx";
 import { formatSchedulerStamp, formatUtcIsoAsLocal, utcWallClockToLocalPreview } from "./formatters.js";
+import LandingPage from "./LandingPage";
 
 const API_URL = String(import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 const IS_VITEST = Boolean(import.meta.env.VITEST);
@@ -1662,6 +1663,7 @@ export default function App() {
     if (!store || typeof store.getItem !== "function") return "";
     return store.getItem("dbops_token") || "";
   });
+  const [showLanding, setShowLanding] = useState(!token && !IS_VITEST);
   const [me, setMe] = useState(null);
   const [authError, setAuthError] = useState("");
   const [incidents, setIncidents] = useState([]);
@@ -2928,6 +2930,10 @@ export default function App() {
       incidentFilters.endDate ||
       incidentFilters.overdue,
   );
+
+  if (showLanding) {
+    return <LandingPage onGetStarted={() => setShowLanding(false)} />;
+  }
 
   return (
     <main className="app-shell">
