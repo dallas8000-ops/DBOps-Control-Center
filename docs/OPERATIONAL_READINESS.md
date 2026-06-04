@@ -289,7 +289,7 @@ CREATE INDEX idx_incident_history_created_at ON incident_history(created_at DESC
 - Use `EXPLAIN ANALYZE` for slow queries
 - Monitor query performance via `report_execution_logs`
 - Add row count limits to large result sets
-- Implement pagination for list endpoints
+- `GET /incidents` supports optional `limit` (1–500) and `offset`; omit `limit` to return all matches (large tenants should paginate). `GET /auth/users/audit` and `GET /reports/runs` cap at 500 rows with no cursor yet.
 
 ### 4.2 API Performance
 

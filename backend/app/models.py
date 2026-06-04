@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from .billing_plans import DEFAULT_PLAN_KEY, STARTER_PLAN
 from .db import Base
 
 
@@ -133,11 +134,13 @@ class BillingSettings(Base):
     __tablename__ = "billing_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    plan_key: Mapped[str] = mapped_column(String(80), nullable=False, default="starter")
+    plan_key: Mapped[str] = mapped_column(String(80), nullable=False, default=DEFAULT_PLAN_KEY)
     billing_status: Mapped[str] = mapped_column(String(40), nullable=False, default="trialing")
-    monthly_price_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=14900)
-    max_users: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
-    max_schedules: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    monthly_price_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=STARTER_PLAN.monthly_price_cents
+    )
+    max_users: Mapped[int] = mapped_column(Integer, nullable=False, default=STARTER_PLAN.max_users)
+    max_schedules: Mapped[int] = mapped_column(Integer, nullable=False, default=STARTER_PLAN.max_schedules)
     stripe_customer_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)

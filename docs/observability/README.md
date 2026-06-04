@@ -6,7 +6,7 @@ Minimal Prometheus + Grafana setup for single-region Render or AWS deployments.
 
 | Component | Location |
 |-----------|----------|
-| Prometheus metrics | `GET /metrics` on **dbops-api** |
+| Prometheus metrics | `GET /metrics` on **dbops-api** (requires `METRICS_BEARER_TOKEN` or DBA JWT) |
 | Observability health | `GET /health/observability` |
 | Grafana dashboard template | [`grafana-dbops-dashboard.json`](./grafana-dbops-dashboard.json) |
 | Example scrape config | [`prometheus-scrape.example.yml`](./prometheus-scrape.example.yml) |
@@ -21,9 +21,10 @@ Disable metrics with `METRICS_ENABLED=0` if your platform scrapes health only.
 ## Quick start
 
 1. Deploy **dbops-api** with `METRICS_ENABLED=1` (default).
-2. Point Prometheus at `https://your-api.example.com/metrics`.
-3. Import `grafana-dbops-dashboard.json` into Grafana.
-4. Optional: set `REDIS_URL` so rate limits are shared across API replicas (`GET /health/observability` reports `rate_limit_backend`).
+2. Set `METRICS_BEARER_TOKEN` on **dbops-api** (long random secret).
+3. Point Prometheus at `https://your-api.example.com/metrics` with `Authorization: Bearer <METRICS_BEARER_TOKEN>`.
+4. Import `grafana-dbops-dashboard.json` into Grafana.
+5. Optional: set `REDIS_URL` so rate limits are shared across API replicas (`GET /health/observability` reports `rate_limit_backend`).
 
 ## Render note
 

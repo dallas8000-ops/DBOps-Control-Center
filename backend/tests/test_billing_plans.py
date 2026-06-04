@@ -21,6 +21,16 @@ def test_starter_plan_price() -> None:
     assert PLAN_CATALOG["starter"].monthly_price_cents == 7900
 
 
+def test_billing_settings_column_defaults_match_starter_catalog() -> None:
+    """ORM defaults on insert must match PLAN_CATALOG starter (buyer-facing DB consistency)."""
+    starter = PLAN_CATALOG["starter"]
+    columns = BillingSettings.__table__.columns
+    assert columns["plan_key"].default.arg == starter.plan_key
+    assert columns["monthly_price_cents"].default.arg == starter.monthly_price_cents
+    assert columns["max_users"].default.arg == starter.max_users
+    assert columns["max_schedules"].default.arg == starter.max_schedules
+
+
 def test_pro_plan_uses_pro_tier_limits() -> None:
     assert PLAN_CATALOG["pro"].max_users == PRO_PLAN_LIMIT
     assert PLAN_CATALOG["pro"].max_schedules == PRO_PLAN_LIMIT

@@ -103,6 +103,7 @@ Override via `SEED_DBA_PASSWORD`, `SEED_ANALYST_PASSWORD`, `SEED_VIEWER_PASSWORD
 
 | Issue | Fix |
 |-------|-----|
+| **Blank page** (title/meta only, no UI) | JavaScript bundle did not run. Recipients must use a **real browser** (not email link preview). On Render: `buildCommand` must include `npm run build`, `staticPublishPath` must be `dist` (not `frontend/` root). View page source: must show `<script … src="/assets/index-….js">`, **not** `/src/main.jsx`. Redeploy **dbops-web** after fixing. |
 | Web can’t reach API | `VITE_API_URL` wrong or web not rebuilt after env change |
 | CORS errors | `FRONTEND_ORIGINS` must exactly match web origin (scheme + host) |
 | 503 on `/health` | DB not ready; check `dbops-db` and migrations on API boot |

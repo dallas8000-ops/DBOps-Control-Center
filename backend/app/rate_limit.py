@@ -91,6 +91,7 @@ _api_rate_limiter = _build_limiter(
 
 
 def auth_rate_limit_key(client_host: str | None, action: str) -> str:
+    # None host (some proxies) shares the "unknown" bucket — never skips limiting.
     host = client_host or "unknown"
     return f"{action}:{host}"
 

@@ -1,6 +1,7 @@
+import os
 from collections.abc import Callable
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -49,3 +50,26 @@ def require_roles(*allowed_roles: str) -> Callable[..., User]:
         return user
 
     return checker
+
+
+def authorize_metrics(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    db: Session = Depends(get_db),
+) -> None:
+    """Prometheus scrape token and/or DBA JWT — not public."""
+    secret = os.getenv("METRICS_BEARER_TOKEN", "").strip()
+    if secret:
+        header = request.headers.get("Authorization") or ""
+        if header == f"Bearer {secret}":
+            return
+    try:
+        user = get_current_user(credentials, db)
+    except HTTPException:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Metrics requires METRICS_BEARER_TOKEN or DBA Bearer JWT",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
+    if user.role != "DBA":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="DBA role required for metrics")

@@ -7,7 +7,7 @@ import sys
 os.environ['DATABASE_URL'] = 'sqlite:///./dbops_local.db'
 
 from app.db import engine, Base
-from app.models import *
+import app.models  # noqa: F401 - Import to register models with Base.metadata
 from app.seed_demo import seed_demo_data
 
 # Create all tables

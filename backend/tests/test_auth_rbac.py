@@ -1735,7 +1735,12 @@ def test_logout_revokes_refresh_token() -> None:
         login_resp = client.post("/auth/login", json={"email": "dba@example.com", "password": PRIMARY_SECRET})
         rt = login_resp.json()["refresh_token"]
 
-        logout_resp = client.post("/auth/logout", json={"refresh_token": rt})
+        access = login_resp.json()["access_token"]
+        logout_resp = client.post(
+            "/auth/logout",
+            json={"refresh_token": rt},
+            headers={"Authorization": f"Bearer {access}"},
+        )
         assert logout_resp.status_code == 204
 
         refresh_resp = client.post("/auth/refresh", json={"refresh_token": rt})
@@ -1745,8 +1750,47 @@ def test_logout_revokes_refresh_token() -> None:
 def test_logout_nonexistent_token_is_idempotent() -> None:
     for client in _client():
         _bootstrap_dba(client)
-        resp = client.post("/auth/logout", json={"refresh_token": "b" * 64})
+        login_resp = client.post("/auth/login", json={"email": "dba@example.com", "password": PRIMARY_SECRET})
+        access = login_resp.json()["access_token"]
+        resp = client.post(
+            "/auth/logout",
+            json={"refresh_token": "b" * 64},
+            headers={"Authorization": f"Bearer {access}"},
+        )
         assert resp.status_code == 204
+
+
+def test_logout_requires_authentication() -> None:
+    for client in _client():
+        _bootstrap_dba(client)
+        resp = client.post("/auth/logout", json={"refresh_token": "b" * 64})
+        assert resp.status_code == 401
+
+
+def test_logout_cannot_revoke_another_users_refresh_token() -> None:
+    for client in _client():
+        _bootstrap_dba(client)
+        dba_login = client.post("/auth/login", json={"email": "dba@example.com", "password": PRIMARY_SECRET})
+        analyst = client.post(
+            "/auth/users",
+            json={"email": "other@example.com", "password": "other-pass-1", "role": "Analyst"},
+            headers=_auth_headers(dba_login.json()["access_token"]),
+        )
+        assert analyst.status_code == 201
+        other_login = client.post(
+            "/auth/login",
+            json={"email": "other@example.com", "password": "other-pass-1"},
+        )
+        other_rt = other_login.json()["refresh_token"]
+        dba_access = dba_login.json()["access_token"]
+        logout_resp = client.post(
+            "/auth/logout",
+            json={"refresh_token": other_rt},
+            headers={"Authorization": f"Bearer {dba_access}"},
+        )
+        assert logout_resp.status_code == 204
+        refresh_resp = client.post("/auth/refresh", json={"refresh_token": other_rt})
+        assert refresh_resp.status_code == 200
 
 
 # ---------------------------------------------------------------------------

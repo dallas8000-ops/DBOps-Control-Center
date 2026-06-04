@@ -21,6 +21,9 @@ Give operations and engineering leads controlled access to PostgreSQL: incidents
 
 **Deployment:** Push to `main` → GitHub Actions CI runs (backend + frontend tests, Playwright E2E, lint, migrations) and Render **auto-deploys** production (`dbops-api`, `dbops-web`). Pipeline live and verified.
 
+**Operator reference (sign-in → daily use → log out):** [`docs/OPERATIONS_GUIDE.md`](./docs/OPERATIONS_GUIDE.md)  
+**Hands-on learning walkthrough (exercises by role):** [`docs/USER_WALKTHROUGH.md`](./docs/USER_WALKTHROUGH.md)
+
 ## Overview
 
 `DBOps Control Center` is a **production-oriented full-stack product** (FastAPI, React, PostgreSQL), not a tutorial or sample repo. Buyers receive deployable source, migrations, CI, and operational docs intended for **their** infrastructure (Docker Compose locally; Render or equivalent in production via `render.yaml`).
@@ -358,6 +361,8 @@ Operational notes:
 - Pricing sheet: `docs/commercial-assets/pricing-sheet.md`
 - Source license + product outline (template): `docs/commercial-assets/source-license-product-outline.md`
 - Onboarding checklist: `docs/commercial-assets/onboarding-checklist-day0-day7.md`
+- **Operations guide (sign-in to exit):** [`docs/OPERATIONS_GUIDE.md`](./docs/OPERATIONS_GUIDE.md)
+- **User walkthrough (learn by doing):** [`docs/USER_WALKTHROUGH.md`](./docs/USER_WALKTHROUGH.md)
 - Support SLA matrix: `docs/commercial-assets/support-sla-response-matrix.md`
 - Demo scripts: `docs/commercial-assets/demo-video-scripts.md`
 

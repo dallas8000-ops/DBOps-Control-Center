@@ -8,9 +8,83 @@
       content="DBOps Control Center — secure database operations platform with RBAC, incident management, and audited SQL reporting."
     />
     <title>DBOps Control Center | Database Operations Platform</title>
+    <style>
+      #dbops-boot-msg {
+        font-family: system-ui, "Segoe UI", sans-serif;
+        max-width: 36rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        color: #333;
+        line-height: 1.5;
+      }
+      #dbops-boot-fail {
+        display: none;
+        font-family: system-ui, "Segoe UI", sans-serif;
+        max-width: 40rem;
+        margin: 2rem auto;
+        padding: 1rem 1.25rem;
+        border: 1px solid #c62828;
+        border-radius: 6px;
+        background: #ffebee;
+        color: #1a1a1a;
+        line-height: 1.5;
+      }
+      #dbops-boot-fail strong {
+        color: #b71c1c;
+      }
+      #dbops-boot-fail code {
+        font-size: 0.9em;
+        background: rgba(0, 0, 0, 0.06);
+        padding: 0.1em 0.35em;
+        border-radius: 3px;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <p id="dbops-boot-msg">Loading DBOps Control Center…</p>
+    </div>
+    <div id="dbops-boot-fail" role="alert" aria-live="polite"></div>
+    <noscript>
+      <p style="font-family: system-ui, sans-serif; max-width: 36rem; margin: 2rem auto; padding: 0 1rem">
+        <strong>JavaScript is required.</strong> Open this link in a full browser (Chrome, Edge, Firefox, or Safari) with
+        JavaScript enabled — not in an email preview pane.
+      </p>
+    </noscript>
+    <script>
+      (function () {
+        var failEl = document.getElementById("dbops-boot-fail");
+        var bootMsg = document.getElementById("dbops-boot-msg");
+        var scripts = document.querySelectorAll('script[type="module"][src]');
+        for (var i = 0; i < scripts.length; i++) {
+          var src = scripts[i].getAttribute("src") || "";
+          if (src.indexOf("/src/main.jsx") !== -1) {
+            if (failEl) {
+              failEl.style.display = "block";
+              failEl.innerHTML =
+                "<strong>Configuration error:</strong> This site was not built for production (script points to <code>/src/main.jsx</code>). " +
+                "On Render, set <code>staticPublishPath</code> to <code>dist</code> and run <code>npm run build</code> before deploy.";
+            }
+            if (bootMsg) bootMsg.textContent = "";
+            return;
+          }
+        }
+        window.__dbopsBootTimer = window.setTimeout(function () {
+          if (!document.getElementById("dbops-boot-msg")) return;
+          if (failEl) {
+            failEl.style.display = "block";
+            failEl.innerHTML =
+              "<strong>The app did not start.</strong> The page loaded but the JavaScript bundle did not run. " +
+              "Try: open the link in Chrome, Edge, or Firefox (not an email preview); disable strict blockers for this site; " +
+              "hard-refresh (Ctrl+F5). If you manage Render, confirm <code>dbops-web</code> publishes <code>frontend/dist</code> after <code>npm run build</code>.";
+          }
+          if (bootMsg) bootMsg.textContent = "";
+        }, 12000);
+        window.__dbopsClearBootTimer = function () {
+          if (window.__dbopsBootTimer) window.clearTimeout(window.__dbopsBootTimer);
+        };
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

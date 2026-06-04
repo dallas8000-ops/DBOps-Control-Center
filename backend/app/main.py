@@ -17,7 +17,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Res
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import case, or_, text
+from sqlalchemy import case, func, or_, text
 from sqlalchemy.orm import Session
 
 try:
@@ -50,7 +50,8 @@ from .billing_plans import (
 )
 from . import oidc_verify as _oidc
 from .db import engine, get_db
-from .deps import get_current_user, require_roles
+from .admin_export import build_admin_export_snapshot
+from .deps import authorize_metrics, get_current_user, require_roles
 from .models import (
     BillingSettings,
     Incident,
@@ -510,6 +511,7 @@ def _get_or_create_billing_settings(db: Session) -> BillingSettings:
     if settings is not None:
         return settings
     settings = BillingSettings(id=1)
+    apply_plan_catalog_to_settings(settings, "starter")
     db.add(settings)
     db.flush()
     return settings
@@ -845,6 +847,8 @@ def _bulk_action_skip_reason(
     action: str,
     owner: str | None,
 ) -> str | None:
+    if action == "assign" and not owner:
+        return "owner is required for assign"
     if incident.status != "open":
         return "incident is not open"
     if action == "assign" and owner is not None and incident.owner == owner:
@@ -984,15 +988,27 @@ allow_origins = _parsed_origins if _parsed_origins else [
     "http://127.0.0.1:5174",
 ]
 
+def _render_cors_origin_regex() -> str | None:
+    if os.getenv("CORS_DISABLE_RENDER_REGEX", "").lower() in ("1", "true", "yes"):
+        return None
+    if os.getenv("CORS_ALLOW_ANY_RENDER", "").lower() in ("1", "true", "yes"):
+        return r"^https://[a-zA-Z0-9\-]+\.onrender\.com$"
+    services = os.getenv("CORS_RENDER_ALLOWED_SERVICES", "dbops-web").strip()
+    names = [re.escape(part.strip()) for part in services.split(",") if part.strip()]
+    if not names:
+        return None
+    return rf"^https://({'|'.join(names)})\.onrender\.com$"
+
+
 _cors_kw: dict = {
     "allow_origins": allow_origins,
     "allow_credentials": False,
     "allow_methods": ["*"],
     "allow_headers": ["*"],
 }
-# Lets any *.onrender.com static site call this API (JWT still required for protected routes).
-if os.getenv("CORS_DISABLE_RENDER_REGEX", "").lower() not in ("1", "true", "yes"):
-    _cors_kw["allow_origin_regex"] = r"^https://[a-zA-Z0-9\-]+\.onrender\.com$"
+_render_cors_regex = _render_cors_origin_regex()
+if _render_cors_regex is not None:
+    _cors_kw["allow_origin_regex"] = _render_cors_regex
 
 
 @app.middleware("http")
@@ -1060,7 +1076,7 @@ def health_observability():
     }
 
 
-@app.get("/metrics")
+@app.get("/metrics", dependencies=[Depends(authorize_metrics)])
 def prometheus_metrics():
     if not metrics_enabled():
         raise HTTPException(status_code=404, detail="Metrics endpoint disabled")
@@ -1238,10 +1254,17 @@ def refresh_token_endpoint(payload: RefreshRequest, request: Request, db: DbDep)
 
 
 @app.post("/auth/logout", status_code=204)
-def logout(payload: RefreshRequest, db: DbDep):
-    """Revoke a refresh token. Access tokens expire naturally after 15 minutes."""
+def logout(payload: RefreshRequest, db: DbDep, current: CurrentUserDep):
+    """Revoke the caller's refresh token (requires access JWT + matching refresh token)."""
     token_hash = hash_refresh_token(payload.refresh_token)
-    rt = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
+    rt = (
+        db.query(RefreshToken)
+        .filter(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.user_id == current.id,
+        )
+        .first()
+    )
     if rt:
         rt.revoked = True
         db.commit()
@@ -1290,18 +1313,7 @@ def admin_export(
     _: DbaUserDep,
 ):
     """DBA-only: export all table data as a JSON snapshot for backup purposes."""
-    tables = [
-        "users", "incidents", "incident_history", "report_schedules",
-        "report_execution_logs", "user_admin_audit_logs", "billing_settings",
-        "onboarding_events",
-    ]
-    snapshot: dict[str, Any] = {"exported_at": datetime.now(UTC).isoformat()}
-    for table in tables:
-        try:
-            rows = db.execute(text(f"SELECT * FROM {table}")).mappings().all()  # noqa: S608
-            snapshot[table] = [dict(r) for r in rows]
-        except Exception as exc:
-            snapshot[table] = {"error": str(exc)}
+    snapshot = build_admin_export_snapshot(db, exported_at=datetime.now(UTC).isoformat())
     payload = json.dumps(snapshot, indent=2, default=str)
     return PlainTextResponse(
         content=payload,
@@ -1747,6 +1759,8 @@ IncidentStartDateQuery = Annotated[date | None, Query()]
 IncidentEndDateQuery = Annotated[date | None, Query()]
 IncidentSortQuery = Annotated[str, Query(pattern="^(newest|oldest|severity)$")]
 IncidentOverdueQuery = Annotated[bool | None, Query(description="If true, only open incidents with due_at in the past")]
+IncidentLimitQuery = Annotated[int | None, Query(ge=1, le=500, description="Max rows (omit for all matches)")]
+IncidentOffsetQuery = Annotated[int, Query(ge=0, description="Skip rows when using limit")]
 
 
 @app.get("/incidents", response_model=list[IncidentRead])
@@ -1761,6 +1775,8 @@ def list_incidents(
     end_date: IncidentEndDateQuery = None,
     overdue: IncidentOverdueQuery = None,
     sort: IncidentSortQuery = "newest",
+    limit: IncidentLimitQuery = None,
+    offset: IncidentOffsetQuery = 0,
 ):
     query = db.query(Incident)
 
@@ -1804,6 +1820,9 @@ def list_incidents(
     else:
         query = query.order_by(Incident.created_at.desc())
 
+    query = query.offset(offset)
+    if limit is not None:
+        query = query.limit(limit)
     return query.all()
 
 
@@ -1963,6 +1982,18 @@ def bulk_incident_action(
             owner=payload.owner,
         )
         after = _incident_audit_snapshot(incident)
+        # assign is the main case where apply can no-op without raising; acknowledge only writes history.
+        if payload.action == "assign" and before == after:
+            item_results.append(
+                _build_bulk_item_result(
+                    incident=incident,
+                    outcome="skipped",
+                    reason="no changes applied",
+                    before=before,
+                    after=after,
+                )
+            )
+            continue
         item_results.append(
             _build_bulk_item_result(
                 incident=incident,
@@ -2374,17 +2405,18 @@ def report_summary(
     db: DbDep,
     _: Annotated[User, Depends(require_roles("DBA", "Analyst", "Viewer"))],
 ):
-    incidents = db.query(Incident).all()
-    total = len(incidents)
-    open_count = len([i for i in incidents if i.status == "open"])
-    resolved_count = len([i for i in incidents if i.status == "resolved"])
-    high_severity = len([i for i in incidents if i.severity == "high"])
+    total, open_count, resolved_count, high_severity = db.query(
+        func.count(Incident.id),
+        func.count().filter(Incident.status == "open"),
+        func.count().filter(Incident.status == "resolved"),
+        func.count().filter(Incident.severity == "high"),
+    ).one()
 
     return {
-        "total_incidents": total,
-        "open_incidents": open_count,
-        "resolved_incidents": resolved_count,
-        "high_severity_incidents": high_severity,
+        "total_incidents": int(total or 0),
+        "open_incidents": int(open_count or 0),
+        "resolved_incidents": int(resolved_count or 0),
+        "high_severity_incidents": int(high_severity or 0),
     }
 
 

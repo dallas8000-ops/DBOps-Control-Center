@@ -2487,10 +2487,11 @@ export default function App() {
   function logout() {
     const store = globalThis.window?.localStorage;
     const refreshToken = store?.getItem("dbops_refresh_token");
-    if (refreshToken) {
+    const accessToken = token || store?.getItem("dbops_token") || "";
+    if (refreshToken && accessToken) {
       fetch(`${API_URL}/auth/logout`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: headers(accessToken),
         body: JSON.stringify({ refresh_token: refreshToken }),
       }).catch(() => {});
     }

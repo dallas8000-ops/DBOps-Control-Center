@@ -28,6 +28,10 @@ PLAN_CATALOG: dict[str, PlanDefinition] = {
     "enterprise": PlanDefinition("enterprise", 39900, ENTERPRISE_PLAN_LIMIT, ENTERPRISE_PLAN_LIMIT),
 }
 
+# Single source of truth for new BillingSettings rows (model defaults + bootstrap insert).
+DEFAULT_PLAN_KEY = "starter"
+STARTER_PLAN = PLAN_CATALOG[DEFAULT_PLAN_KEY]
+
 PLAN_TIER_ORDER: dict[str, int] = {"starter": 0, "pro": 1, "enterprise": 2}
 
 STRIPE_PRICE_ENV_BY_PLAN: dict[str, str] = {
