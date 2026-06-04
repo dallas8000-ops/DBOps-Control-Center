@@ -7,9 +7,24 @@ Webhook URL: `https://dbops-api.onrender.com/billing/webhook`
 
 1. Open [Stripe Dashboard](https://dashboard.stripe.com) (use **Test mode** until go-live).
 2. **Developers → API keys** → copy **Secret key** (`sk_test_...` or `sk_live_...`).
-3. **Product catalog** → create or select **Starter** plan at **$79/month** → copy a **Price ID** (`price_...`).  
-   The API also accepts a **Product ID** (`prod_...`) if it has a default recurring price.  
-   If you still have a legacy **$49** Starter price in Stripe, create a new **$79** recurring price and update `STRIPE_PRICE_ID_STARTER` on Render.
+3. **Product catalog** → open **DBOps Starter** (the **$79/month** product — not RecruitCommand Pro).
+
+   **Copy a Price ID (`price_...`) — recommended**
+
+   Stripe hides this until you open the price itself:
+
+   1. On the **DBOps Starter** product page, find the **Pricing** section ($79.00 / month).
+   2. **Click the $79.00 monthly price row** (not just the product title).
+   3. On the price detail page, open the **⋮** menu or **Details** panel — the **Price ID** starts with `price_`.
+   4. Or: with that price page open, check the browser URL — it often contains `/prices/price_...`.
+
+   If you still only see a **Product ID** (`prod_...`):
+
+   - That `prod_...` is on the **product** header (DBOps Starter only).
+   - You may paste **`prod_...` for DBOps Starter** into `STRIPE_PRICE_ID_STARTER` — the API resolves it to that product’s active recurring price.
+   - **Never** paste RecruitCommand Pro’s `prod_...` or any RecruitCommand price — checkout will charge the wrong product.
+
+   **Do not** paste a price or product from **RecruitCommand Pro**. If checkout showed the wrong product name, `STRIPE_PRICE_ID_STARTER` on Render is wrong — replace it with DBOps Starter’s `price_...` (best) or DBOps Starter’s `prod_...`, then redeploy **dbops-api**.
 
 ## 2. Render — set environment variables
 
@@ -19,7 +34,8 @@ Webhook URL: `https://dbops-api.onrender.com/billing/webhook`
 | Key | Value |
 |-----|--------|
 | `STRIPE_SECRET_KEY` | `sk_test_...` from step 1 |
-| `STRIPE_PRICE_ID_STARTER` | `price_...` from step 1 |
+| `STRIPE_PRICE_ID_STARTER` | **`price_...`** from DBOps Starter **$79/mo** (best). **`prod_...`** for DBOps Starter only if you cannot find the price ID — never RecruitCommand Pro. |
+| `STRIPE_CHECKOUT_DISPLAY_NAME` | *(optional)* Name at top of Checkout — default `DBOps Control Center` (overrides old account names like RecruitCommand Pro) |
 | `STRIPE_WEBHOOK_SECRET` | *(step 3 — after creating webhook)* |
 
 3. **Save** and wait for **dbops-api** to redeploy.
@@ -65,6 +81,12 @@ Expected when configured:
 ```
 
 If any flag is `false`, fix the matching Render env var and redeploy.
+
+### Checkout still shows an old business name (e.g. RecruitCommand Pro)
+
+You do **not** need a **Branding** menu item in Stripe. The API sets checkout display name via `STRIPE_CHECKOUT_DISPLAY_NAME` (default: **DBOps Control Center**). Redeploy **dbops-api** after pulling the latest code.
+
+To change it globally in Stripe (optional): **Settings** (gear) → **Business** → **Public details** → **Business name**. Some accounts hide **Branding**; **Public details** is enough for receipts/invoices.
 
 ## 5. End-to-end test
 

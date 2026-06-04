@@ -92,9 +92,23 @@ def _fake_stripe_module(*, session_payload: dict | None = None, event_payload: d
         "type": "checkout.session.completed",
         "data": {"object": {"customer": "cus_test_123", "subscription": "sub_test_123"}},
     }
+    active_recurring_price = {
+        "id": "price_test_starter",
+        "active": True,
+        "recurring": {"interval": "month"},
+        "product": {"id": "prod_dbops_starter", "name": "DBOps Starter"},
+    }
     return SimpleNamespace(
         api_key=None,
         checkout=SimpleNamespace(Session=SimpleNamespace(create=lambda **kwargs: payload)),
+        Price=SimpleNamespace(
+            retrieve=lambda price_id: {**active_recurring_price, "id": price_id},
+            list=lambda **kwargs: SimpleNamespace(data=[active_recurring_price]),
+        ),
+        Product=SimpleNamespace(
+            retrieve=lambda product_id: {"id": product_id, "default_price": active_recurring_price},
+        ),
+        Customer=SimpleNamespace(retrieve=lambda customer_id: {"id": customer_id}),
         Webhook=SimpleNamespace(construct_event=lambda **kwargs: event),
     )
 
@@ -120,6 +134,14 @@ def _fake_stripe_module_with_downgrade():
             retrieve=lambda sub_id: subscription,
             modify=modify_subscription,
         ),
+        Price=SimpleNamespace(
+            retrieve=lambda price_id: {"id": price_id, "active": True, "recurring": {"interval": "month"}},
+            list=lambda **kwargs: SimpleNamespace(data=[{"id": "price_starter_live", "active": True}]),
+        ),
+        Product=SimpleNamespace(
+            retrieve=lambda product_id: {"id": product_id, "default_price": {"id": "price_starter_live"}},
+        ),
+        Customer=SimpleNamespace(retrieve=lambda customer_id: {"id": customer_id}),
         Webhook=SimpleNamespace(construct_event=lambda **kwargs: {}),
     )
 
@@ -900,6 +922,79 @@ def test_dba_can_create_stripe_checkout_session(monkeypatch) -> None:
         body = resp.json()
         assert body["session_id"] == "cs_test_checkout"
         assert body["url"].startswith("https://checkout.stripe.test/session/")
+
+
+def test_checkout_ignores_invalid_saved_stripe_customer_id(monkeypatch) -> None:
+    captured: dict = {}
+
+    def create_session(**kwargs):
+        captured.update(kwargs)
+        return {"id": "cs_test_checkout", "url": "https://checkout.stripe.test/session/cs_test_checkout"}
+
+    fake_stripe = _fake_stripe_module()
+    fake_stripe.checkout.Session.create = create_session
+    fake_stripe.Customer.retrieve = lambda customer_id: (_ for _ in ()).throw(Exception("No such customer"))
+
+    monkeypatch.setattr("app.main.stripe", fake_stripe)
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_123")
+
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+        save_resp = client.put(
+            "/admin/billing",
+            json={
+                "plan_key": "starter",
+                "billing_status": "trialing",
+                "monthly_price_cents": 7900,
+                "max_users": 10,
+                "max_schedules": 10,
+                "stripe_customer_id": "cus_demo_123",
+                "stripe_subscription_id": "",
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert save_resp.status_code == 200
+
+        resp = client.post(
+            "/billing/checkout/session",
+            json={
+                "price_id": "price_test_starter",
+                "plan_key": "starter",
+                "success_url": "https://dbops-web.onrender.com/?billing=success",
+                "cancel_url": "https://dbops-web.onrender.com/?billing=cancel",
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert resp.status_code == 200
+        assert captured.get("customer_email")
+        assert "customer" not in captured
+
+
+def test_checkout_rejects_non_dbops_starter_price_id(monkeypatch) -> None:
+    fake_stripe = _fake_stripe_module()
+    fake_stripe.Price.retrieve = lambda price_id, expand=None: {
+        "id": price_id,
+        "active": True,
+        "recurring": {"interval": "month"},
+        "product": {"id": "prod_recruit", "name": "RecruitCommand Pro"},
+    }
+    monkeypatch.setattr("app.main.stripe", fake_stripe)
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_123")
+    monkeypatch.setenv("STRIPE_PRICE_ID_STARTER", "price_recruit_pro")
+
+    for client in _client():
+        dba_token = _bootstrap_dba(client)
+        resp = client.post(
+            "/billing/checkout/session",
+            json={
+                "success_url": "https://dbops-web.onrender.com/?billing=success",
+                "cancel_url": "https://dbops-web.onrender.com/?billing=cancel",
+            },
+            headers=_auth_headers(dba_token),
+        )
+        assert resp.status_code == 400
+        assert "RecruitCommand Pro" in resp.json()["detail"]
+        assert "DBOps Starter" in resp.json()["detail"]
 
 
 def test_stripe_webhook_updates_billing_settings(monkeypatch) -> None:

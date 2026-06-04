@@ -6,7 +6,8 @@ export function BusinessOpsPanel({
   adminOverview,
   billingForm,
   setBillingForm,
-  billingBusy,
+  billingCheckoutBusy,
+  billingSaveBusy,
   billingFeedback,
   onSaveBilling,
   onStartBillingCheckout,
@@ -58,19 +59,41 @@ export function BusinessOpsPanel({
       </div>
 
       <h3 className="section-lede">Billing scaffold</h3>
-      <button type="button" className="btn btn-primary schedule-submit" onClick={onStartBillingCheckout} disabled={billingBusy}>
-        {billingBusy ? "Working..." : "Subscribe with Stripe"}
+      <button
+        type="button"
+        className="btn btn-primary schedule-submit"
+        onClick={() => {
+          void onStartBillingCheckout();
+        }}
+        disabled={billingCheckoutBusy}
+        aria-busy={billingCheckoutBusy}
+      >
+        {billingCheckoutBusy ? "Opening Stripe…" : "Subscribe with Stripe"}
       </button>
       {(billingForm.plan_key === "pro" || billingForm.plan_key === "enterprise") && onDowngradeBilling ? (
         <button
           type="button"
           className="btn btn-secondary schedule-submit"
-          onClick={onDowngradeBilling}
-          disabled={billingBusy}
+          onClick={() => {
+            void onDowngradeBilling();
+          }}
+          disabled={billingCheckoutBusy}
           style={{ marginLeft: "0.75rem" }}
         >
-          {billingBusy ? "Working..." : "Downgrade to Starter"}
+          {billingCheckoutBusy ? "Working..." : "Downgrade to Starter"}
         </button>
+      ) : null}
+      {billingFeedback ? (
+        <p
+          className={
+            /failed|could not reach|missing checkout/i.test(billingFeedback)
+              ? "billing-feedback billing-feedback--error"
+              : "billing-feedback"
+          }
+          role="alert"
+        >
+          {billingFeedback}
+        </p>
       ) : null}
       <form className="form-grid schedule-form" onSubmit={onSaveBilling}>
         <label className="field">
@@ -132,11 +155,10 @@ export function BusinessOpsPanel({
             onChange={(e) => setBillingForm({ ...billingForm, stripe_subscription_id: e.target.value })}
           />
         </label>
-        <button type="submit" className="btn btn-primary schedule-submit" disabled={billingBusy}>
-          {billingBusy ? "Saving…" : "Save billing settings"}
+        <button type="submit" className="btn btn-primary schedule-submit" disabled={billingSaveBusy}>
+          {billingSaveBusy ? "Saving…" : "Save billing settings"}
         </button>
       </form>
-      {billingFeedback ? <p className="hint">{billingFeedback}</p> : null}
 
       <h3 className="section-lede">SLA status (open incidents)</h3>
       <SlaStatusWidget
@@ -165,7 +187,8 @@ BusinessOpsPanel.propTypes = {
   adminOverview: PropTypes.object,
   billingForm: PropTypes.object.isRequired,
   setBillingForm: PropTypes.func.isRequired,
-  billingBusy: PropTypes.bool.isRequired,
+  billingCheckoutBusy: PropTypes.bool.isRequired,
+  billingSaveBusy: PropTypes.bool.isRequired,
   billingFeedback: PropTypes.string.isRequired,
   onSaveBilling: PropTypes.func.isRequired,
   onStartBillingCheckout: PropTypes.func.isRequired,

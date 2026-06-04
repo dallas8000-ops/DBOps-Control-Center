@@ -237,6 +237,18 @@ body {
   border-color: rgba(248, 113, 113, 0.45);
 }
 
+.billing-feedback {
+  margin: 0.75rem 0 0;
+  font-size: 0.9rem;
+}
+
+.billing-feedback--error {
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: var(--bg-elevated);
+}
+
 .live-pill {
   display: inline-flex;
   align-items: center;
@@ -339,6 +351,13 @@ textarea:focus {
 
 .btn:active {
   transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: none;
+  transform: none;
 }
 
 .btn-primary {

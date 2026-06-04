@@ -563,11 +563,86 @@ def _stripe_first_active_price_id(stripe_client: Any, product_id: str) -> str | 
     return None
 
 
+def _stripe_checkout_branding_kwargs() -> dict[str, Any]:
+    display_name = os.getenv("STRIPE_CHECKOUT_DISPLAY_NAME", "DBOps Control Center").strip()
+    if not display_name:
+        return {}
+    return {"branding_settings": {"display_name": display_name}}
+
+
+def _normalize_stripe_id(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _stripe_checkout_customer_kwargs(stripe_client: Any, settings: BillingSettings, email: str) -> dict[str, str]:
+    """Use a saved Stripe customer when valid; otherwise start checkout with the DBA email."""
+    customer_id = _normalize_stripe_id(settings.stripe_customer_id)
+    if customer_id and customer_id.startswith("cus_"):
+        try:
+            stripe_client.Customer.retrieve(customer_id)
+            return {"customer": customer_id}
+        except Exception:
+            pass
+    return {"customer_email": email}
+
+
+def _stripe_product_name(stripe_client: Any, price_id: str) -> str | None:
+    try:
+        price = stripe_client.Price.retrieve(price_id, expand=["product"])
+    except TypeError:
+        price = stripe_client.Price.retrieve(price_id)
+    product = _stripe_get(price, "product")
+    if isinstance(product, str):
+        try:
+            product = stripe_client.Product.retrieve(product)
+        except Exception:
+            return None
+    name = _stripe_get(product, "name")
+    return name if isinstance(name, str) else None
+
+
+def _assert_dbops_starter_checkout_price(stripe_client: Any, price_id: str) -> None:
+    """Block checkout when STRIPE_PRICE_ID_STARTER points at another product in the same Stripe account."""
+    marker = os.getenv("STRIPE_STARTER_PRODUCT_NAME_CONTAINS", "DBOps").strip()
+    if not marker:
+        return
+    name = _stripe_product_name(stripe_client, price_id)
+    if name and marker.lower() in name.lower():
+        return
+    label = name or "unknown product"
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"STRIPE_PRICE_ID_STARTER is wired to Stripe product '{label}', not DBOps Starter. "
+            "In Render → dbops-api, set STRIPE_PRICE_ID_STARTER to the price_ ID under "
+            "Product catalog → DBOps Starter ($79/mo). Other products (e.g. RecruitCommand Pro) "
+            "must not use this variable."
+        ),
+    )
+
+
 def _resolve_stripe_checkout_price_id(stripe_client: Any, raw_id: str) -> str:
     candidate = (raw_id or "").strip()
     if not candidate:
         raise HTTPException(status_code=400, detail="Missing Stripe price identifier")
     if candidate.startswith("price_"):
+        try:
+            price = stripe_client.Price.retrieve(candidate)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Stripe price lookup failed: {str(exc)}")
+        if not _stripe_get(price, "active"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Stripe price {candidate} is inactive. Activate it in Stripe or set STRIPE_PRICE_ID_STARTER to a live price_ ID.",
+            )
+        if _stripe_get(price, "recurring") is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Stripe price {candidate} is not recurring. Use a monthly recurring price for subscriptions.",
+            )
         return candidate
     if candidate.startswith("prod_"):
         try:
@@ -1243,8 +1318,8 @@ def update_billing_settings(
 ):
     settings = _get_or_create_billing_settings(db)
     settings.billing_status = payload.billing_status
-    settings.stripe_customer_id = payload.stripe_customer_id
-    settings.stripe_subscription_id = payload.stripe_subscription_id
+    settings.stripe_customer_id = _normalize_stripe_id(payload.stripe_customer_id)
+    settings.stripe_subscription_id = _normalize_stripe_id(payload.stripe_subscription_id)
     if not apply_plan_catalog_to_settings(settings, payload.plan_key):
         settings.plan_key = payload.plan_key
         settings.monthly_price_cents = payload.monthly_price_cents
@@ -1277,7 +1352,11 @@ def create_billing_checkout_session(
         raise HTTPException(status_code=503, detail=str(exc))
 
     price_id = _resolve_stripe_checkout_price_id(stripe_client, configured_price_or_product)
-    checkout_plan_key = payload.plan_key or settings.plan_key
+    if payload.price_id is None:
+        _assert_dbops_starter_checkout_price(stripe_client, price_id)
+    # Subscribe checkout always uses STRIPE_PRICE_ID_STARTER — keep app plan metadata in sync.
+    checkout_plan_key = "starter" if payload.price_id is None else (payload.plan_key or settings.plan_key or "starter")
+    customer_kwargs = _stripe_checkout_customer_kwargs(stripe_client, settings, current.email)
 
     try:
         session = stripe_client.checkout.Session.create(
@@ -1286,8 +1365,8 @@ def create_billing_checkout_session(
             mode="subscription",
             success_url=payload.success_url,
             cancel_url=payload.cancel_url,
-            customer=settings.stripe_customer_id or None,
-            customer_email=current.email if not settings.stripe_customer_id else None,
+            **customer_kwargs,
+            **_stripe_checkout_branding_kwargs(),
             metadata={"plan_key": checkout_plan_key},
             subscription_data={"metadata": {"plan_key": checkout_plan_key}},
         )

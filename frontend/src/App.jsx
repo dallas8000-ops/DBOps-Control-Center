@@ -1704,12 +1704,13 @@ export default function App() {
   const [oidcBusy, setOidcBusy] = useState(false);
   const [oidcError, setOidcError] = useState("");
   const [adminOverview, setAdminOverview] = useState(null);
-  const [billingBusy, setBillingBusy] = useState(false);
+  const [billingCheckoutBusy, setBillingCheckoutBusy] = useState(false);
+  const [billingSaveBusy, setBillingSaveBusy] = useState(false);
   const [billingFeedback, setBillingFeedback] = useState("");
   const [billingForm, setBillingForm] = useState({
     plan_key: "starter",
     billing_status: "trialing",
-    monthly_price_cents: 14900,
+    monthly_price_cents: 7900,
     max_users: 10,
     max_schedules: 10,
     stripe_customer_id: "",
@@ -2694,41 +2695,57 @@ export default function App() {
   async function saveBillingSettings(e) {
     e.preventDefault();
     setBillingFeedback("");
-    setBillingBusy(true);
-    const { res, body } = await apiJson("/admin/billing", { method: "PUT", body: billingForm });
-    if (!res.ok) {
-      setBillingFeedback(`Billing update failed: ${formatApiDetail(body)}`);
-      setBillingBusy(false);
-      return;
+    setBillingSaveBusy(true);
+    try {
+      const { res, body } = await apiJson("/admin/billing", { method: "PUT", body: billingForm });
+      if (!res.ok) {
+        setBillingFeedback(`Billing update failed: ${formatApiDetail(body)}`);
+        return;
+      }
+      setBillingFeedback("Billing settings saved.");
+      await loadAdminOverview();
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "network error";
+      setBillingFeedback(`Billing update failed: Could not reach the API (${API_URL}). ${reason}`);
+    } finally {
+      setBillingSaveBusy(false);
     }
-    setBillingFeedback("Billing settings saved.");
-    setBillingBusy(false);
-    await loadAdminOverview();
   }
 
   async function startBillingCheckout() {
     setBillingFeedback("");
-    setBillingBusy(true);
-    const origin = globalThis.window?.location?.origin || "";
-    const payload = {
-      plan_key: billingForm.plan_key,
-      success_url: `${origin}/?billing=success`,
-      cancel_url: `${origin}/?billing=cancel`,
-    };
-    const { res, body } = await apiJson("/billing/checkout/session", { method: "POST", body: payload });
-    if (!res.ok) {
-      setBillingFeedback(`Stripe checkout failed: ${formatApiDetail(body)}`);
-      setBillingBusy(false);
-      return;
-    }
-    if (!body?.url) {
-      setBillingFeedback("Stripe checkout failed: missing checkout URL from API response.");
-      setBillingBusy(false);
-      return;
-    }
-    setBillingBusy(false);
-    if (!IS_VITEST) {
-      globalThis.window?.location?.assign(body.url);
+    setBillingCheckoutBusy(true);
+    try {
+      setBillingFeedback("Opening Stripe checkout…");
+      const origin = globalThis.window?.location?.origin || "";
+      if (!origin) {
+        setBillingFeedback("Stripe checkout failed: this page has no origin URL. Open the app from your deployed site, not a local file.");
+        return;
+      }
+      const payload = {
+        plan_key: "starter",
+        success_url: `${origin}/?billing=success`,
+        cancel_url: `${origin}/?billing=cancel`,
+      };
+      const { res, body } = await apiJson("/billing/checkout/session", { method: "POST", body: payload });
+      if (!res.ok) {
+        setBillingFeedback(`Stripe checkout failed: ${formatApiDetail(body)}`);
+        return;
+      }
+      if (!body?.url) {
+        setBillingFeedback("Stripe checkout failed: missing checkout URL from API response.");
+        return;
+      }
+      if (!IS_VITEST) {
+        globalThis.window.location.href = body.url;
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "network error";
+      setBillingFeedback(
+        `Could not reach the API (${API_URL}). ${reason}. Open DevTools → Network and look for POST /billing/checkout/session.`,
+      );
+    } finally {
+      setBillingCheckoutBusy(false);
     }
   }
 
@@ -2744,19 +2761,24 @@ export default function App() {
     if (!confirmed) return;
 
     setBillingFeedback("");
-    setBillingBusy(true);
-    const { res, body } = await apiJson("/billing/downgrade", {
-      method: "POST",
-      body: { target_plan_key: "starter", confirm_downgrade: true },
-    });
-    if (!res.ok) {
-      setBillingFeedback(`Downgrade failed: ${formatApiDetail(body)}`);
-      setBillingBusy(false);
-      return;
+    setBillingCheckoutBusy(true);
+    try {
+      const { res, body } = await apiJson("/billing/downgrade", {
+        method: "POST",
+        body: { target_plan_key: "starter", confirm_downgrade: true },
+      });
+      if (!res.ok) {
+        setBillingFeedback(`Downgrade failed: ${formatApiDetail(body)}`);
+        return;
+      }
+      setBillingFeedback(body.effective_note || "Downgrade scheduled for your next billing cycle.");
+      await loadAdminOverview();
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "network error";
+      setBillingFeedback(`Downgrade failed: Could not reach the API (${API_URL}). ${reason}`);
+    } finally {
+      setBillingCheckoutBusy(false);
     }
-    setBillingFeedback(body.effective_note || "Downgrade scheduled for your next billing cycle.");
-    setBillingBusy(false);
-    await loadAdminOverview();
   }
 
   async function downloadIncidentHistoryCsv(incidentId) {
@@ -3022,7 +3044,8 @@ export default function App() {
               adminOverview={adminOverview}
               billingForm={billingForm}
               setBillingForm={setBillingForm}
-              billingBusy={billingBusy}
+              billingCheckoutBusy={billingCheckoutBusy}
+              billingSaveBusy={billingSaveBusy}
               billingFeedback={billingFeedback}
               onSaveBilling={saveBillingSettings}
               onStartBillingCheckout={startBillingCheckout}
