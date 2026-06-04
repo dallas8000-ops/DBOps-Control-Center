@@ -123,7 +123,7 @@ def check_upgrade_needed(mrr: float, client_count: int) -> dict[str, Any]:
     net_profit = mrr - render_cost
     real_net = net_profit - stripe_fees
     profit_margin = (net_profit / mrr * 100) if mrr > 0 else 0.0
-    starter_price = plan_price_usd("starter") or 49.0
+    starter_price = plan_price_usd("starter") or 79.0
     clients_to_breakeven = max(0, int(-(-int(render_cost) // int(starter_price))))
 
     should_upgrade = mrr >= upgrade_threshold and next_tier is not None

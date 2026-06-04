@@ -17,6 +17,10 @@ def test_normalize_plan_key_is_case_insensitive() -> None:
     assert normalize_plan_key("unknown") is None
 
 
+def test_starter_plan_price() -> None:
+    assert PLAN_CATALOG["starter"].monthly_price_cents == 7900
+
+
 def test_pro_plan_uses_pro_tier_limits() -> None:
     assert PLAN_CATALOG["pro"].max_users == PRO_PLAN_LIMIT
     assert PLAN_CATALOG["pro"].max_schedules == PRO_PLAN_LIMIT
@@ -24,7 +28,7 @@ def test_pro_plan_uses_pro_tier_limits() -> None:
 
 
 def test_apply_plan_catalog_to_settings_updates_pro_limits() -> None:
-    settings = BillingSettings(id=1, plan_key="starter", max_users=10, max_schedules=10, monthly_price_cents=4900)
+    settings = BillingSettings(id=1, plan_key="starter", max_users=10, max_schedules=10, monthly_price_cents=7900)
     assert apply_plan_catalog_to_settings(settings, "pro") is True
     assert settings.plan_key == "pro"
     assert settings.max_users == PRO_PLAN_LIMIT

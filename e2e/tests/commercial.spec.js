@@ -14,7 +14,7 @@ test("landing page links to terms of service", async ({ page, context }) => {
   await page.getByText("Terms of Service").click();
   const termsPage = await popupPromise;
   await expect(termsPage).toHaveURL(/terms-of-service\.html/);
-  await expect(termsPage.getByText("Version 1.1")).toBeVisible();
+  await expect(termsPage.getByText("Version 1.2")).toBeVisible();
   await expect(termsPage.getByText(/next billing cycle/i)).toBeVisible();
 });
 

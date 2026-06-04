@@ -7,8 +7,9 @@ Webhook URL: `https://dbops-api.onrender.com/billing/webhook`
 
 1. Open [Stripe Dashboard](https://dashboard.stripe.com) (use **Test mode** until go-live).
 2. **Developers → API keys** → copy **Secret key** (`sk_test_...` or `sk_live_...`).
-3. **Product catalog** → create or select **Starter** plan → copy a **Price ID** (`price_...`).  
-   The API also accepts a **Product ID** (`prod_...`) if it has a default recurring price.
+3. **Product catalog** → create or select **Starter** plan at **$79/month** → copy a **Price ID** (`price_...`).  
+   The API also accepts a **Product ID** (`prod_...`) if it has a default recurring price.  
+   If you still have a legacy **$49** Starter price in Stripe, create a new **$79** recurring price and update `STRIPE_PRICE_ID_STARTER` on Render.
 
 ## 2. Render — set environment variables
 

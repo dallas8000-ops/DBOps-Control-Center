@@ -2,7 +2,7 @@
 
 ## Terms of Service
 
-**Version 1.1**
+**Version 1.2**
 **Effective Date: June 3, 2026**
 
 These Terms of Service ("Terms") constitute a legally binding agreement between Gilliom Frontline Digital, operated by Barney R. Gilliom ("Provider," "Company," "we," "our," or "us"), and the individual or entity accessing or using the DBOps Control Center platform ("Customer," "Subscriber," "you," or "your").
@@ -31,7 +31,7 @@ Feature availability depends on the subscription plan selected.
 
 | Plan       | Monthly Fee (USD) | Maximum Users | Scheduled Reports |
 | ---------- | ----------------: | ------------: | ----------------: |
-| Starter    |               $49 |            10 |                10 |
+| Starter    |               $79 |            10 |                10 |
 | Pro        |              $149 |         5,000 |             5,000 |
 | Enterprise |              $399 |        10,000 |            10,000 |
 

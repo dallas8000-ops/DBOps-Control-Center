@@ -23,7 +23,7 @@ class PlanDefinition:
 
 
 PLAN_CATALOG: dict[str, PlanDefinition] = {
-    "starter": PlanDefinition("starter", 4900, 10, 10),
+    "starter": PlanDefinition("starter", 7900, 10, 10),
     "pro": PlanDefinition("pro", 14900, PRO_PLAN_LIMIT, PRO_PLAN_LIMIT),
     "enterprise": PlanDefinition("enterprise", 39900, ENTERPRISE_PLAN_LIMIT, ENTERPRISE_PLAN_LIMIT),
 }

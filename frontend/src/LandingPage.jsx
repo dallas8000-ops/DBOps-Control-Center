@@ -36,7 +36,7 @@ const FEATURES = [
 const PLANS = [
   {
     tier: "Starter",
-    price: "$49",
+    price: "$79",
     period: "10 users · 10 schedules",
     features: [
       { text: "Up to 10 users", ok: true },
