@@ -1,0 +1,69 @@
+{
+  "createdAt": "2026-06-12T04:56:20.398874+00:00",
+  "updatedAt": "2026-06-12T05:36:31.860302+00:00",
+  "accountId": "acct_1TVQpaRxznXvj6jh",
+  "products": [
+    {
+      "id": "prod_UgdnrglonWJRHJ",
+      "name": "Starter"
+    },
+    {
+      "id": "prod_UgdnxRJpOWdgQf",
+      "name": "Pro"
+    },
+    {
+      "id": "prod_UggtJaJtr8qLqv",
+      "name": "Enterprise"
+    }
+  ],
+  "prices": [
+    {
+      "id": "price_1ThJVmRxznXvj6jhqPmFSLNM",
+      "tier": "Starter",
+      "amount": 900,
+      "currency": "usd",
+      "interval": "month",
+      "trialDays": 14,
+      "features": [
+        "Core features",
+        "Email support"
+      ]
+    },
+    {
+      "id": "price_1ThJVmRxznXvj6jh2aTzRO4V",
+      "tier": "Pro",
+      "amount": 2900,
+      "currency": "usd",
+      "interval": "month",
+      "trialDays": 14,
+      "features": [
+        "Everything in Starter",
+        "Priority support",
+        "Team seats"
+      ]
+    },
+    {
+      "id": "price_1ThJVnRxznXvj6jhy8uXBJ0z",
+      "tier": "Enterprise",
+      "amount": 99000,
+      "currency": "usd",
+      "interval": "year",
+      "trialDays": 0,
+      "features": [
+        "Custom SLA",
+        "Dedicated support",
+        "SSO"
+      ]
+    }
+  ],
+  "webhookEndpoint": {
+    "id": "we_1ThNlbRxznXvj6jh4xInvG3b",
+    "url": "https://dbops-api-production.up.railway.app/stripe/webhook",
+    "reused": false
+  },
+  "billingPortalConfig": {
+    "id": "bpc_1ThN8iRxznXvj6jhhv7tcuMS",
+    "reused": true
+  },
+  "appUrl": "https://dbops-api-production.up.railway.app"
+}
