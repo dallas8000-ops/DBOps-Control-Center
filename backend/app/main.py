@@ -2454,3 +2454,24 @@ def run_essential_dependency_bundle(
             for key in linked_keys
         ],
     )
+
+
+from fastapi.responses import FileResponse as _FileResponse
+
+def _serve_spa(full_path: str = "") -> "_FileResponse":
+    _spa_base = "/opt/spa"
+    candidate = os.path.join(_spa_base, full_path)
+    if full_path and os.path.isfile(candidate):
+        return _FileResponse(candidate)
+    index_html = os.path.join(_spa_base, "index.html")
+    if os.path.isfile(index_html):
+        return _FileResponse(index_html)
+    raise HTTPException(status_code=404, detail="Frontend not available")
+
+@app.get("/", include_in_schema=False)
+async def _spa_root():
+    return _serve_spa("")
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def _spa_router(full_path: str):
+    return _serve_spa(full_path)

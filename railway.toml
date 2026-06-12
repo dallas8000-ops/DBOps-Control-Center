@@ -1,9 +1,10 @@
 [build]
-dockerfilePath = "backend/Dockerfile"
-dockerContext = "backend"
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+dockerContext = "."
 
 [deploy]
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 60
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
