@@ -2466,7 +2466,15 @@ def _serve_spa(full_path: str = "") -> "_FileResponse":
     index_html = os.path.join(_spa_base, "index.html")
     if os.path.isfile(index_html):
         return _FileResponse(index_html)
-    raise HTTPException(status_code=404, detail="Frontend not available")
+    raise HTTPException(
+        status_code=404,
+        detail={
+            "message": "This is the DBOps API service. Use the web app for the UI.",
+            "web_app": "https://dbops-web-production.up.railway.app",
+            "health": "/health",
+            "docs": "/docs",
+        },
+    )
 
 @app.get("/", include_in_schema=False)
 async def _spa_root():
