@@ -7,7 +7,7 @@ import { IncidentsSection } from "./components/IncidentsSection.jsx";
 import { formatCurrencyFromCents, formatSchedulerStamp, formatUtcIsoAsLocal, utcWallClockToLocalPreview } from "./formatters.js";
 import LandingPage from "./LandingPage";
 
-const API_URL = String(import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
+const DEFAULT_API_URL = "http://localhost:8000";
 const IS_VITEST = Boolean(import.meta.env.VITEST);
 const OIDC_REDIRECT_URI = String(import.meta.env.VITE_OIDC_REDIRECT_URI || "").trim();
 
@@ -36,6 +36,30 @@ function apiUrlMismatchForHostedPage(apiUrl) {
     return false;
   }
 }
+
+/** Map known hosted web domains to their public API (when VITE_API_URL was not set at build time). */
+function resolveApiUrl() {
+  const fromEnv = String(import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+  const host = globalThis.window?.location?.hostname || "";
+  const railwayApiByWebHost = {
+    "dbops-web-production.up.railway.app": "https://dbops-api-production-5047.up.railway.app",
+    "dbops-web.onrender.com": "https://dbops-api.onrender.com",
+  };
+  if (railwayApiByWebHost[host]) {
+    return railwayApiByWebHost[host];
+  }
+  if (fromEnv && !apiUrlMismatchForHostedPage(fromEnv)) {
+    return fromEnv;
+  }
+  if (fromEnv) {
+    return fromEnv;
+  }
+  return DEFAULT_API_URL;
+}
+
+const API_URL = IS_VITEST
+  ? String(import.meta.env.VITE_API_URL || DEFAULT_API_URL).replace(/\/+$/, "")
+  : resolveApiUrl();
 
 function headers(token, json = true) {
   const h = {};
