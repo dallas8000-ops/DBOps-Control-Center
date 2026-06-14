@@ -21,10 +21,12 @@ COPY frontend/package*.json /tmp/frontend/
 RUN cd /tmp/frontend && npm install
 
 COPY frontend/ /tmp/frontend/
-RUN cd /tmp/frontend && VITE_API_URL=https://dbops-api-production-5047.up.railway.app npm run build \
+# Vite bakes VITE_* at build time — set VITE_API_URL in Railway Variables (or use ARG default).
+ARG VITE_API_URL=https://dbops-api-production-5047.up.railway.app
+ENV VITE_API_URL=${VITE_API_URL}
+RUN cd /tmp/frontend && npm run build \
     && cp -r dist /opt/spa \
-    && rm -rf /tmp/frontend
-
-RUN ls /opt/spa/index.html
+    && rm -rf /tmp/frontend \
+    && test -f /opt/spa/index.html
 
 ENTRYPOINT ["./entrypoint.sh"]
