@@ -1,0 +1,35 @@
+{
+  "slug": "dbops-control-center",
+  "name": "DBOps Control Center",
+  "gitUrl": "https://github.com/dallas8000-ops/DBOps-Control-Center",
+  "framework": "fastapi",
+  "platform": "railway",
+  "productionUrl": "https://dbops-api-production-5047.up.railway.app",
+  "healthUrl": "https://dbops-api-production-5047.up.railway.app/health",
+  "billingWebhookUrl": "https://dbops-api-production-5047.up.railway.app/billing/webhook",
+  "licenseTier": "growth",
+  "stripeTierKeys": ["starter", "pro", "enterprise"],
+  "configFiles": {
+    "deploy": "deploy.config.json",
+    "stripe": "stripe.config.json",
+    "manifest": ".stripe-installer/stripe-manifest.json"
+  },
+  "vaultSecrets": [
+    "STRIPE_SECRET_KEY",
+    "STRIPE_PUBLISHABLE_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "STRIPE_PRICE_ID_STARTER",
+    "STRIPE_PRICE_ID_PRO",
+    "STRIPE_PRICE_ID_ENTERPRISE",
+    "DATABASE_URL",
+    "JWT_SECRET_KEY",
+    "METRICS_BEARER_TOKEN",
+    "RAILWAY_API_TOKEN"
+  ],
+  "stripePriceIds": {
+    "STRIPE_PRICE_ID_STARTER": "price_1ThJVmRxznXvj6jhqPmFSLNM",
+    "STRIPE_PRICE_ID_PRO": "price_1ThJVmRxznXvj6jh2aTzRO4V",
+    "STRIPE_PRICE_ID_ENTERPRISE": "price_1ThJVnRxznXvj6jhy8uXBJ0z"
+  },
+  "notes": "Import into Deployment-Stripe-center → Create project → paste Git URL → unlock vault → Run full setup"
+}

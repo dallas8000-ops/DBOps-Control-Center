@@ -24,46 +24,50 @@ _runtime_status = {
     "last_iteration_processed": 0,
     "last_iteration_error": None,
     "consecutive_failures": 0,
-    "last_render_monitor_at": None,
-    "last_render_monitor_should_upgrade": None,
+    "last_hosting_monitor_at": None,
+    "last_hosting_monitor_should_upgrade": None,
 }
-_last_render_monitor_check_at: datetime | None = None
+_last_hosting_monitor_check_at: datetime | None = None
 
 
 def get_scheduler_runtime_status() -> dict:
     return dict(_runtime_status)
 
 
-def _render_monitor_interval_hours() -> int:
+def _hosting_monitor_interval_hours() -> int:
+    raw = os.getenv("RAILWAY_MONITOR_INTERVAL_HOURS", "").strip() or os.getenv(
+        "RENDER_MONITOR_INTERVAL_HOURS", "24"
+    )
     try:
-        return max(int(os.getenv("RENDER_MONITOR_INTERVAL_HOURS", "24")), 1)
+        return max(int(raw), 1)
     except ValueError:
         return 24
 
 
-def maybe_run_render_monitor_check() -> None:
-    global _last_render_monitor_check_at
+def maybe_run_hosting_monitor_check() -> None:
+    global _last_hosting_monitor_check_at
 
-    if os.getenv("RENDER_MONITOR_DISABLE", "").lower() in {"1", "true", "yes"}:
+    disable = os.getenv("RAILWAY_MONITOR_DISABLE", "").strip() or os.getenv("RENDER_MONITOR_DISABLE", "").strip()
+    if disable.lower() in {"1", "true", "yes"}:
         return
 
     now = datetime.now(UTC).replace(tzinfo=None)
-    if _last_render_monitor_check_at is not None:
-        elapsed = now - _last_render_monitor_check_at
-        if elapsed < timedelta(hours=_render_monitor_interval_hours()):
+    if _last_hosting_monitor_check_at is not None:
+        elapsed = now - _last_hosting_monitor_check_at
+        if elapsed < timedelta(hours=_hosting_monitor_interval_hours()):
             return
 
     db = SessionLocal()
     try:
-        from .render_monitor import scheduled_render_monitor_check
+        from .hosting_monitor import scheduled_hosting_monitor_check
 
-        status = scheduled_render_monitor_check(db)
-        _last_render_monitor_check_at = now
-        _runtime_status["last_render_monitor_at"] = now.isoformat()
+        status = scheduled_hosting_monitor_check(db)
+        _last_hosting_monitor_check_at = now
+        _runtime_status["last_hosting_monitor_at"] = now.isoformat()
         if status is not None:
-            _runtime_status["last_render_monitor_should_upgrade"] = status.get("should_upgrade")
+            _runtime_status["last_hosting_monitor_should_upgrade"] = status.get("should_upgrade")
     except Exception:
-        logger.exception("Render monitor scheduled check failed")
+        logger.exception("Railway hosting monitor scheduled check failed")
     finally:
         db.close()
 
@@ -348,7 +352,7 @@ async def run_scheduler_loop(stop_event: asyncio.Event) -> None:
         _runtime_status["last_iteration_started_at"] = datetime.now(UTC).isoformat()
         try:
             processed = process_due_report_schedules()
-            maybe_run_render_monitor_check()
+            maybe_run_hosting_monitor_check()
             _runtime_status["last_iteration_processed"] = processed
             _runtime_status["last_iteration_error"] = None
             _runtime_status["consecutive_failures"] = 0

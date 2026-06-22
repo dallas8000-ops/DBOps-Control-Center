@@ -22,13 +22,13 @@ Growing teams need incident counts, status reports, and operational metrics from
 
 - **Backend:** FastAPI, 30+ API routes, JWT + bcrypt, three-tier RBAC enforced on every endpoint
 - **Frontend:** React + Vite operations console (incidents, reports, AI assist, DBA admin)
-- **Data:** PostgreSQL schema, Alembic migrations (through `010_refresh_tokens`), Docker Compose + **Render blueprint** (`render.yaml`)
+- **Data:** PostgreSQL schema, Alembic migrations (through `010_refresh_tokens`), Docker Compose + **Railway deploy** (`Dockerfile`, `railway.toml`; optional `render.yaml` for buyers)
 - **Security & ops:** Auth + API rate limits, request IDs, audit trails (users, incidents, report runs)
 - **Product features:** Whitelisted SQL reports + CSV export, schedules (email/webhook), OIDC SSO (PKCE), Stripe billing hooks, optional AI report routing & incident summaries
-- **Quality & delivery:** GitHub Actions CI on every push (**85** backend pytest, **21** frontend Vitest, **3** Playwright E2E, lint, migration sanity) + **Render auto-deploy from `main`** — production pipeline live at https://dbops-web.onrender.com
+- **Quality & delivery:** GitHub Actions CI on every push (**85** backend pytest, **21** frontend Vitest, **3** Playwright E2E, lint, migration sanity) + **Railway auto-deploy from `main`** — production pipeline live at https://dbops-api-production-5047.up.railway.app
 - **Commercial pack:** License (`DBOps_LICENSE.md`), Terms v1.1, landing page, pricing sheet, onboarding checklist, SLA matrix, Prometheus/Grafana template
 
-**Delivery model:** Source license. Buyer deploys on **their** infrastructure (Render, AWS, self-hosted). No hosted SaaS from seller unless separately contracted.
+**Delivery model:** Source license. Buyer deploys on **their** infrastructure (Railway, AWS, self-hosted). No hosted SaaS from seller unless separately contracted.
 
 ## What makes it different
 
@@ -36,11 +36,11 @@ Growing teams need incident counts, status reports, and operational metrics from
 2. **RBAC at the API** — Viewer / Analyst / DBA; role escalation via direct API calls is blocked and tested  
 3. **Audit by default** — incident history (incl. comments), admin actions, report execution logs  
 4. **Schedules + delivery** — daily/weekly UTC, email (SMTP) or webhook, execution logging  
-5. **CI/CD included and proven** — push to `main` triggers GitHub Actions (ruff, pytest, frontend lint/test/build, Alembic on Postgres); Render services auto-deploy from the connected repo. **Live production** demonstrates the full loop: https://dbops-web.onrender.com · [CI badge](https://github.com/dallas8000-ops/DBOps-Control-Center/actions/workflows/ci.yml)
+5. **CI/CD included and proven** — push to `main` triggers GitHub Actions (ruff, pytest, frontend lint/test/build, Alembic on Postgres); Railway auto-deploys from the connected repo. **Live production** demonstrates the full loop: https://dbops-api-production-5047.up.railway.app · [CI badge](https://github.com/dallas8000-ops/DBOps-Control-Center/actions/workflows/ci.yml)
 
 ## Maturity: Growth-tier 100% production-ready
 
-The product is **buyer-operated**, not a prototype. **Growth-tier delivery is complete** for 10–100 person teams on Render/AWS. Optional enterprise upsells (attachments, external worker, compliance) are documented in [REMAINING_5_PERCENT.md](./REMAINING_5_PERCENT.md).
+The product is **buyer-operated**, not a prototype. **Growth-tier delivery is complete** for 10–100 person teams on Railway/AWS. Optional enterprise upsells (attachments, external worker, compliance) are documented in [REMAINING_5_PERCENT.md](./REMAINING_5_PERCENT.md).
 
 ## Pricing orientation (services + source)
 
@@ -60,13 +60,13 @@ Not a compliance certification product, not penetration-tested as part of sale, 
 
 | Asset | URL |
 |--------|-----|
-| **Live demo (Render)** | https://dbops-web.onrender.com |
-| **API / health** | https://dbops-api.onrender.com/health |
+| **Live demo (Railway)** | https://dbops-api-production-5047.up.railway.app |
+| **API / health** | https://dbops-api-production-5047.up.railway.app/health |
 | **Demo video (5–8 min)** | Record using [DEMO_VIDEO_5-8MIN.md](./DEMO_VIDEO_5-8MIN.md) against the live URL |
-| **Deploy / refresh** | [LIVE_DEMO_RENDER_CHECKLIST.md](./LIVE_DEMO_RENDER_CHECKLIST.md) |
+| **Deploy / refresh** | [LIVE_DEMO_RAILWAY_CHECKLIST.md](./LIVE_DEMO_RAILWAY_CHECKLIST.md) |
 | **Full positioning** | [`DBOps_Product_Positioning.md`](../../DBOps_Product_Positioning.md) |
 
-Production stack is already deployed (`dbops-db`, `dbops-api`, `dbops-web` per `render.yaml`). Redeploy **dbops-web** after frontend changes so buyers see the latest commercial UI copy.
+Production stack is deployed on Railway (API + SPA in one `Dockerfile` service). Redeploy after frontend or `VITE_*` changes so buyers see the latest commercial UI copy.
 
 ---
 

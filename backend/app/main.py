@@ -15,7 +15,7 @@ from typing import Annotated, Any, TypeAlias
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse as _FileResponse, JSONResponse, PlainTextResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import case, func, or_, text
 from sqlalchemy.orm import Session
@@ -41,6 +41,8 @@ from .auth_utils import (
 )
 from .billing_plans import (
     ACTIVE_SUBSCRIPTION_STATUSES,
+    PLAN_CATALOG,
+    STRIPE_PRICE_ENV_BY_PLAN,
     apply_plan_catalog_to_settings,
     is_plan_downgrade,
     normalize_plan_key,
@@ -72,6 +74,7 @@ from .schemas import (
     ActivityTrendPointRead,
     AdminMetricsRead,
     AdminOverviewRead,
+    DeploymentReadinessRead,
     AiFindReportRequest,
     AiFindReportResponse,
     AiIncidentSummaryResponse,
@@ -103,7 +106,7 @@ from .schemas import (
     Token,
     OnboardingItemRead,
     PlanUsageRead,
-    RenderMonitorRead,
+    HostingMonitorRead,
     UserAdminAuditRead,
     UserCreate,
     UserPasswordReset,
@@ -113,12 +116,14 @@ from .schemas import (
     EssentialDependencyBundleResponse,
     LinkedReport,
 )
-from .render_monitor import evaluate_render_monitor
+from .automation_config import build_deployment_readiness, log_startup_readiness
+from .hosting_monitor import evaluate_hosting_monitor
 from .scheduler import compute_next_run_at, get_scheduler_runtime_status, run_scheduler_loop
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    log_startup_readiness()
     stop_event = asyncio.Event()
     task = None
     if os.getenv("SCHEDULED_REPORTS_DISABLE_LOOP", "").lower() not in ("1", "true", "yes"):
@@ -619,7 +624,7 @@ def _assert_dbops_starter_checkout_price(stripe_client: Any, price_id: str) -> N
         status_code=400,
         detail=(
             f"STRIPE_PRICE_ID_STARTER is wired to Stripe product '{label}', not DBOps Starter. "
-            "In Render → dbops-api, set STRIPE_PRICE_ID_STARTER to the price_ ID under "
+            "In Railway → Variables, set STRIPE_PRICE_ID_STARTER to the price_ ID under "
             "Product catalog → DBOps Starter ($79/mo). Other products (e.g. RecruitCommand Pro) "
             "must not use this variable."
         ),
@@ -956,12 +961,14 @@ def _build_activity_trend(db: Session) -> list[ActivityTrendPointRead]:
 def _build_admin_overview(db: Session) -> AdminOverviewRead:
     settings = _get_or_create_billing_settings(db)
     db.flush()
+    deployment = build_deployment_readiness()
     return AdminOverviewRead(
         metrics=_build_admin_metrics(db),
         billing=BillingSettingsRead.model_validate(settings),
         plan_usage=_build_plan_usage(db, settings),
         onboarding=_build_onboarding_read(db),
         activity_trend=_build_activity_trend(db),
+        deployment_readiness=DeploymentReadinessRead.model_validate(deployment),
     )
 
 
@@ -988,16 +995,20 @@ allow_origins = _parsed_origins if _parsed_origins else [
     "http://127.0.0.1:5174",
 ]
 
-def _render_cors_origin_regex() -> str | None:
+def _railway_cors_origin_regex() -> str | None:
+    if os.getenv("CORS_DISABLE_RAILWAY_REGEX", "").lower() in ("1", "true", "yes"):
+        return None
     if os.getenv("CORS_DISABLE_RENDER_REGEX", "").lower() in ("1", "true", "yes"):
         return None
-    if os.getenv("CORS_ALLOW_ANY_RENDER", "").lower() in ("1", "true", "yes"):
-        return r"^https://[a-zA-Z0-9\-]+\.onrender\.com$"
-    services = os.getenv("CORS_RENDER_ALLOWED_SERVICES", "dbops-web").strip()
+    if os.getenv("CORS_ALLOW_ANY_RAILWAY", "").lower() in ("1", "true", "yes"):
+        return r"^https://[a-zA-Z0-9\-]+\.up\.railway\.app$"
+    services = os.getenv("CORS_RAILWAY_ALLOWED_SERVICES", "").strip()
+    if not services:
+        services = os.getenv("CORS_RENDER_ALLOWED_SERVICES", "dbops-api-production-5047").strip()
     names = [re.escape(part.strip()) for part in services.split(",") if part.strip()]
     if not names:
         return None
-    return rf"^https://({'|'.join(names)})\.onrender\.com$"
+    return rf"^https://({'|'.join(names)})\.up\.railway\.app$"
 
 
 _cors_kw: dict = {
@@ -1006,9 +1017,9 @@ _cors_kw: dict = {
     "allow_methods": ["*"],
     "allow_headers": ["*"],
 }
-_render_cors_regex = _render_cors_origin_regex()
-if _render_cors_regex is not None:
-    _cors_kw["allow_origin_regex"] = _render_cors_regex
+_railway_cors_regex = _railway_cors_origin_regex()
+if _railway_cors_regex is not None:
+    _cors_kw["allow_origin_regex"] = _railway_cors_regex
 
 
 @app.middleware("http")
@@ -1064,6 +1075,12 @@ def health(response: Response):
         return {"status": "degraded", "database": "unreachable"}
 
 
+@app.get("/health/deployment", response_model=DeploymentReadinessRead)
+def health_deployment():
+    """Automation-center readiness: env, tier, and manifest alignment (no secrets)."""
+    return DeploymentReadinessRead.model_validate(build_deployment_readiness())
+
+
 @app.get("/health/observability")
 def health_observability():
     """Metrics and rate-limit backend readiness (no secret values)."""
@@ -1113,13 +1130,22 @@ def _stripe_env_configured(name: str) -> bool:
 
 @app.get("/health/billing")
 def health_billing(response: Response):
-    """Stripe env presence only (no secret values). Use after setting Render env vars."""
+    """Stripe env presence only (no secret values). Use after setting Railway env vars."""
     config = {
         "stripe_secret_key": _stripe_env_configured("STRIPE_SECRET_KEY"),
         "stripe_webhook_secret": _stripe_env_configured("STRIPE_WEBHOOK_SECRET"),
         "stripe_price_id_starter": _stripe_env_configured("STRIPE_PRICE_ID_STARTER"),
         "stripe_sdk_installed": stripe is not None,
     }
+    tier_env = {
+        plan_key: _stripe_env_configured(env_name)
+        for plan_key, env_name in STRIPE_PRICE_ENV_BY_PLAN.items()
+    }
+    if tier_env.get("pro"):
+        config["stripe_price_id_pro"] = True
+    if tier_env.get("enterprise"):
+        config["stripe_price_id_enterprise"] = True
+
     ready = all(
         [
             config["stripe_secret_key"],
@@ -1128,11 +1154,30 @@ def health_billing(response: Response):
             config["stripe_sdk_installed"],
         ]
     )
+    if tier_env.get("pro") and tier_env.get("enterprise"):
+        tier_readiness = "scale"
+    elif tier_env.get("pro"):
+        tier_readiness = "growth"
+    elif ready:
+        tier_readiness = "starter"
+    else:
+        tier_readiness = "none"
+
     if not ready:
         response.status_code = 503
     return {
         "status": "ok" if ready else "degraded",
         "billing": config,
+        "tier_env": tier_env,
+        "tier_readiness": tier_readiness,
+        "plan_catalog": {
+            key: {
+                "monthly_price_cents": plan.monthly_price_cents,
+                "max_users": plan.max_users,
+                "max_schedules": plan.max_schedules,
+            }
+            for key, plan in PLAN_CATALOG.items()
+        },
         "webhook_url_path": "/billing/webhook",
         "required_webhook_events": list(STRIPE_WEBHOOK_EVENTS),
     }
@@ -1295,14 +1340,26 @@ def admin_overview(
     return overview
 
 
-@app.get("/admin/render-monitor", response_model=RenderMonitorRead, responses=ERROR_RESPONSES_DBA_ONLY)
-def render_monitor_status(
+@app.get("/admin/hosting-monitor", response_model=HostingMonitorRead, responses=ERROR_RESPONSES_DBA_ONLY)
+def hosting_monitor_status(
     db: DbDep,
     current: DbaUserDep,
     send_alert: bool = False,
 ):
-    """DBA-only: MRR vs Render hosting cost; optional email when upgrade threshold is met."""
-    status = evaluate_render_monitor(db, actor_user_id=current.id, send_alert=send_alert)
+    """DBA-only: MRR vs Railway hosting cost; optional email when upgrade threshold is met."""
+    status = evaluate_hosting_monitor(db, actor_user_id=current.id, send_alert=send_alert)
+    db.commit()
+    return status
+
+
+@app.get("/admin/render-monitor", response_model=HostingMonitorRead, responses=ERROR_RESPONSES_DBA_ONLY, include_in_schema=False)
+def render_monitor_status_legacy(
+    db: DbDep,
+    current: DbaUserDep,
+    send_alert: bool = False,
+):
+    """Deprecated alias for /admin/hosting-monitor."""
+    status = evaluate_hosting_monitor(db, actor_user_id=current.id, send_alert=send_alert)
     db.commit()
     return status
 
@@ -2455,8 +2512,6 @@ def run_essential_dependency_bundle(
         ],
     )
 
-
-from fastapi.responses import FileResponse as _FileResponse
 
 def _serve_spa(full_path: str = "") -> "_FileResponse":
     _spa_base = "/opt/spa"

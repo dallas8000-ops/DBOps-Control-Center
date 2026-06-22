@@ -296,6 +296,24 @@ class OnboardingItemRead(BaseModel):
     completed_at: datetime | None
 
 
+class ReadinessCheckRead(BaseModel):
+    id: str
+    category: str
+    name: str
+    status: str
+    message: str
+    fix: str | None = None
+
+
+class DeploymentReadinessRead(BaseModel):
+    score: int
+    label: str
+    tier_readiness: str
+    checks: list[ReadinessCheckRead]
+    automation_center_url: str | None = None
+    config_root: str | None = None
+
+
 class AdminMetricsRead(BaseModel):
     total_users: int
     active_users: int
@@ -333,16 +351,17 @@ class AdminOverviewRead(BaseModel):
     plan_usage: PlanUsageRead
     onboarding: list[OnboardingItemRead]
     activity_trend: list[ActivityTrendPointRead]
+    deployment_readiness: DeploymentReadinessRead
 
 
-class RenderMonitorRead(BaseModel):
+class HostingMonitorRead(BaseModel):
     timestamp: str
     mrr: float
     client_count: int
     net_profit: float
     profit_margin_pct: float
     stripe_fees: float
-    render_cost: float
+    hosting_cost: float
     upgrade_threshold: float
     profit_multiplier: float
     should_upgrade: bool

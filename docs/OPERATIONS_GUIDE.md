@@ -1,8 +1,8 @@
 # DBOps Control Center — Operations Guide
 
-This guide walks through **how the application works from first visit through sign-out**, for operators, DBAs, and buyers evaluating the product. It describes the live UI and API behavior, not deployment mechanics (see [README](../README.md) and [DEPLOYMENT.md](../DEPLOYMENT.md) for install and Render setup).
+This guide walks through **how the application works from first visit through sign-out**, for operators, DBAs, and buyers evaluating the product. It describes the live UI and API behavior, not deployment mechanics (see [README](../README.md) and [DEPLOYMENT.md](../DEPLOYMENT.md) for install and Railway setup).
 
-**Live demo:** https://dbops-web.onrender.com  
+**Live demo:** https://dbops-api-production-5047.up.railway.app  
 **Roles:** `DBA`, `Analyst`, `Viewer` — every protected action is enforced on the API, not only in the browser.
 
 ---
@@ -30,8 +30,8 @@ flowchart TD
 
 ## 1. Arrival — opening the application
 
-1. Open the **web URL** (for example `https://dbops-web.onrender.com`) in a full browser (Chrome, Edge, Firefox, or Safari). Do not rely on an email link preview pane; it often shows HTML without running JavaScript.
-2. **First load on Render free tier** can take up to ~60 seconds while the service wakes up; refresh once if the page stays on “Loading…”.
+1. Open the **web URL** (for example `https://dbops-api-production-5047.up.railway.app`) in a full browser (Chrome, Edge, Firefox, or Safari). Do not rely on an email link preview pane; it often shows HTML without running JavaScript.
+2. **First load** after a deploy can take a few seconds while the Railway service starts; refresh once if the page stays on “Loading…”.
 3. If you see the **marketing landing page**, click **Sign In** or **Start Free Trial** to reach the operations console. The landing page is skipped once you are signed in (token stored in the browser).
 
 The login screen shows a **system status** strip: API reachable and PostgreSQL reachable when healthy. If the API is misconfigured, the strip explains fixes (for example `VITE_API_URL` on the static site).
@@ -194,7 +194,7 @@ Typical **first paying customer** flow on a dedicated deployment:
 3. Return URL `/?billing=success` — webhooks update `billing_status`, Stripe customer/subscription IDs, and plan limits.
 4. Create the customer’s login via **Create user** (Stripe does not create app users).
 
-Manual billing fields can be saved for testing; production should rely on webhooks. See [STRIPE_RENDER_SETUP.md](./STRIPE_RENDER_SETUP.md).
+Manual billing fields can be saved for testing; production should rely on webhooks. See [STRIPE_RAILWAY_SETUP.md](./STRIPE_RAILWAY_SETUP.md).
 
 **Downgrade** (Pro/Enterprise → Starter) schedules change at the **next billing cycle** via `POST /billing/downgrade` with explicit confirmation.
 
@@ -212,7 +212,7 @@ DBA can call `GET /admin/export` (UI may expose via API/docs) for a JSON snapsho
 | **Scheduler** | Polls for due report schedules; optional email/webhook delivery. |
 | **Rate limits** | Auth endpoints and heavy API routes per client IP; `REDIS_URL` shares limits across replicas. |
 | **Metrics** | `GET /metrics` requires `METRICS_BEARER_TOKEN` or DBA JWT — not public. |
-| **CORS** | Browser calls allowed from configured origins (and named Render hosts by default). |
+| **CORS** | Browser calls allowed from configured origins (and named Railway hosts by default). |
 
 ---
 
@@ -263,7 +263,7 @@ Full API matrix: [README — RBAC matrix](../README.md#rbac-matrix).
 
 ## 10. Demo vs production
 
-| Topic | Shared demo (e.g. Render) | Buyer production |
+| Topic | Shared demo (e.g. Railway) | Buyer production |
 |-------|---------------------------|------------------|
 | Bootstrap | Usually disabled (seed users exist) | Use on empty DB once |
 | Credentials | Published evaluation passwords | Unique passwords per org |
@@ -278,9 +278,9 @@ Full API matrix: [README — RBAC matrix](../README.md#rbac-matrix).
 |----------|----------|
 | [USER_WALKTHROUGH.md](./USER_WALKTHROUGH.md) | **Training:** step-by-step exercises (Viewer → Analyst → DBA) |
 | [README.md](../README.md) | Install, env vars, RBAC API table, testing |
-| [DEPLOYMENT.md](../DEPLOYMENT.md) | Render blueprint and env configuration |
-| [STRIPE_RENDER_SETUP.md](./STRIPE_RENDER_SETUP.md) | Checkout and webhooks |
-| [LIVE_DEMO_RENDER_CHECKLIST.md](./commercial-assets/LIVE_DEMO_RENDER_CHECKLIST.md) | Sharing the public demo URL |
+| [DEPLOYMENT.md](../DEPLOYMENT.md) | Railway deploy and env configuration |
+| [STRIPE_RAILWAY_SETUP.md](./STRIPE_RAILWAY_SETUP.md) | Checkout and webhooks |
+| [LIVE_DEMO_RAILWAY_CHECKLIST.md](./commercial-assets/LIVE_DEMO_RAILWAY_CHECKLIST.md) | Sharing the public demo URL |
 | [onboarding-checklist-day0-day7.md](./commercial-assets/onboarding-checklist-day0-day7.md) | Week-one rollout for new buyers |
 | [DEMO_VIDEO_5-8MIN.md](./commercial-assets/DEMO_VIDEO_5-8MIN.md) | Recorded walkthrough script |
 | [OPERATIONAL_READINESS.md](./OPERATIONAL_READINESS.md) | Production hardening and scale notes |

@@ -4,7 +4,7 @@ import PropTypes from "prop-types";
 import { BusinessOpsPanel } from "./components/BusinessOpsPanel.jsx";
 import { Card, ReportRunsTrendChart } from "./components/DashboardWidgets.jsx";
 import { IncidentsSection } from "./components/IncidentsSection.jsx";
-import { formatCurrencyFromCents, formatSchedulerStamp, formatUtcIsoAsLocal, utcWallClockToLocalPreview } from "./formatters.js";
+import { formatSchedulerStamp, formatUtcIsoAsLocal, utcWallClockToLocalPreview } from "./formatters.js";
 import LandingPage from "./LandingPage";
 
 const DEFAULT_API_URL = "http://localhost:8000";
@@ -23,7 +23,7 @@ function getOidcRedirectUri() {
   return globalThis.location?.origin || "";
 }
 
-/** Hosted site (e.g. Render) still pointing at loopback — browser will block or fail the request. */
+/** Hosted site (e.g. Railway) still pointing at loopback — browser will block or fail the request. */
 function apiUrlMismatchForHostedPage(apiUrl) {
   const win = globalThis.window;
   if (win === undefined) return false;
@@ -42,8 +42,8 @@ function resolveApiUrl() {
   const fromEnv = String(import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
   const host = globalThis.window?.location?.hostname || "";
   const railwayApiByWebHost = {
+    "dbops-api-production-5047.up.railway.app": "https://dbops-api-production-5047.up.railway.app",
     "dbops-web-production.up.railway.app": "https://dbops-api-production-5047.up.railway.app",
-    "dbops-web.onrender.com": "https://dbops-api.onrender.com",
   };
   if (railwayApiByWebHost[host]) {
     return railwayApiByWebHost[host];
@@ -255,7 +255,7 @@ function HealthConnectionMessages({ health, apiUrl }) {
     case "db_unreachable":
       return (
         <div className="health-strip health-strip--warn" role="alert">
-          <strong>Database:</strong> API is up but PostgreSQL is not reachable from the server. On Render, verify the API service
+          <strong>Database:</strong> API is up but PostgreSQL is not reachable from the server. On Railway, verify the service
           has <code className="pill-muted">DATABASE_URL</code> and try appending <code className="pill-muted">?sslmode=require</code>{" "}
           if SSL is required.
         </div>
@@ -271,7 +271,7 @@ function HealthConnectionMessages({ health, apiUrl }) {
     case "api_error":
       return (
         <div className="health-strip health-strip--bad" role="alert">
-          <strong>API:</strong> Unexpected response ({health.status}). Check API logs on Render.
+          <strong>API:</strong> Unexpected response ({health.status}). Check API logs on Railway.
         </div>
       );
     default:
@@ -502,8 +502,8 @@ function CreateUserSection({
         <strong>API base URL baked into this frontend build:</strong>{" "}
         <code>{apiBaseUrl}</code>
         <span className="hint api-config-banner__note">
-          On Render, set <code className="pill-muted">VITE_API_URL</code> on <strong>dbops-web</strong> to your live API (example{" "}
-          <code className="pill-muted">https://dbops-api.onrender.com</code>), save, then redeploy the static site. If you only see the
+          On Railway, set <code className="pill-muted">VITE_API_URL</code> (or rebuild with the Dockerfile <code className="pill-muted">ARG</code>) to your live API (example{" "}
+          <code className="pill-muted">https://dbops-api-production-5047.up.railway.app</code>), save, then redeploy. If you only see the
           title and form with no box like this, your browser is still loading an old deploy — hard-refresh or redeploy.
         </span>
       </div>
@@ -515,9 +515,9 @@ function CreateUserSection({
       {configBroken ? (
         <p className="error-text" role="alert">
           This page is not running on localhost, but the app is still configured to call{" "}
-          <code className="pill-muted">{apiBaseUrl}</code>. Browsers will block or ignore that. In the Render dashboard, set{" "}
+          <code className="pill-muted">{apiBaseUrl}</code>. Browsers will block or ignore that. In Railway, set{" "}
           <code className="pill-muted">VITE_API_URL</code> to your public API URL (for example{" "}
-          <code className="pill-muted">https://dbops-api.onrender.com</code>), then redeploy <strong>dbops-web</strong>.
+          <code className="pill-muted">https://dbops-api-production-5047.up.railway.app</code>), then redeploy the service.
         </p>
       ) : null}
       <div aria-live="polite">
@@ -2433,7 +2433,7 @@ export default function App() {
         kind: "error",
         text:
           `Could not reach the API (${API_URL}). ${reason} ` +
-          "Open DevTools -> Network for POST /auth/users. On Render, set VITE_API_URL on dbops-web and redeploy.",
+          "Open DevTools -> Network for POST /auth/users. On Railway, set VITE_API_URL and redeploy.",
       });
     } finally {
       clearTimeout(timeoutId);

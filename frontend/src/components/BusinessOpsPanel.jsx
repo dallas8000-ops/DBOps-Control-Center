@@ -170,6 +170,40 @@ export function BusinessOpsPanel({
       <h3 className="section-lede">Activity trend (last 7 days)</h3>
       <ActivityTrendChart points={activityTrend} />
 
+      <h3 className="section-lede">Deployment automation</h3>
+      {adminOverview.deployment_readiness ? (
+        <div className="onboarding-list">
+          <p className="hint">
+            Readiness {adminOverview.deployment_readiness.score}/100 ({adminOverview.deployment_readiness.label})
+            {" · "}
+            tier: <strong>{adminOverview.deployment_readiness.tier_readiness}</strong>
+            {adminOverview.deployment_readiness.automation_center_url ? (
+              <>
+                {" · "}
+                <a
+                  href={adminOverview.deployment_readiness.automation_center_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Deployment-Stripe-center
+                </a>
+              </>
+            ) : null}
+          </p>
+          {adminOverview.deployment_readiness.checks
+            .filter((item) => item.status !== "pass")
+            .map((item) => (
+              <div key={item.id} className={`onboarding-item onboarding-item--${item.status}`}>
+                <strong>{item.status === "fail" ? "Fix" : "Improve"}</strong> {item.name}: {item.message}
+                {item.fix ? <span className="hint"> · {item.fix}</span> : null}
+              </div>
+            ))}
+          {adminOverview.deployment_readiness.checks.every((item) => item.status === "pass") ? (
+            <p className="hint">All automated deployment checks passing.</p>
+          ) : null}
+        </div>
+      ) : null}
+
       <h3 className="section-lede">Onboarding progress</h3>
       <div className="onboarding-list">
         {onboarding.map((item) => (

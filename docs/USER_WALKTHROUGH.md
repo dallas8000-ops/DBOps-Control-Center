@@ -18,7 +18,7 @@ Use this document to **learn the product by doing**. Work through the exercises 
 
 - A modern browser (Chrome, Edge, Firefox, or Safari)
 - The app URL opened in the **address bar** (not inside an email preview)
-- For the public demo: https://dbops-web.onrender.com
+- For the public demo: https://dbops-api-production-5047.up.railway.app
 
 ### Demo accounts (after `seed-demo`)
 
@@ -42,8 +42,8 @@ On your **own** deployment with an empty database, use **First-time setup (boots
 
 ### Step 1.1 — Open the site
 
-1. Go to https://dbops-web.onrender.com (or your team’s URL).
-2. Wait up to **60 seconds** on first visit if the host was asleep (Render free tier).
+1. Go to https://dbops-api-production-5047.up.railway.app (or your team’s URL).
+2. Wait a few seconds on first visit after a deploy if the Railway service is starting.
 3. If you see a marketing page, click **Sign In** (top right) or **Start Free Trial**.
 
 **You should see:** A login panel titled **Sign in**, with a green or yellow **system status** line about the API and PostgreSQL.
@@ -213,7 +213,7 @@ Only if billing is configured (`GET /health/billing` returns ok on your API):
 2. Complete **test mode** checkout in Stripe’s hosted page.
 3. Return to the app → confirm billing status shows **active** and Stripe IDs appear.
 
-See [STRIPE_RENDER_SETUP.md](./STRIPE_RENDER_SETUP.md) if checkout fails.
+See [STRIPE_RAILWAY_SETUP.md](./STRIPE_RAILWAY_SETUP.md) if checkout fails.
 
 ### Exercise 4.7 — Final sign-out
 
@@ -269,7 +269,7 @@ Copy this into your onboarding ticket or workshop notes:
 | Blank page (only title in tab) | Full browser, not email preview; wait 60s; hard refresh (Ctrl+F5) |
 | Login fails | Confirm demo password; check caps lock; rate limit — wait 1 minute |
 | “Bootstrap complete” on register | Database already has users — sign in, don’t bootstrap |
-| Report fails | Read error under report panel; DBA checks API logs on Render |
+| Report fails | Read error under report panel; DBA checks API logs on Railway |
 | No SSO button | OIDC not configured on this deploy — use email/password |
 | Log out but still “signed in” | Clear site data for the domain; ensure you clicked **Log out** with active session |
 

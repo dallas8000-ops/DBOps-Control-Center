@@ -1,5 +1,7 @@
 {
-  "appUrl": "https://dbops-api-production.up.railway.app",
+  "appUrl": "https://dbops-api-production-5047.up.railway.app",
+  "webhookUrl": "https://dbops-api-production-5047.up.railway.app/billing/webhook",
+  "billingPortalReturnUrl": "https://dbops-api-production-5047.up.railway.app/?billing=success",
   "provision": {
     "reuseExisting": true,
     "createWebhook": true,
@@ -8,40 +10,60 @@
   "tiers": [
     {
       "name": "Starter",
-      "description": "Essential features",
-      "amount": 900,
+      "planKey": "starter",
+      "description": "Core ops for small teams — incidents, RBAC, whitelisted reports",
+      "amount": 7900,
       "currency": "usd",
       "interval": "month",
       "trialDays": 14,
+      "maxUsers": 10,
+      "maxSchedules": 10,
+      "licenseTier": "launch",
       "features": [
-        "Core features",
+        "Up to 10 users",
+        "Up to 10 scheduled reports",
+        "JWT + RBAC (DBA / Analyst / Viewer)",
+        "Whitelisted SQL reports + CSV export",
+        "Incident workflow + audit history",
         "Email support"
       ]
     },
     {
       "name": "Pro",
-      "description": "Growing teams",
-      "amount": 2900,
+      "planKey": "pro",
+      "description": "Growth teams — higher limits, schedules, observability template",
+      "amount": 14900,
       "currency": "usd",
       "interval": "month",
       "trialDays": 14,
+      "maxUsers": 5000,
+      "maxSchedules": 5000,
+      "licenseTier": "growth",
       "features": [
         "Everything in Starter",
+        "High user and schedule capacity",
+        "Prometheus metrics + Grafana template",
         "Priority support",
-        "Team seats"
+        "CI handoff documentation"
       ]
     },
     {
       "name": "Enterprise",
-      "description": "Full access",
-      "amount": 99000,
+      "planKey": "enterprise",
+      "description": "Scale — SSO, expanded limits, operational readiness package",
+      "amount": 39900,
       "currency": "usd",
-      "interval": "year",
+      "interval": "month",
       "trialDays": 0,
+      "maxUsers": 10000,
+      "maxSchedules": 10000,
+      "licenseTier": "scale",
       "features": [
-        "Custom SLA",
+        "Everything in Pro",
+        "OIDC SSO (PKCE)",
+        "Maximum plan limits",
         "Dedicated support",
-        "SSO"
+        "Stakeholder enablement workshop"
       ]
     }
   ]

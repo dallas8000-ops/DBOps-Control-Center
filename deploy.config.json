@@ -1,0 +1,54 @@
+{
+  "domain": "dbops-api-production-5047.up.railway.app",
+  "productionUrl": "https://dbops-api-production-5047.up.railway.app",
+  "platform": "railway",
+  "framework": "fastapi",
+  "runtime": "python",
+  "healthCheckPath": "/health",
+  "billingWebhookPath": "/billing/webhook",
+  "metricsPath": "/metrics",
+  "automationCenter": {
+    "portfolioSlug": "dbops-control-center",
+    "installerUrl": "https://stripe-installer.gilliomfrontlinedigital.com",
+    "reScanAfterDeploy": true
+  },
+  "environments": {
+    "test": {
+      "url": ""
+    },
+    "staging": {
+      "url": ""
+    },
+    "production": {
+      "url": "https://dbops-api-production-5047.up.railway.app"
+    }
+  },
+  "postgres": {
+    "provider": "neon",
+    "connectionEnvVar": "DATABASE_URL",
+    "autoProvision": true,
+    "sslMode": "require"
+  },
+  "monitoring": {
+    "healthCheck": true,
+    "observabilityPath": "/health/observability",
+    "hostingMonitorPath": "/admin/hosting-monitor"
+  },
+  "backup": {
+    "enabled": true,
+    "retentionDays": 30,
+    "scripts": ["scripts/backup-db.sh", "scripts/backup-db.ps1"]
+  },
+  "ssl": {
+    "auto": true
+  },
+  "tiers": {
+    "licenseReady": "growth",
+    "stripePlans": ["starter", "pro", "enterprise"],
+    "envVars": {
+      "starter": "STRIPE_PRICE_ID_STARTER",
+      "pro": "STRIPE_PRICE_ID_PRO",
+      "enterprise": "STRIPE_PRICE_ID_ENTERPRISE"
+    }
+  }
+}

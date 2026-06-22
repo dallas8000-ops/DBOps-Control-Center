@@ -29,4 +29,7 @@ RUN cd /tmp/frontend && npm run build \
     && rm -rf /tmp/frontend \
     && test -f /opt/spa/index.html
 
+COPY stripe.config.json deploy.config.json ./
+COPY .stripe-installer ./.stripe-installer
+
 ENTRYPOINT ["./entrypoint.sh"]

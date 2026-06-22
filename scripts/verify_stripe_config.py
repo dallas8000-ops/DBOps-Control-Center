@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify live Stripe/Render billing config via public health endpoints (no secrets printed)."""
+"""Verify live Stripe/Railway billing config via public health endpoints (no secrets printed)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,9 @@ import sys
 import urllib.error
 import urllib.request
 
-API_URL = os.environ.get("DBOPS_API_URL", "https://dbops-api.onrender.com").rstrip("/")
+API_URL = os.environ.get(
+    "DBOPS_API_URL", "https://dbops-api-production-5047.up.railway.app"
+).rstrip("/")
 
 
 def fetch(path: str) -> tuple[int, dict]:
@@ -34,7 +36,7 @@ def main() -> int:
     print(f"GET /health -> {status or 'timeout'}")
     print(json.dumps(body, indent=2))
     if status == 0:
-        print("\nAPI unreachable. Check Render service or cold start.", file=sys.stderr)
+        print("\nAPI unreachable. Check Railway service status.", file=sys.stderr)
         return 1
 
     status, body = fetch("/health/billing")
@@ -45,11 +47,11 @@ def main() -> int:
         print(
             "\nProduction API does not include GET /health/billing yet (older deploy).\n"
             "1. Commit and push backend changes (main.py with /health/billing).\n"
-            "2. Wait for Render dbops-api to redeploy.\n"
+            "2. Wait for Railway to redeploy.\n"
             "3. Re-run: python scripts/verify_stripe_config.py\n"
             "\nUntil then, confirm Stripe env vars manually:\n"
-            "  Render → dbops-api → Environment → STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID_STARTER\n"
-            "  See docs/STRIPE_RENDER_SETUP.md",
+            "  Railway → Variables → STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID_STARTER\n"
+            "  See docs/STRIPE_RAILWAY_SETUP.md",
             file=sys.stderr,
         )
         return 2
@@ -57,18 +59,18 @@ def main() -> int:
     if status == 503:
         billing = body.get("billing", {})
         missing = [k for k, ok in billing.items() if k.startswith("stripe_") and not ok]
-        print("\nAPI is up but Stripe env vars are missing on Render:", ", ".join(missing), file=sys.stderr)
-        print("See docs/STRIPE_RENDER_SETUP.md", file=sys.stderr)
+        print("\nAPI is up but Stripe env vars are missing on Railway:", ", ".join(missing), file=sys.stderr)
+        print("See docs/STRIPE_RAILWAY_SETUP.md", file=sys.stderr)
         return 1
 
     billing = body.get("billing", {})
     missing = [k for k, ok in billing.items() if k.startswith("stripe_") and not ok]
     if status != 200 or missing:
-        print("\nAction: set missing Render env vars — see docs/STRIPE_RENDER_SETUP.md", file=sys.stderr)
+        print("\nAction: set missing Railway env vars — see docs/STRIPE_RAILWAY_SETUP.md", file=sys.stderr)
         return 1
 
     print("\nStripe env vars are present on the API. Confirm webhook events in Stripe Dashboard.")
-    print("Guide: docs/STRIPE_RENDER_SETUP.md")
+    print("Guide: docs/STRIPE_RAILWAY_SETUP.md")
     return 0
 
 

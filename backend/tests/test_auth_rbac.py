@@ -869,6 +869,18 @@ def test_dba_admin_overview_returns_metrics_billing_and_onboarding() -> None:
         assert any(point["report_runs"] >= 1 for point in body["activity_trend"])
         completed = {item["key"] for item in body["onboarding"] if item["completed"]}
         assert {"first_user_created", "first_incident_created", "first_report_run", "first_schedule_created"}.issubset(completed)
+        assert "deployment_readiness" in body
+        assert body["deployment_readiness"]["score"] >= 0
+
+
+def test_health_deployment_endpoint() -> None:
+    for client in _client():
+        resp = client.get("/health/deployment")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "score" in body
+        assert "tier_readiness" in body
+        assert isinstance(body["checks"], list)
 
 
 def test_dba_can_update_billing_settings() -> None:
@@ -913,8 +925,8 @@ def test_dba_can_create_stripe_checkout_session(monkeypatch) -> None:
             json={
                 "price_id": "price_test_starter",
                 "plan_key": "starter",
-                "success_url": "https://dbops-web.onrender.com/billing/success",
-                "cancel_url": "https://dbops-web.onrender.com/billing/cancel",
+                "success_url": "https://dbops-api-production-5047.up.railway.app/billing/success",
+                "cancel_url": "https://dbops-api-production-5047.up.railway.app/billing/cancel",
             },
             headers=_auth_headers(dba_token),
         )
@@ -960,8 +972,8 @@ def test_checkout_ignores_invalid_saved_stripe_customer_id(monkeypatch) -> None:
             json={
                 "price_id": "price_test_starter",
                 "plan_key": "starter",
-                "success_url": "https://dbops-web.onrender.com/?billing=success",
-                "cancel_url": "https://dbops-web.onrender.com/?billing=cancel",
+                "success_url": "https://dbops-api-production-5047.up.railway.app/?billing=success",
+                "cancel_url": "https://dbops-api-production-5047.up.railway.app/?billing=cancel",
             },
             headers=_auth_headers(dba_token),
         )
@@ -987,8 +999,8 @@ def test_checkout_rejects_non_dbops_starter_price_id(monkeypatch) -> None:
         resp = client.post(
             "/billing/checkout/session",
             json={
-                "success_url": "https://dbops-web.onrender.com/?billing=success",
-                "cancel_url": "https://dbops-web.onrender.com/?billing=cancel",
+                "success_url": "https://dbops-api-production-5047.up.railway.app/?billing=success",
+                "cancel_url": "https://dbops-api-production-5047.up.railway.app/?billing=cancel",
             },
             headers=_auth_headers(dba_token),
         )

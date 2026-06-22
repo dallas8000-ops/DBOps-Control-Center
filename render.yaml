@@ -1,3 +1,4 @@
+# Optional buyer deploy path (Render). Seller production is on Railway — see railway.toml + Dockerfile.
 version: "1"
 
 databases:

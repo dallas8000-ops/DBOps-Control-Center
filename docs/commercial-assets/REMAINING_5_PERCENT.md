@@ -1,6 +1,6 @@
 # Growth-tier readiness — 100% for $13,800 sales
 
-DBOps Control Center is **100% ready for Growth-tier buyers** (10–100 person teams, single-region Render/AWS deploy). Enterprise-only gaps remain optional upsells.
+DBOps Control Center is **100% ready for Growth-tier buyers** (10–100 person teams, single-region Railway/AWS deploy). Enterprise-only gaps remain optional upsells.
 
 ---
 

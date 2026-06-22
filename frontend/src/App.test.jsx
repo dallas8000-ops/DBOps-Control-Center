@@ -205,6 +205,23 @@ function createFetchMock({
         { day: "2026-05-09", label: "Sat", incidents_created: 0, report_runs: 1, schedules_created: 0 },
         { day: "2026-05-10", label: "Sun", incidents_created: 0, report_runs: 0, schedules_created: 0 },
       ],
+      deployment_readiness: {
+        score: 88,
+        label: "Production ready",
+        tier_readiness: "starter",
+        automation_center_url: "https://stripe-installer.gilliomfrontlinedigital.com",
+        config_root: null,
+        checks: [
+          {
+            id: "tier-readiness",
+            category: "stripe",
+            name: "Stripe tier env",
+            status: "warn",
+            message: "tier_readiness=starter",
+            fix: "Set STRIPE_PRICE_ID_PRO",
+          },
+        ],
+      },
     }),
     "GET /auth/me": jsonResponse({ id: 2, email: meEmail, role: meRole, is_active: true }),
     "GET /reports/summary": jsonResponse({

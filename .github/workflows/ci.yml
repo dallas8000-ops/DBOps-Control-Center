@@ -67,6 +67,19 @@ jobs:
       - working-directory: backend
         run: alembic upgrade head
 
+  readiness_config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r backend/requirements.txt
+      - run: python scripts/verify_automation_center_setup.py
+      - working-directory: backend
+        run: pytest -q tests/test_automation_config.py
+
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20

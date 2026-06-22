@@ -83,3 +83,18 @@ def test_billing_health_lists_invoice_paid_webhook_event(monkeypatch) -> None:
         resp = client.get("/health/billing")
         assert resp.status_code == 503
         assert "invoice.paid" in resp.json()["required_webhook_events"]
+
+
+def test_billing_health_tier_readiness_scale(monkeypatch) -> None:
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_123")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test_123")
+    monkeypatch.setenv("STRIPE_PRICE_ID_STARTER", "price_starter")
+    monkeypatch.setenv("STRIPE_PRICE_ID_PRO", "price_pro")
+    monkeypatch.setenv("STRIPE_PRICE_ID_ENTERPRISE", "price_ent")
+    for client in _client():
+        resp = client.get("/health/billing")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["tier_readiness"] == "scale"
+        assert body["tier_env"]["enterprise"] is True
+        assert body["plan_catalog"]["pro"]["max_users"] == 5000

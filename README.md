@@ -2,14 +2,14 @@
 
 ## Live Demo
 
-**https://dbops-web.onrender.com**
+**https://dbops-api-production-5047.up.railway.app**
 
 **DBA login:** `barney@example.com`  
 **Password:** `dba-b91b26064ea0a8!` *(default `seed-demo` password; derived from `SEED_PASSWORD_SALT`)*
 
 **Other evaluation roles:** `analyst@example.com` / `analyst-6550bc46675e96!` · `viewer@example.com` / `viewer-77e8e75cf1c20e!`
 
-API health: https://dbops-api.onrender.com/health
+API health: https://dbops-api-production-5047.up.railway.app/health
 
 [![CI](https://github.com/dallas8000-ops/DBOps-Control-Center/actions/workflows/ci.yml/badge.svg)](https://github.com/dallas8000-ops/DBOps-Control-Center/actions/workflows/ci.yml)
 
@@ -19,14 +19,14 @@ API health: https://dbops-api.onrender.com/health
 
 Give operations and engineering leads controlled access to PostgreSQL: incidents with audit history, whitelisted read-only reports, scheduled delivery, DBA user administration, optional OIDC SSO, and Stripe-backed plan limits — with JWT + RBAC enforced on every API route.
 
-**Deployment:** Push to `main` → GitHub Actions CI runs (backend + frontend tests, Playwright E2E, lint, migrations) and Render **auto-deploys** production (`dbops-api`, `dbops-web`). Pipeline live and verified.
+**Deployment:** Push to `main` → GitHub Actions CI runs (backend + frontend tests, Playwright E2E, lint, migrations) and **Railway auto-deploys** production from `Dockerfile` + `railway.toml`. Pipeline live and verified.
 
 **Operator reference (sign-in → daily use → log out):** [`docs/OPERATIONS_GUIDE.md`](./docs/OPERATIONS_GUIDE.md)  
 **Hands-on learning walkthrough (exercises by role):** [`docs/USER_WALKTHROUGH.md`](./docs/USER_WALKTHROUGH.md)
 
 ## Overview
 
-`DBOps Control Center` is a **production-oriented full-stack product** (FastAPI, React, PostgreSQL), not a tutorial or sample repo. Buyers receive deployable source, migrations, CI, and operational docs intended for **their** infrastructure (Docker Compose locally; Render or equivalent in production via `render.yaml`).
+`DBOps Control Center` is a **production-oriented full-stack product** (FastAPI, React, PostgreSQL), not a tutorial or sample repo. Buyers receive deployable source, migrations, CI, and operational docs intended for **their** infrastructure (Docker Compose locally; **Railway** or equivalent in production via `Dockerfile` + `railway.toml`; optional `render.yaml` for Render buyers).
 
 Core product capabilities:
 
@@ -41,7 +41,7 @@ An **optional idempotent demo seed** (`python -m app seed-demo`) exists for eval
 
 ## Completion level (current state)
 
-**Growth-tier readiness: 100%** for teams of 10–100 on a single Render/AWS deployment. See [`docs/commercial-assets/REMAINING_5_PERCENT.md`](docs/commercial-assets/REMAINING_5_PERCENT.md) for optional enterprise upsells (attachments, external worker, compliance).
+**Growth-tier readiness: 100%** for teams of 10–100 on a single Railway/AWS deployment. See [`docs/commercial-assets/REMAINING_5_PERCENT.md`](docs/commercial-assets/REMAINING_5_PERCENT.md) for optional enterprise upsells (attachments, external worker, compliance).
 
 - **Implemented and working**
   - Authentication + RBAC (`DBA`, `Analyst`, `Viewer`) with **refresh token rotation** (`POST /auth/refresh`, `POST /auth/logout`)
@@ -63,7 +63,7 @@ An **optional idempotent demo seed** (`python -m app seed-demo`) exists for eval
   - **Stripe billing** — checkout, webhooks (`checkout.session.completed`, `customer.subscription.*`, **`invoice.paid`**), plan catalog limits (Starter/Pro/Enterprise), **downgrade at next billing cycle**, `GET /health/billing`
   - Idempotent demo seed (`python -m app` / `seed-demo`) and **`python -m app reset-demo --yes`** (clears operational data; keeps users/billing)
   - Backend pytest suite + frontend Vitest smoke suite + **Playwright E2E** (landing + terms) + CI gates (all passing on `main`)
-  - Local Docker Compose workflow and Render deployment path
+  - Local Docker Compose workflow and Railway deployment path (`railway.toml` + `Dockerfile`)
 - **Optional enterprise upsells** (not required for Growth-tier sale)
   - Incident file attachments and formal ITSM escalation state machine
   - Dedicated scheduler worker / Redis job queue beyond Postgres advisory lock
@@ -106,7 +106,7 @@ An **optional idempotent demo seed** (`python -m app seed-demo`) exists for eval
 - **Deployment readiness**
   - Alembic migrations on startup
   - Docker Compose local stack
-  - Render blueprint support (`dbops-db`, `dbops-api`, `dbops-web`)
+  - Railway deployment (`Dockerfile` + `railway.toml`); optional Render blueprint (`render.yaml`) for buyers
 
 ## Tech stack
 
@@ -355,7 +355,7 @@ Operational notes:
 - **One-page pitch:** [`docs/commercial-assets/ONE_PAGE_PITCH.md`](./docs/commercial-assets/ONE_PAGE_PITCH.md)
 - **Remaining ~5% (named gaps):** [`docs/commercial-assets/REMAINING_5_PERCENT.md`](./docs/commercial-assets/REMAINING_5_PERCENT.md)
 - **Demo video script (5–8 min):** [`docs/commercial-assets/DEMO_VIDEO_5-8MIN.md`](./docs/commercial-assets/DEMO_VIDEO_5-8MIN.md)
-- **Live demo on Render:** [`docs/commercial-assets/LIVE_DEMO_RENDER_CHECKLIST.md`](./docs/commercial-assets/LIVE_DEMO_RENDER_CHECKLIST.md)
+- **Live demo on Railway:** [`docs/commercial-assets/LIVE_DEMO_RAILWAY_CHECKLIST.md`](./docs/commercial-assets/LIVE_DEMO_RAILWAY_CHECKLIST.md)
 - **Exclusive vs non-exclusive license:** [`docs/commercial-assets/LICENSE_SALE_MODEL.md`](./docs/commercial-assets/LICENSE_SALE_MODEL.md)
 - **Proprietary notice / redistribution:** [`LEGAL_NOTICE.md`](./LEGAL_NOTICE.md)
 - Pricing sheet: `docs/commercial-assets/pricing-sheet.md`
