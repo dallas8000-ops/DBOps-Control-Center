@@ -26,6 +26,10 @@ Step "Readiness config" {
     python scripts/verify_automation_center_setup.py
 }
 
+Step "Specwright API scan" {
+    python scripts/specwright_ci.py
+}
+
 Step "Frontend lint" {
     Set-Location "$Root\frontend"
     if (-not (Test-Path node_modules)) { npm ci }

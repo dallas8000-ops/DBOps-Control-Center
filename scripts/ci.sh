@@ -14,6 +14,9 @@ echo "=== Backend pytest ==="
 echo "=== Readiness config ==="
 python scripts/verify_automation_center_setup.py
 
+echo "=== Specwright API scan ==="
+python scripts/specwright_ci.py
+
 echo "=== Frontend lint ==="
 (cd frontend && npm ci && npm run lint)
 

@@ -1,0 +1,14 @@
+{
+  "score": 83,
+  "grade": "B",
+  "breakdown": {
+    "documentation_pct": 100.0,
+    "test_coverage_pct": 68.6,
+    "fully_covered_pct": 68.6,
+    "freshness_pct": 100
+  },
+  "route_count": 51,
+  "drift_detected": false,
+  "tool": "specwright-ci",
+  "spec_path": "docs\\openapi.yaml"
+}

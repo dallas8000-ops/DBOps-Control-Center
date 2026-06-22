@@ -12,6 +12,7 @@
 API health: https://dbops-api-production-5047.up.railway.app/health
 
 [![CI](https://github.com/dallas8000-ops/DBOps-Control-Center/actions/workflows/ci.yml/badge.svg)](https://github.com/dallas8000-ops/DBOps-Control-Center/actions/workflows/ci.yml)
+[![Specwright](https://github.com/dallas8000-ops/DBOps-Control-Center/actions/workflows/specwright.yml/badge.svg)](https://github.com/dallas8000-ops/DBOps-Control-Center/actions/workflows/specwright.yml)
 
 **Proprietary software product.** Sale, redistribution, or disclosure without the copyright owner's express written consent is prohibited. See [`LEGAL_NOTICE.md`](./LEGAL_NOTICE.md) for the full notice.
 
@@ -430,13 +431,14 @@ npm run build
 
 ### CI quality gates
 
-GitHub Actions workflow: `.github/workflows/ci.yml`
+GitHub Actions workflows: `.github/workflows/ci.yml`, `.github/workflows/specwright.yml`
 
-The CI pipeline runs on **every push and pull request** to `main`/`master` with three required jobs (all must pass):
+The CI pipeline runs on **every push and pull request** to `main`/`master` with required jobs (all must pass):
 
 - `backend`: installs backend deps, runs `ruff check backend/app backend/tests --select E9,F63,F7,F8,E4,E7,W`, then `pytest -q` (**85 tests**)
 - `frontend`: runs `npm ci`, `npm run lint`, `npm run test:run` (**21 smoke tests**), and `npm run build`
 - `migration_sanity`: starts PostgreSQL and runs `alembic upgrade head` with CI `DATABASE_URL` (through `010_refresh_tokens`)
+- `specwright`: AST scan of FastAPI routes, OpenAPI drift check, score gate (min 45/100); artifacts in `docs/openapi.yaml`, `docs/api.md`, `docs/specwright-score.json`
 
 **Production deploy:** Render services (`dbops-api`, `dbops-web`) are wired to this repo with **auto-deploy on push to `main`**. Production at https://dbops-web.onrender.com reflects the same pipeline buyers receive in source (`render.yaml` + CI workflow).
 
