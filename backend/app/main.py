@@ -1059,6 +1059,7 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
 @app.get("/health")
 def health(response: Response):
     """Liveness plus database connectivity (SELECT 1). Returns 503 if DB unreachable."""
+    demo_public = os.getenv("DEMO_PUBLIC_MODE", "").lower() in ("1", "true", "yes")
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
@@ -1066,10 +1067,13 @@ def health(response: Response):
             try:
                 row = conn.execute(text("SELECT version()")).fetchone()
                 db_version = row[0] if row else "unknown"
-                return {"status": "ok", "database": "reachable", "postgres_version": db_version}
+                payload = {"status": "ok", "database": "reachable", "postgres_version": db_version}
             except Exception:
                 # SQLite or other database - use generic version
-                return {"status": "ok", "database": "reachable", "database_type": "sqlite"}
+                payload = {"status": "ok", "database": "reachable", "database_type": "sqlite"}
+            if demo_public:
+                payload["demo_public_mode"] = True
+            return payload
     except Exception:
         response.status_code = 503
         return {"status": "degraded", "database": "unreachable"}

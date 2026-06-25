@@ -57,15 +57,20 @@ Railway shell or one-off command on the service:
 python -m app seed-demo
 ```
 
-Default users after `python -m app seed-demo` (default `SEED_PASSWORD_SALT=dbops-local-seed`):
+Default users after `python -m app seed-demo` use `SEED_PASSWORD_SALT` or per-role env vars (`SEED_DBA_PASSWORD`, etc.). **Do not publish passwords in README or portfolio copy.**
 
-| Role | Email | Password |
-|------|-------|----------|
-| DBA | `barney@example.com` | `dba-b91b26064ea0a8!` |
-| Analyst | `analyst@example.com` | `analyst-6550bc46675e96!` |
-| Viewer | `viewer@example.com` | `viewer-77e8e75cf1c20e!` |
+### 4b. Lock the public demo (required before portfolio traffic)
 
-Override via `SEED_DBA_PASSWORD`, `SEED_ANALYST_PASSWORD`, `SEED_VIEWER_PASSWORD` on Railway if needed.
+On the production service:
+
+1. Set `DEMO_PUBLIC_MODE=1` in Railway variables.
+2. Run:
+
+```bash
+python -m app lock-public-demo
+```
+
+This **disables** DBA and Analyst seed accounts and **rotates** all seed passwords away from any previously published defaults. Optional read-only access: set `SEED_VIEWER_PASSWORD` in Railway only, then re-run `lock-public-demo`.
 
 ### 5. Smoke-test the public demo
 
@@ -74,12 +79,12 @@ Override via `SEED_DBA_PASSWORD`, `SEED_ANALYST_PASSWORD`, `SEED_VIEWER_PASSWORD
 - [ ] DBA login → user list / schedule panel visible  
 - [ ] Viewer login → no create incident, no bulk checkboxes  
 
-### 6. Protect the demo (recommended)
+### 6. Protect the demo (required)
 
-- Use **strong unique passwords**; rotate after workshops  
-- Railway Hobby/Pro plans do not sleep like Render free tier — note uptime in listing  
-- Optional: IP allowlist via Cloudflare in front of the app  
-- Run `reset-demo` after public sessions if needed  
+- Set `DEMO_PUBLIC_MODE=1` and run `python -m app lock-public-demo` before linking from portfolio  
+- Never publish DBA/Analyst credentials in README or marketing copy  
+- Share evaluation logins privately (email) or via `SEED_VIEWER_PASSWORD` only in Railway  
+- Run `reset-demo` after public workshops if needed  
 
 ---
 

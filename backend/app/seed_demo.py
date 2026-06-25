@@ -44,14 +44,27 @@ def _resolve_password(user_def: dict) -> str:
     return _derived_seed_password(user_def["role"].lower())
 
 
-def _upsert_user(db: Session, *, email: str, role: str, password: str) -> User:
+def _password_env_is_set(user_def: dict) -> bool:
+    env_key = user_def.get("password_env", "")
+    return bool(env_key and os.getenv(env_key, "").strip())
+
+
+def _upsert_user(
+    db: Session,
+    *,
+    email: str,
+    role: str,
+    password: str,
+    update_password: bool = False,
+    is_active: bool | None = None,
+) -> User:
     user = db.query(User).filter(User.email == email.lower()).first()
     if user is None:
         user = User(
             email=email.lower(),
             hashed_password=hash_password(password),
             role=role,
-            is_active=True,
+            is_active=True if is_active is None else is_active,
         )
         db.add(user)
         db.flush()
@@ -59,7 +72,11 @@ def _upsert_user(db: Session, *, email: str, role: str, password: str) -> User:
 
     if user.role != role:
         user.role = role
-    if not user.is_active:
+    if update_password:
+        user.hashed_password = hash_password(password)
+    if is_active is not None:
+        user.is_active = is_active
+    elif not user.is_active:
         user.is_active = True
     db.add(user)
     return user
@@ -153,6 +170,8 @@ def _upsert_report_log(
 
 
 def seed_demo_data() -> None:
+    from .demo_public import demo_public_mode_enabled, lock_public_demo, print_lock_summary
+
     data = _load_seed_file()
     db = SessionLocal()
     try:
@@ -163,10 +182,21 @@ def seed_demo_data() -> None:
             email = user_def["email"]
             role = user_def["role"]
             password = _resolve_password(user_def)
-            user = _upsert_user(db, email=email, role=role, password=password)
+            user = _upsert_user(
+                db,
+                email=email,
+                role=role,
+                password=password,
+                update_password=_password_env_is_set(user_def),
+            )
             user_map[email] = user
             print(f"  user  {email} ({role})")
         db.flush()
+
+        if demo_public_mode_enabled():
+            lock_results = lock_public_demo(db=db)
+            print_lock_summary(lock_results)
+            db.flush()
 
         # ── Incidents ──────────────────────────────────────────────────────────
         for item in data.get("incidents", []):

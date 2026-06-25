@@ -298,6 +298,7 @@ function LoginPanel({
   oidcBusy,
   oidcError,
   onOidcLogin,
+  demoPublicMode,
 }) {
   return (
     <section className="panel">
@@ -305,10 +306,17 @@ function LoginPanel({
 
       <h2 className="panel-title">Sign in</h2>
       <p className="panel-sub">
-        Sign in with credentials issued by your administrator. On a new database, use <strong>First-time setup</strong> below to
-        create the initial DBA. Evaluation deployments may include{" "}
-        <strong>barney@example.com</strong> (DBA), <strong>analyst@example.com</strong> (Analyst), and{" "}
-        <strong>viewer@example.com</strong> (Viewer) after running the onboarding seed — see your deployment guide.
+        {demoPublicMode ? (
+          <>
+            This is a public evaluation deployment. Sign in with credentials issued by your Gilliom contact — admin
+            accounts are not published.
+          </>
+        ) : (
+          <>
+            Sign in with credentials issued by your administrator. On a new database, use <strong>First-time setup</strong>{" "}
+            below to create the initial DBA.
+          </>
+        )}
       </p>
       {authError ? <p className="error-text">{authError}</p> : null}
       {oidcError ? <p className="error-text">{oidcError}</p> : null}
@@ -341,40 +349,44 @@ function LoginPanel({
         </button>
       </form>
 
-      <h3 className="section-lede">First-time setup (bootstrap DBA)</h3>
-      <p className="panel-sub">Use once when the database has no users. Role must be DBA (fixed below).</p>
-      <ol className="onboarding-quickstart">
-        <li>Create your first DBA account.</li>
-        <li>Sign in and invite your first analyst/viewer.</li>
-        <li>Create your first incident, then run your first report.</li>
-      </ol>
-      <form className="form-grid form-grid--narrow" onSubmit={onBootstrap}>
-        <input
-          type="email"
-          required
-          placeholder="Admin email"
-          value={bootstrapForm.email}
-          onChange={(e) => setBootstrapForm({ ...bootstrapForm, email: e.target.value })}
-        />
-        <input
-          type="password"
-          required
-          minLength={8}
-          placeholder="Password (min 8 characters)"
-          value={bootstrapForm.password}
-          onChange={(e) => setBootstrapForm({ ...bootstrapForm, password: e.target.value })}
-        />
-        <input
-          type="password"
-          required
-          placeholder="Confirm password"
-          value={bootstrapForm.confirm}
-          onChange={(e) => setBootstrapForm({ ...bootstrapForm, confirm: e.target.value })}
-        />
-        <button type="submit" className="btn btn-primary">
-          Create first DBA
-        </button>
-      </form>
+      {!demoPublicMode ? (
+        <>
+          <h3 className="section-lede">First-time setup (bootstrap DBA)</h3>
+          <p className="panel-sub">Use once when the database has no users. Role must be DBA (fixed below).</p>
+          <ol className="onboarding-quickstart">
+            <li>Create your first DBA account.</li>
+            <li>Sign in and invite your first analyst/viewer.</li>
+            <li>Create your first incident, then run your first report.</li>
+          </ol>
+          <form className="form-grid form-grid--narrow" onSubmit={onBootstrap}>
+            <input
+              type="email"
+              required
+              placeholder="Admin email"
+              value={bootstrapForm.email}
+              onChange={(e) => setBootstrapForm({ ...bootstrapForm, email: e.target.value })}
+            />
+            <input
+              type="password"
+              required
+              minLength={8}
+              placeholder="Password (min 8 characters)"
+              value={bootstrapForm.password}
+              onChange={(e) => setBootstrapForm({ ...bootstrapForm, password: e.target.value })}
+            />
+            <input
+              type="password"
+              required
+              placeholder="Confirm password"
+              value={bootstrapForm.confirm}
+              onChange={(e) => setBootstrapForm({ ...bootstrapForm, confirm: e.target.value })}
+            />
+            <button type="submit" className="btn btn-primary">
+              Create first DBA
+            </button>
+          </form>
+        </>
+      ) : null}
     </section>
   );
 }
@@ -401,6 +413,7 @@ LoginPanel.propTypes = {
   oidcBusy: PropTypes.bool,
   oidcError: PropTypes.string,
   onOidcLogin: PropTypes.func,
+  demoPublicMode: PropTypes.bool,
 };
 
 function PlanUsageBanner({ billing, planUsage, kind }) {
@@ -1722,6 +1735,7 @@ export default function App() {
   const [reportNotice, setReportNotice] = useState("");
   const [reportBusy, setReportBusy] = useState(false);
   const [connectionHealth, setConnectionHealth] = useState({ kind: "loading" });
+  const [demoPublicMode, setDemoPublicMode] = useState(false);
   const [schedulerHealth, setSchedulerHealth] = useState(null);
   const [smtpHealth, setSmtpHealth] = useState(null);
   const [oidcConfig, setOidcConfig] = useState(null);
@@ -1954,6 +1968,7 @@ export default function App() {
         if (cancelled) return;
         if (res.ok && body.database === "reachable") {
           setConnectionHealth({ kind: "ok" });
+          setDemoPublicMode(Boolean(body.demo_public_mode));
           return;
         }
         if (res.status === 503 && body.database === "unreachable") {
@@ -3188,6 +3203,7 @@ export default function App() {
           oidcBusy={oidcBusy}
           oidcError={oidcError}
           onOidcLogin={startOidcLogin}
+          demoPublicMode={demoPublicMode}
         />
       )}
 

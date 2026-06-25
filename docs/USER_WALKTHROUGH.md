@@ -20,15 +20,11 @@ Use this document to **learn the product by doing**. Work through the exercises 
 - The app URL opened in the **address bar** (not inside an email preview)
 - For the public demo: https://dbops-api-production-5047.up.railway.app
 
-### Demo accounts (after `seed-demo`)
+### Demo accounts
 
-| Role | Email | Password |
-|------|-------|----------|
-| **DBA** | `barney@example.com` | `dba-b91b26064ea0a8!` |
-| **Analyst** | `analyst@example.com` | `analyst-6550bc46675e96!` |
-| **Viewer** | `viewer@example.com` | `viewer-77e8e75cf1c20e!` |
+Use credentials from your **private deployment guide** or workshop handout. The public Railway demo does **not** publish admin passwords — request evaluation access from your Gilliom contact.
 
-On your **own** deployment with an empty database, use **First-time setup (bootstrap DBA)** instead of these accounts (see [OPERATIONS_GUIDE — Authentication](./OPERATIONS_GUIDE.md#2-authentication--getting-in)).
+On your **own** deployment with an empty database, use **First-time setup (bootstrap DBA)** instead of seed accounts (see [OPERATIONS_GUIDE — Authentication](./OPERATIONS_GUIDE.md#2-authentication--getting-in)).
 
 ### Tips while learning
 
@@ -50,9 +46,8 @@ On your **own** deployment with an empty database, use **First-time setup (boots
 
 ### Step 1.2 — Sign in as Viewer (read-only tour first)
 
-1. Email: `viewer@example.com`
-2. Password: `viewer-77e8e75cf1c20e!`
-3. Click **Login**.
+1. Use your **Viewer** workshop credentials (email + password from your private handout).
+2. Click **Login**.
 
 **You should see:**
 
@@ -109,7 +104,7 @@ Goal: day-to-day operator — incidents and reports, no admin.
 
 ### Step 3.1 — Sign in
 
-1. Log in as `analyst@example.com` / `analyst-6550bc46675e96!`.
+1. Log in with your **Analyst** workshop credentials.
 
 ### Exercise 3.1 — Create an incident
 
@@ -161,7 +156,7 @@ Goal: control plane — users, schedules, billing, audit.
 
 ### Step 4.1 — Sign in
 
-1. Log in as `barney@example.com` / `dba-b91b26064ea0a8!`.
+1. Log in with your **DBA** workshop credentials (not published on the public demo).
 
 ### Exercise 4.1 — Business metrics and plan limits
 

@@ -11,9 +11,14 @@ import { chromium } from "playwright";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = path.join(__dirname, "..", "docs", "commercial-assets", "listing-screenshots");
 
-const BASE_URL = process.env.SCREENSHOT_BASE_URL || "https://dbops-web.onrender.com";
-const DBA_EMAIL = process.env.SCREENSHOT_DBA_EMAIL || "barney@example.com";
-const DBA_PASSWORD = process.env.SCREENSHOT_DBA_PASSWORD || "dba-b91b26064ea0a8!";
+const BASE_URL = process.env.SCREENSHOT_BASE_URL || "http://localhost:5173";
+const DBA_EMAIL = process.env.SCREENSHOT_DBA_EMAIL;
+const DBA_PASSWORD = process.env.SCREENSHOT_DBA_PASSWORD;
+
+if (!DBA_EMAIL || !DBA_PASSWORD) {
+  console.error("Set SCREENSHOT_DBA_EMAIL and SCREENSHOT_DBA_PASSWORD (never commit demo passwords).");
+  process.exit(1);
+}
 
 async function waitForSignedIn(page) {
   await page.getByText(/Signed in as/i).waitFor({ timeout: 120_000 });

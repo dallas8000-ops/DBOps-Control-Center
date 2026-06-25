@@ -4,10 +4,7 @@
 
 **https://dbops-api-production-5047.up.railway.app**
 
-**DBA login:** `barney@example.com`  
-**Password:** `dba-b91b26064ea0a8!` *(default `seed-demo` password; derived from `SEED_PASSWORD_SALT`)*
-
-**Other evaluation roles:** `analyst@example.com` / `analyst-6550bc46675e96!` · `viewer@example.com` / `viewer-77e8e75cf1c20e!`
+The public demo shows the login and product shell only. **Evaluation credentials are not published** — request access via [barney@gilliomfrontlinedigital.com](mailto:barney@gilliomfrontlinedigital.com).
 
 API health: https://dbops-api-production-5047.up.railway.app/health
 
@@ -247,11 +244,13 @@ What gets seeded on each run:
 
 Seeded incidents have **no** `incident_history` rows (history is recorded for activity after migration `008_incident_history` is applied).
 
-Seeded default user emails (passwords from `seed_demo` with default `SEED_PASSWORD_SALT=dbops-local-seed`):
+Seeded default user emails (passwords via env vars or `SEED_PASSWORD_SALT` — never commit production passwords):
 
-- `barney@example.com` (DBA) — `dba-b91b26064ea0a8!`
-- `analyst@example.com` (Analyst) — `analyst-6550bc46675e96!`
-- `viewer@example.com` (Viewer) — `viewer-77e8e75cf1c20e!`
+- `barney@example.com` (DBA)
+- `analyst@example.com` (Analyst)
+- `viewer@example.com` (Viewer)
+
+For a **public portfolio demo**, set `DEMO_PUBLIC_MODE=1` and run `python -m app lock-public-demo` (disables DBA/Analyst seed users and rotates passwords). Optional read-only access: set `SEED_VIEWER_PASSWORD` in Railway only.
 
 The seeder is idempotent, so rerunning it updates the same demo records instead of creating duplicates.
 
