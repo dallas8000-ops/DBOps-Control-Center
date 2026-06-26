@@ -439,28 +439,29 @@ The CI pipeline runs on **every push and pull request** to `main`/`master` with 
 - `migration_sanity`: starts PostgreSQL and runs `alembic upgrade head` with CI `DATABASE_URL` (through `010_refresh_tokens`)
 - `specwright`: AST scan of FastAPI routes, OpenAPI drift check, score gate (min 45/100); artifacts in `docs/openapi.yaml`, `docs/api.md`, `docs/specwright-score.json`
 
-**Production deploy:** Render services (`dbops-api`, `dbops-web`) are wired to this repo with **auto-deploy on push to `main`**. Production at https://dbops-web.onrender.com reflects the same pipeline buyers receive in source (`render.yaml` + CI workflow).
+**Production deploy:** Railway services (`dbops-api`, `dbops-web`) are wired to this repo with **auto-deploy on push to `main`**. Production reflects the same pipeline buyers receive in source (`railway.toml` + CI workflow).
 
 Recommended branch protection for production safety:
 
 - Require all status checks from `CI` workflow before merge
 - Require pull request reviews before merge
 
-## Render deployment
+## Railway deployment
 
-1. Connect repo and deploy with `render.yaml` (Blueprint), or create services manually.
+1. Connect repo in the Railway dashboard and Railway auto-detects `railway.toml` (Dockerfile builder).
 2. **API service**
-   - Docker from `backend/Dockerfile`
-   - `DATABASE_URL` from Render Postgres
-   - `JWT_SECRET_KEY` set/generated
-   - `FRONTEND_ORIGINS` set to static-site origin(s)
+   - Built from root `Dockerfile` via `railway.toml`
+   - Add a Railway Postgres plugin and copy its `DATABASE_URL` into the service env
+   - Set `JWT_SECRET_KEY` (generate with `openssl rand -hex 32`)
+   - Set `FRONTEND_ORIGINS` to the Railway static-site URL(s)
+   - Health check: `GET /health` (configured in `railway.toml`)
 3. **Web service**
    - Static site from `frontend`
    - Build: `npm install && npm run build`
-   - Publish: `dist`
-   - Set `VITE_API_URL` before build (baked into bundle)
+   - Publish directory: `dist`
+   - Set `VITE_API_URL` to the API service Railway URL before build (baked into bundle)
 
-If Postgres requires SSL, append params to `DATABASE_URL` (commonly `?sslmode=require`).
+If Postgres requires SSL, append `?sslmode=require` to `DATABASE_URL`.
 
 ## Planned updates (next phase)
 
