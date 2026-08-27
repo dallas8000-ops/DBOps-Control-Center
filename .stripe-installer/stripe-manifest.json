@@ -1,7 +1,7 @@
 {
   "createdAt": "2026-06-12T04:56:20.398874+00:00",
-  "updatedAt": "2026-06-22T16:45:00.000000+00:00",
-  "accountId": null,
+  "updatedAt": "2026-08-27T15:28:35.050812+00:00",
+  "accountId": "acct_1TVQpaRxznXvj6jh",
   "products": [
     {
       "id": "prod_UgdnrglonWJRHJ",
@@ -20,63 +20,50 @@
     {
       "id": "price_1ThJVmRxznXvj6jhqPmFSLNM",
       "tier": "Starter",
-      "planKey": "starter",
-      "envVar": "STRIPE_PRICE_ID_STARTER",
       "amount": 900,
       "currency": "usd",
       "interval": "month",
       "trialDays": 14,
-      "maxUsers": 10,
-      "maxSchedules": 10,
       "features": [
-        "Up to 10 users",
-        "Up to 10 scheduled reports",
-        "Core incidents + RBAC + reports",
+        "Core features",
         "Email support"
       ]
     },
     {
       "id": "price_1ThJVmRxznXvj6jh2aTzRO4V",
       "tier": "Pro",
-      "planKey": "pro",
-      "envVar": "STRIPE_PRICE_ID_PRO",
       "amount": 2900,
       "currency": "usd",
       "interval": "month",
       "trialDays": 14,
-      "maxUsers": 5000,
-      "maxSchedules": 5000,
       "features": [
         "Everything in Starter",
-        "High user and schedule capacity",
         "Priority support",
-        "Observability template"
+        "Team seats"
       ]
     },
     {
       "id": "price_1ThJVnRxznXvj6jhy8uXBJ0z",
       "tier": "Enterprise",
-      "planKey": "enterprise",
-      "envVar": "STRIPE_PRICE_ID_ENTERPRISE",
       "amount": 99000,
       "currency": "usd",
       "interval": "year",
       "trialDays": 0,
-      "maxUsers": 10000,
-      "maxSchedules": 10000,
       "features": [
-        "Everything in Pro",
-        "OIDC SSO",
+        "Custom SLA",
         "Dedicated support",
-        "Custom SLA"
+        "SSO"
       ]
     }
   ],
   "webhookEndpoint": {
-    "id": "we_1Tkyp4RxznXvj6jhTrGxKcjc",
+    "id": "we_1U95ECRxznXvj6jhapbgS6wi",
     "url": "https://dbops-api-production-5047.up.railway.app/billing/webhook",
+    "reused": false
+  },
+  "billingPortalConfig": {
+    "id": "bpc_1U8q6HRxznXvj6jhAkXFSKbo",
     "reused": true
   },
-  "billingPortalConfig": null,
   "appUrl": "https://dbops-api-production-5047.up.railway.app"
 }
