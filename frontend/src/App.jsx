@@ -37,22 +37,19 @@ function apiUrlMismatchForHostedPage(apiUrl) {
   }
 }
 
-/** Map known hosted web domains to their public API (when VITE_API_URL was not set at build time). */
+/** Map known hosted web domains to their public API (fallback only — used when VITE_API_URL was not set at build time). */
 function resolveApiUrl() {
   const fromEnv = String(import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+  // A real VITE_API_URL baked in at build time always wins over the hostname fallback map below.
+  if (fromEnv) {
+    return fromEnv;
+  }
   const host = globalThis.window?.location?.hostname || "";
   const railwayApiByWebHost = {
-    "dbops-api-production-5047.up.railway.app": "https://dbops-api-production-5047.up.railway.app",
-    "dbops-web-production.up.railway.app": "https://dbops-api-production-5047.up.railway.app",
+    "dbops-web-production.up.railway.app": "https://dbops-control-center-production.up.railway.app",
   };
   if (railwayApiByWebHost[host]) {
     return railwayApiByWebHost[host];
-  }
-  if (fromEnv && !apiUrlMismatchForHostedPage(fromEnv)) {
-    return fromEnv;
-  }
-  if (fromEnv) {
-    return fromEnv;
   }
   return DEFAULT_API_URL;
 }
