@@ -31,7 +31,7 @@ internal business operations only.
 **What you may do:**
 - Use, run, modify, and deploy the Software within your own organization.
 - Make modifications to fit your internal environment.
-- Deploy to hosting infrastructure you control (self-hosted, Render, AWS, etc.).
+- Deploy to hosting infrastructure you control (self-hosted, Railway, AWS, etc.).
 
 **What you may not do:**
 - Redistribute, resell, sublicense, or publicly publish the source code or

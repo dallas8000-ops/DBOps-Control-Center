@@ -101,10 +101,10 @@
 
 ## 5:45–6:30 — Deployment & what you’re buying
 
-**On screen:** Switch to slide or browser tab: `render.yaml`, GitHub Actions green CI, or README “What’s included”.
+**On screen:** Switch to slide or browser tab: `railway.toml`, GitHub Actions green CI, or README “What’s included”.
 
 **Say:**  
-“You’re buying source: FastAPI, React, migrations, Docker Compose, Render blueprint, and CI with 69 backend and 21 frontend tests. Deploy on your infrastructure. Five known gaps remain — observability stack, attachments, external scheduler worker, distributed rate limits, and deep E2E edge tests — documented on one page so there are no surprises.”
+“You’re buying source: FastAPI, React, migrations, Docker Compose, Railway deployment, and CI with 69 backend and 21 frontend tests. Deploy on your infrastructure. Five known gaps remain — observability stack, attachments, external scheduler worker, distributed rate limits, and deep E2E edge tests — documented on one page so there are no surprises.”
 
 **Close:**  
 “Live demo link in the listing. Questions and licensing: email on the pitch doc. Thanks for watching.”
@@ -114,7 +114,7 @@
 ## Recording checklist
 
 - [ ] Reset demo data: `python -m app reset-demo --yes` then `seed-demo` (or fresh DB)
-- [ ] API + web URLs match listing (HTTPS on Render)
+- [ ] API + web URLs match listing (HTTPS on Railway)
 - [ ] No real customer data, secrets, or production keys in frame
 - [ ] Cursor moves deliberately; pause 2s on audit tables after actions
 - [ ] Export 1080p MP4; upload unlisted YouTube/Vimeo or attach to marketplace listing

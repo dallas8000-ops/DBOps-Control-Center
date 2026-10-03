@@ -4,7 +4,7 @@
 - Price: USD 8,000 one-time implementation
 - Team size: up to 5 users
 - Included:
-  - Initial deployment (Render or equivalent)
+  - Initial deployment (Railway or equivalent)
   - JWT/RBAC setup
   - Incident workflow setup
   - Whitelisted report pack (up to 3 reports)

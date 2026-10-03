@@ -6,7 +6,7 @@ Migrations live in `backend/alembic/versions/`. Production runs `alembic upgrade
 
 ## Before any rollback
 
-1. **Backup PostgreSQL** (Render: database → **Backups** or manual `pg_dump`).
+1. **Backup PostgreSQL** (Railway: Postgres volume → **Backups** or manual `pg_dump`).
 2. Note current revision:  
    `cd backend && alembic current`
 3. Prefer **forward fix** (new migration) over downgrade when data has been written under the new schema.
@@ -28,7 +28,7 @@ alembic history --verbose   # list revision ids
 alembic downgrade 008_incident_history
 ```
 
-## Render production
+## Railway production
 
 1. Put the service in maintenance or stop traffic if the downgrade is destructive.
 2. Open **Shell** on **dbops-api** (or run locally against production `DATABASE_URL` with extreme care):
@@ -40,7 +40,7 @@ alembic downgrade 008_incident_history
 
 3. **Redeploy the previous Git commit** that matches the older schema (downgrade code without matching migration files will fail).
 
-4. Confirm: `curl https://dbops-api.onrender.com/health`
+4. Confirm: `curl https://dbops.gilliomfrontlinedigital.com/health`
 
 ## Revision reference
 

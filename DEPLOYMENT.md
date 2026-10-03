@@ -1,7 +1,6 @@
 # DBOps Control Center — Railway Deployment Guide
 
 > **Primary production host:** Railway (`Dockerfile` + `railway.toml`).  
-> Optional buyer path: `render.yaml` (deprecated for seller demo — see [`docs/commercial-assets/LIVE_DEMO_RAILWAY_CHECKLIST.md`](./docs/commercial-assets/LIVE_DEMO_RAILWAY_CHECKLIST.md)).
 
 ## Pre-Deployment Checklist (15 min)
 

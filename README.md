@@ -24,7 +24,7 @@ Give operations and engineering leads controlled access to PostgreSQL: incidents
 
 ## Overview
 
-`DBOps Control Center` is a **production-oriented full-stack product** (FastAPI, React, PostgreSQL), not a tutorial or sample repo. Buyers receive deployable source, migrations, CI, and operational docs intended for **their** infrastructure (Docker Compose locally; **Railway** or equivalent in production via `Dockerfile` + `railway.toml`; optional `render.yaml` for Render buyers).
+`DBOps Control Center` is a **production-oriented full-stack product** (FastAPI, React, PostgreSQL), not a tutorial or sample repo. Buyers receive deployable source, migrations, CI, and operational docs intended for **their** infrastructure (Docker Compose locally; **Railway** or equivalent in production via `Dockerfile` + `railway.toml`.
 
 Core product capabilities:
 
@@ -104,7 +104,7 @@ An **optional idempotent demo seed** (`python -m app seed-demo`) exists for eval
 - **Deployment readiness**
   - Alembic migrations on startup
   - Docker Compose local stack
-  - Railway deployment (`Dockerfile` + `railway.toml`); optional Render blueprint (`render.yaml`) for buyers
+  - Railway deployment (`Dockerfile` + `railway.toml`)
 
 ## Tech stack
 
@@ -439,7 +439,7 @@ The CI pipeline runs on **every push and pull request** to `main`/`master` with 
 - `migration_sanity`: starts PostgreSQL and runs `alembic upgrade head` with CI `DATABASE_URL` (through `010_refresh_tokens`)
 - `specwright`: AST scan of FastAPI routes, OpenAPI drift check, score gate (min 45/100); artifacts in `docs/openapi.yaml`, `docs/api.md`, `docs/specwright-score.json`
 
-**Production deploy:** Railway services (`dbops-api`, `dbops-web`) are wired to this repo with **auto-deploy on push to `main`**. Production reflects the same pipeline buyers receive in source (`railway.toml` + CI workflow).
+**Production deploy:** The Railway service (`DBOps-Control-Center`, serving both the API and the web app) is wired to this repo with **auto-deploy on push to `main`**. Production reflects the same pipeline buyers receive in source (`railway.toml` + CI workflow).
 
 Recommended branch protection for production safety:
 
@@ -449,17 +449,15 @@ Recommended branch protection for production safety:
 ## Railway deployment
 
 1. Connect repo in the Railway dashboard and Railway auto-detects `railway.toml` (Dockerfile builder).
-2. **API service**
+2. **Service** (API and web app in one container)
    - Built from root `Dockerfile` via `railway.toml`
    - Add a Railway Postgres plugin and copy its `DATABASE_URL` into the service env
    - Set `JWT_SECRET_KEY` (generate with `openssl rand -hex 32`)
-   - Set `FRONTEND_ORIGINS` to the Railway static-site URL(s)
+   - Set `FRONTEND_ORIGINS` to the public URL(s) of the service
    - Health check: `GET /health` (configured in `railway.toml`)
-3. **Web service**
-   - Static site from `frontend`
-   - Build: `npm install && npm run build`
-   - Publish directory: `dist`
-   - Set `VITE_API_URL` to the API service Railway URL before build (baked into bundle)
+3. **Web app**
+   - The Dockerfile builds `frontend` and the API serves it
+   - Set the `VITE_API_URL` build argument to the service's public URL (baked into the bundle; the Dockerfile default is `https://dbops.gilliomfrontlinedigital.com`)
 
 If Postgres requires SSL, append `?sslmode=require` to `DATABASE_URL`.
 
