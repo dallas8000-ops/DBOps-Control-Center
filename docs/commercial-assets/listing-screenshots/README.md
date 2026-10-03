@@ -13,7 +13,7 @@ npx playwright install chromium
 node capture_listing_screenshots.mjs
 ```
 
-Defaults target production demo: https://dbops-web.onrender.com (DBA seed login).
+Defaults target production demo: https://dbops.gilliomfrontlinedigital.com (DBA seed login).
 
 Override:
 

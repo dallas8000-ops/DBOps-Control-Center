@@ -22,7 +22,7 @@ Growing teams need incident counts, status reports, and operational metrics from
 
 - **Backend:** FastAPI, 30+ API routes, JWT + bcrypt, three-tier RBAC enforced on every endpoint
 - **Frontend:** React + Vite operations console (incidents, reports, AI assist, DBA admin)
-- **Data:** PostgreSQL schema, Alembic migrations (through `010_refresh_tokens`), Docker Compose + **Railway deploy** (`Dockerfile`, `railway.toml`; optional `render.yaml` for buyers)
+- **Data:** PostgreSQL schema, Alembic migrations (through `010_refresh_tokens`), Docker Compose + **Railway deploy** (`Dockerfile`, `railway.toml`
 - **Security & ops:** Auth + API rate limits, request IDs, audit trails (users, incidents, report runs)
 - **Product features:** Whitelisted SQL reports + CSV export, schedules (email/webhook), OIDC SSO (PKCE), Stripe billing hooks, optional AI report routing & incident summaries
 - **Quality & delivery:** GitHub Actions CI on every push (**85** backend pytest, **21** frontend Vitest, **3** Playwright E2E, lint, migration sanity) + **Railway auto-deploy from `main`** — production pipeline live at https://dbops-api-production-5047.up.railway.app

@@ -63,7 +63,7 @@
               failEl.style.display = "block";
               failEl.innerHTML =
                 "<strong>Configuration error:</strong> This site was not built for production (script points to <code>/src/main.jsx</code>). " +
-                "On Render, set <code>staticPublishPath</code> to <code>dist</code> and run <code>npm run build</code> before deploy.";
+                "On Railway, rebuild the service so the Dockerfile runs <code>npm run build</code> and serves <code>dist</code>.";
             }
             if (bootMsg) bootMsg.textContent = "";
             return;
@@ -76,7 +76,7 @@
             failEl.innerHTML =
               "<strong>The app did not start.</strong> The page loaded but the JavaScript bundle did not run. " +
               "Try: open the link in Chrome, Edge, or Firefox (not an email preview); disable strict blockers for this site; " +
-              "hard-refresh (Ctrl+F5). If you manage Render, confirm <code>dbops-web</code> publishes <code>frontend/dist</code> after <code>npm run build</code>.";
+              "hard-refresh (Ctrl+F5). On Railway, confirm the latest deploy built <code>frontend/dist</code> with <code>npm run build</code>.";
           }
           if (bootMsg) bootMsg.textContent = "";
         }, 12000);
