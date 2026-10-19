@@ -9,12 +9,12 @@ const FEATURES = [
   {
     icon: "🚨",
     title: "Incident Management",
-    desc: "Detect, log, and resolve database incidents with built-in escalation workflows, bulk actions, and real-time notifications.",
+    desc: "Log, track, and resolve database incidents with due dates, overdue filters, comments, full change history, and bulk actions.",
   },
   {
     icon: "📋",
     title: "Audited SQL Reporting",
-    desc: "Every query logged with timestamp, user, and result. Full compliance-ready audit trail with CSV export out of the box.",
+    desc: "Only whitelisted, read-only, parameterized reports run. Each run — manual or scheduled — is logged with user, parameters, row count, duration, and outcome, with CSV export.",
   },
   {
     icon: "📊",
@@ -47,7 +47,7 @@ const PLANS = [
       { text: "Unlimited schedules", ok: false },
       { text: "Priority support", ok: false },
     ],
-    cta: "Start Free Trial",
+    cta: "Request Access",
     featured: false,
   },
   {
@@ -63,9 +63,8 @@ const PLANS = [
       { text: "Bulk incident actions", ok: true },
       { text: "Custom SLA", ok: false },
     ],
-    cta: "Get Started",
+    cta: "Request Access",
     featured: true,
-    badge: "Most Popular",
   },
   {
     tier: "Enterprise",
@@ -75,7 +74,7 @@ const PLANS = [
       { text: "Everything in Pro", ok: true },
       { text: "Custom SLA agreements", ok: true },
       { text: "Dedicated onboarding", ok: true },
-      { text: "Compliance exports (SOC2)", ok: true },
+      { text: "Admin JSON backup export", ok: true },
       { text: "Priority support", ok: true },
       { text: "Custom integrations", ok: true },
       { text: "Invoice billing", ok: true },
@@ -86,10 +85,10 @@ const PLANS = [
 ];
 
 const STATS = [
-  { num: "RBAC", label: "Role-Based Access" },
-  { num: "100%", label: "Audited Queries" },
-  { num: "99.9%", label: "Uptime SLA" },
-  { num: "14-day", label: "Free Trial" },
+  { num: "3", label: "RBAC Roles" },
+  { num: "Read-only", label: "Whitelisted SQL" },
+  { num: "128", label: "Automated Tests" },
+  { num: "bcrypt", label: "Password Hashing" },
 ];
 
 export default function LandingPage({ onGetStarted }) {
@@ -188,19 +187,15 @@ export default function LandingPage({ onGetStarted }) {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
   }
 
+  // No backend inbox for this form: hand the message to the visitor's mail client.
   function handleSubmit(e) {
     e.preventDefault();
-    const btn = e.target.querySelector("button[type='submit']");
-    const orig = btn.textContent;
-    btn.textContent = "✓ Message sent!";
-    btn.style.background = "#22c55e";
-    btn.style.color = "#000";
-    setTimeout(() => {
-      btn.textContent = orig;
-      btn.style.background = "";
-      btn.style.color = "";
-      e.target.reset();
-    }, 3000);
+    const form = e.target;
+    const get = (name) => form.elements[name]?.value?.trim() ?? "";
+    const subject = `DBOps inquiry: ${get("interest")}`;
+    const body = `Name: ${get("name")}\nEmail: ${get("email")}\n\n${get("message")}`;
+    window.location.href =
+      `mailto:barney@gilliomfrontlinedigital.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   }
 
   return (
@@ -218,16 +213,16 @@ export default function LandingPage({ onGetStarted }) {
           <li><a onClick={() => scrollTo("contact")}>Contact</a></li>
           <li><a onClick={onGetStarted}>Sign In</a></li>
         </ul>
-        <button className="lp-nav-cta" onClick={onGetStarted}>Start Free Trial</button>
+        <button className="lp-nav-cta" onClick={() => scrollTo("contact")}>Request Access</button>
       </nav>
 
       {/* HERO */}
       <div className="lp-hero">
-        <div className="lp-badge"><span className="lp-dot" /> Live in production — trusted by teams</div>
+        <div className="lp-badge"><span className="lp-dot" /> Live demo — FastAPI · React · PostgreSQL</div>
         <h1>Database ops,<br /><em>under control.</em></h1>
-        <p>Role-based access, incident tracking, scheduled reports, and audited SQL — all in one secure PostgreSQL operations platform.</p>
+        <p>Role-based access, incident tracking, scheduled reports, and audited SQL — all in one PostgreSQL operations platform.</p>
         <div className="lp-actions">
-          <button className="lp-btn-primary" onClick={onGetStarted}>Start Free Trial →</button>
+          <button className="lp-btn-primary" onClick={() => scrollTo("contact")}>Request Access →</button>
           <button className="lp-btn-secondary" onClick={() => scrollTo("pricing")}>View Pricing</button>
         </div>
       </div>
@@ -246,7 +241,7 @@ export default function LandingPage({ onGetStarted }) {
       <section className="lp-section" id="features">
         <div className="lp-label">// features</div>
         <h2 className="lp-section-title">Everything your team needs<br />to run database ops safely.</h2>
-        <p className="lp-section-sub">Built for teams that can&apos;t afford mistakes — every action tracked, every access controlled.</p>
+        <p className="lp-section-sub">Incident changes, report runs, and user-admin actions are recorded; JWT + role checks guard every protected API route.</p>
         <div className="lp-features-grid">
           {FEATURES.map((f) => (
             <div key={f.title} className="lp-feature-card">
@@ -262,7 +257,7 @@ export default function LandingPage({ onGetStarted }) {
       <section className="lp-section" id="pricing">
         <div className="lp-label">// pricing</div>
         <h2 className="lp-section-title">Simple, transparent pricing.</h2>
-        <p className="lp-section-sub">Start free for 14 days. No credit card required.</p>
+        <p className="lp-section-sub">Accounts are created by request — get in touch for evaluation access.</p>
         <div className="lp-pricing-grid">
           {PLANS.map((plan) => (
             <div key={plan.tier} className={`lp-pricing-card${plan.featured ? " featured" : ""}`}>
@@ -280,7 +275,7 @@ export default function LandingPage({ onGetStarted }) {
               </ul>
               <button
                 className="lp-plan-btn"
-                onClick={plan.tier === "Enterprise" ? () => scrollTo("contact") : onGetStarted}
+                onClick={() => scrollTo("contact")}
               >
                 {plan.cta}
               </button>
@@ -312,16 +307,16 @@ export default function LandingPage({ onGetStarted }) {
           <form className="lp-contact-form" ref={formRef} onSubmit={handleSubmit}>
             <div className="lp-form-group">
               <label>Your Name</label>
-              <input type="text" placeholder="John Smith" required />
+              <input name="name" type="text" placeholder="John Smith" required />
             </div>
             <div className="lp-form-group">
               <label>Email Address</label>
-              <input type="email" placeholder="john@company.com" required />
+              <input name="email" type="email" placeholder="john@company.com" required />
             </div>
             <div className="lp-form-group">
               <label>Interest</label>
-              <select>
-                <option>Start Free Trial</option>
+              <select name="interest">
+                <option>Evaluation Access</option>
                 <option>Pro Plan</option>
                 <option>Enterprise Plan</option>
                 <option>Custom Integration</option>
@@ -330,10 +325,10 @@ export default function LandingPage({ onGetStarted }) {
             </div>
             <div className="lp-form-group">
               <label>Message</label>
-              <textarea placeholder="Tell us about your database setup and team size..." />
+              <textarea name="message" placeholder="Tell us about your database setup and team size..." />
             </div>
             <button type="submit" className="lp-btn-primary" style={{ width: "100%" }}>
-              Send Message →
+              Open Email to Send →
             </button>
           </form>
         </div>

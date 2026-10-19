@@ -15,7 +15,7 @@ API health: https://dbops-api-production-5047.up.railway.app/health
 
 **DBOps Control Center** is a **buyer-deployable, licensable operations platform** for teams that need safe database visibility without handing out SQL credentials. Commercial terms: [`DBOps_LICENSE.md`](./DBOps_LICENSE.md). Buyer positioning and pitch: [`DBOps_Product_Positioning.md`](./DBOps_Product_Positioning.md).
 
-Give operations and engineering leads controlled access to PostgreSQL: incidents with audit history, whitelisted read-only reports, scheduled delivery, DBA user administration, optional OIDC SSO, and Stripe-backed plan limits — with JWT + RBAC enforced on every API route.
+Give operations and engineering leads controlled access to PostgreSQL: incidents with audit history, whitelisted read-only reports, scheduled delivery, DBA user administration, optional OIDC SSO, and Stripe-backed plan limits — with JWT + RBAC enforced on every protected API route (health and login endpoints are public).
 
 **Deployment:** Push to `main` → GitHub Actions CI runs (backend + frontend tests, Playwright E2E, lint, migrations) and **Railway auto-deploys** production from `Dockerfile` + `railway.toml`. Pipeline live and verified.
 
@@ -24,7 +24,7 @@ Give operations and engineering leads controlled access to PostgreSQL: incidents
 
 ## Overview
 
-`DBOps Control Center` is a **production-oriented full-stack product** (FastAPI, React, PostgreSQL), not a tutorial or sample repo. Buyers receive deployable source, migrations, CI, and operational docs intended for **their** infrastructure (Docker Compose locally; **Railway** or equivalent in production via `Dockerfile` + `railway.toml`; optional `render.yaml` for Render buyers).
+`DBOps Control Center` is a **production-oriented full-stack product** (FastAPI, React, PostgreSQL), not a tutorial or sample repo. Buyers receive deployable source, migrations, CI, and operational docs intended for **their** infrastructure (Docker Compose locally; **Railway** or equivalent in production via `Dockerfile` + `railway.toml`).
 
 Core product capabilities:
 
@@ -104,7 +104,7 @@ An **optional idempotent demo seed** (`python -m app seed-demo`) exists for eval
 - **Deployment readiness**
   - Alembic migrations on startup
   - Docker Compose local stack
-  - Railway deployment (`Dockerfile` + `railway.toml`); optional Render blueprint (`render.yaml`) for buyers
+  - Railway deployment (`Dockerfile` + `railway.toml`)
 
 ## Tech stack
 
