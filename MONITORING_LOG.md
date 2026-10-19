@@ -10,10 +10,10 @@
 
 | Test | Status | Notes |
 |------|--------|-------|
-| Frontend loads | [✓] | https://dbops-web.onrender.com loads 200 OK with CSS |
+| Frontend loads | [✓] | https://dbops.gilliomfrontlinedigital.com loads 200 OK with CSS |
 | Login page responsive | [✓] | Form interactive, system status checks complete |
 | Bootstrap DBA works | [✓] | 403 = already complete (DBA exists) |
-| Health endpoint | [✓] | https://dbops-api.onrender.com/health returns `{"status":"ok","database":"reachable"}` |
+| Health endpoint | [✓] | https://dbops.gilliomfrontlinedigital.com/health returns `{"status":"ok","database":"reachable"}` |
 | API reachable | [✓] | PostgreSQL connection confirmed in health check |
 | Alembic migrations | [✓] | Frontend reports "Schema updates run automatically when API starts" |
 
@@ -39,8 +39,8 @@
 
 | Check | Status | Evidence | Time |
 |-------|--------|----------|------|
-| Render env vars set (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_STARTER`) | [ ] | Keys defined in `render.yaml`; confirm values in Render dashboard | [TIME] |
-| Stripe webhook endpoint configured to `https://<api-host>/billing/webhook` | [✓] | dbops-api-webhook -> https://dbops-api.onrender.com/billing/webhook | [TIME] |
+| Railway env vars set (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_STARTER`) | [ ] | Confirm values in Railway dashboard | [TIME] |
+| Stripe webhook endpoint configured to `https://<api-host>/billing/webhook` | [✓] | dbops-api-webhook -> https://dbops.gilliomfrontlinedigital.com/billing/webhook | [TIME] |
 | Webhook event subscriptions added (`checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`) | [ ] | [Stripe event list screenshot] | [TIME] |
 | DBA clicked **Subscribe with Stripe** and was redirected to Stripe Checkout | [✓] | Implied by active billing + Stripe IDs below | [TIME] |
 | Checkout completed in Stripe test mode | [✓] | See customer/subscription IDs below | [TIME] |
@@ -66,9 +66,9 @@
 
 | Metric | Expected | Actual | Notes |
 |--------|----------|--------|-------|
-| Memory usage (MB) | < 500 | — | From Render dashboard |
+| Memory usage (MB) | < 500 | — | From Railway dashboard |
 | CPU utilization | < 30% | — | Idle, no load testing yet |
-| Error rate (5xx) | 0% | — | From Render metrics |
+| Error rate (5xx) | 0% | — | From Railway metrics |
 | Response time (p50) | < 200ms | — | For GET /incidents |
 | Database pool connections | 5–10 | — | Should be stable |
 
@@ -105,9 +105,9 @@ Time HH:MM | [PASTE]
 
 ## Validation Update — May 10, 2026
 
-- **Live build:** `6ff1c18` (`Add billing and onboarding productization`) is marked live in Render.
-- **Migration evidence (Render logs):** `Running upgrade 006_sched_delivery_targets -> 007_billing_onboarding`.
-- **Health verification:** `GET https://dbops-api.onrender.com/health` returned `{"status":"ok","database":"reachable"}`.
+- **Live build:** `6ff1c18` (`Add billing and onboarding productization`) is marked live in Railway.
+- **Migration evidence (Railway logs):** `Running upgrade 006_sched_delivery_targets -> 007_billing_onboarding`.
+- **Health verification:** `GET https://dbops.gilliomfrontlinedigital.com/health` returned `{"status":"ok","database":"reachable"}`.
 - **Authenticated verification:** `POST /auth/login`, `GET /auth/me`, and `GET /admin/overview` succeeded with DBA credentials.
 - **End-to-end smoke (API):**
 	- create user: `smoke.20260510011501@example.com` (id `4`) ✓
@@ -134,7 +134,7 @@ Time HH:MM | [PASTE]
 ## Current Status (As of testing)
 
 **✅ All infrastructure is working:**
-- Backend API running on Render ✓
+- Backend API running on Railway ✓
 - Frontend deployed and accessible ✓
 - PostgreSQL database connected and migrations applied ✓
 - System status shows "API reachable · PostgreSQL reachable" ✓
@@ -152,13 +152,13 @@ Time HH:MM | [PASTE]
 - Remaining checks before full sign-off:
 	- Confirm one **scheduled** report auto-executes at due time.
 	- Verify auth rate-limit scenario (6 failed attempts).
-	- Capture 24h stability metrics (CPU/memory/error-rate) from Render.
+	- Capture 24h stability metrics (CPU/memory/error-rate) from Railway.
 
 ---
 
-## Appendix: Render Dashboard Links
+## Appendix: Railway Dashboard Links
 
-- **All Services:** https://dashboard.render.com/services
-- **API Logs:** https://dashboard.render.com/services/[dbops-api-id]/logs
-- **Database:** https://dashboard.render.com/databases/[db-id]
-- **Metrics:** https://dashboard.render.com/services/[dbops-api-id]/metrics
+- **All Services:** https://railway.com/dashboard
+- **API Logs:** https://railway.com/dashboard/[dbops-api-id]/logs
+- **Database:** https://railway.com/dashboard/[db-id]
+- **Metrics:** https://railway.com/dashboard/[dbops-api-id]/metrics

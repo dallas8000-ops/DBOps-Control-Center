@@ -25,7 +25,7 @@ if (
   /type="module"[^>]*\ssrc="\/src\/main\.jsx"/.test(html) ||
   /src="\/src\/main\.jsx"[^>]*type="module"/.test(html)
 ) {
-  fail("dist/index.html still loads /src/main.jsx (dev template). Check Render staticPublishPath=dist and buildCommand.");
+  fail("dist/index.html still loads /src/main.jsx (dev template). Check that the Dockerfile ran `npm run build` and copied dist.");
 }
 
 const scriptMatch = html.match(/src="(\/assets\/[^"]+\.js)"/);

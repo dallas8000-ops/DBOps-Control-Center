@@ -2529,7 +2529,7 @@ def _serve_spa(full_path: str = "") -> "_FileResponse":
         status_code=404,
         detail={
             "message": "This is the DBOps API service. Use the web app for the UI.",
-            "web_app": "https://dbops-web-production.up.railway.app",
+            "web_app": "https://dbops.gilliomfrontlinedigital.com",
             "health": "/health",
             "docs": "/docs",
         },

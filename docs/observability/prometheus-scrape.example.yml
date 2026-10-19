@@ -10,7 +10,7 @@ scrape_configs:
       credentials: YOUR_METRICS_BEARER_TOKEN
     static_configs:
       - targets:
-          - dbops-api.onrender.com
+          - dbops.gilliomfrontlinedigital.com
         labels:
           service: dbops-api
           environment: production

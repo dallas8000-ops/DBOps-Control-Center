@@ -10,10 +10,10 @@ This document provides comprehensive operational guidance for deploying, monitor
 
 ### 1.1 Prerequisites
 
-- PostgreSQL 14+ (or managed equivalent like Render Postgres, AWS RDS)
+- PostgreSQL 14+ (or managed equivalent like Railway Postgres, AWS RDS)
 - Python 3.11+ for local operations
 - Docker and Docker Compose for local development
-- Render account (or equivalent PaaS) for production deployment
+- Railway account (or equivalent PaaS) for production deployment
 - Domain name configured (optional but recommended)
 - SSL certificate (required for production OIDC)
 
@@ -59,16 +59,16 @@ AI_REPORT_ROUTER_MODEL=gpt-4o-mini
 AI_INCIDENT_SUMMARY_MODEL=gpt-4o-mini
 ```
 
-### 1.3 Render Deployment
+### 1.3 Railway Deployment
 
 **Step 1: Connect Repository**
-1. Create Render account at https://render.com
+1. Create Railway account at https://railway.com
 2. Connect GitHub repository
-3. Use `render.yaml` blueprint for automated setup
+3. Use the repo `Dockerfile` and `railway.toml` for the build
 
 **Step 2: Database Service**
 1. Create PostgreSQL instance (Free tier for dev, Standard for prod)
-2. Copy `DATABASE_URL` from Render dashboard
+2. Copy `DATABASE_URL` from Railway dashboard
 3. Test connection: `psql $DATABASE_URL`
 
 **Step 3: API Service**
@@ -86,12 +86,12 @@ AI_INCIDENT_SUMMARY_MODEL=gpt-4o-mini
 **Step 5: Verify Deployment**
 ```bash
 # Health checks
-curl https://your-api.onrender.com/health
-curl https://your-api.onrender.com/health/oidc
-curl https://your-api.onrender.com/health/billing
+curl https://your-api.up.railway.app/health
+curl https://your-api.up.railway.app/health/oidc
+curl https://your-api.up.railway.app/health/billing
 
 # UI access
-open https://your-web.onrender.com
+open https://your-web.up.railway.app
 ```
 
 ### 1.4 Docker Compose Local Deployment
@@ -127,10 +127,10 @@ docker compose up --build
 - Failed report executions
 - Scheduled report health
 
-### 2.2 Render Monitoring
+### 2.2 Railway Monitoring
 
 **Built-in Metrics:**
-- CPU, Memory, Response Time available in Render dashboard
+- CPU, Memory, Response Time available in Railway dashboard
 - Log streaming available in service logs
 - Automatic alerts on service restarts
 
@@ -161,7 +161,7 @@ docker compose up --build
 ```
 
 **Log Retention:**
-- Render: 7 days (free), 30 days (paid)
+- Railway: retention depends on your plan
 - Recommended: Export to external log service for long-term retention
 
 ### 2.4 Health Check Endpoints
@@ -200,21 +200,21 @@ GET /health/scheduler
 ### 3.1 Backup Strategy
 
 **Database Backups:**
-- Render Postgres: Automatic daily backups (7-day retention)
+- Railway Postgres: Automatic daily backups (7-day retention)
 - Manual backups before major changes
 - Export backup: `pg_dump $DATABASE_URL > backup_$(date +%Y%m%d).sql`
 
 **Configuration Backups:**
 - Environment variables: Document in secure password manager
-- Render service configuration: Export via Render API
+- Railway service configuration: Export via Railway API
 - Frontend build configuration: Version controlled in git
 
 ### 3.2 Recovery Procedures
 
 **Database Recovery:**
 ```bash
-# Restore from Render backup
-# 1. Go to Render dashboard > Database > Backups
+# Restore from Railway backup
+# 1. Go to Railway dashboard > Database > Backups
 # 2. Select backup to restore
 # 3. Click "Restore" (requires downtime)
 
@@ -225,16 +225,16 @@ psql $DATABASE_URL < backup_20240528.sql
 **Service Recovery:**
 ```bash
 # Restart API service
-# Render: Manual restart from dashboard or deploy new commit
+# Railway: restart from the dashboard or deploy new commit
 
 # Rollback to previous version
 git revert <commit>
 git push origin main
-# Render auto-deploys previous version
+# Railway auto-deploys previous version
 ```
 
 **Data Recovery Time Objectives:**
-- RPO (Recovery Point Objective): 24 hours (Render daily backups)
+- RPO (Recovery Point Objective): 24 hours (Railway scheduled volume backups)
 - RTO (Recovery Time Objective): 1 hour (database restore + service restart)
 
 ### 3.3 Migration Rollback
@@ -505,7 +505,7 @@ alembic downgrade -1
 **Scheduled Reports Not Running:**
 ```bash
 # Check scheduler health
-curl https://your-api.onrender.com/health/scheduler
+curl https://your-api.up.railway.app/health/scheduler
 
 # Review schedule configuration
 GET /reports/schedules
@@ -582,7 +582,7 @@ npm run test:run
 - Database: 10+ GB storage
 - Bandwidth: 50+ GB/month
 
-### 10.3 Cost Estimates (Render)
+### 10.3 Cost Estimates (Railway)
 
 **Free Tier (Development):**
 - Web service: Free

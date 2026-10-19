@@ -1,6 +1,6 @@
 # DBOps observability (Growth-tier production)
 
-Minimal Prometheus + Grafana setup for single-region Render or AWS deployments.
+Minimal Prometheus + Grafana setup for single-region Railway or AWS deployments.
 
 ## What is included
 
@@ -26,9 +26,9 @@ Disable metrics with `METRICS_ENABLED=0` if your platform scrapes health only.
 4. Import `grafana-dbops-dashboard.json` into Grafana.
 5. Optional: set `REDIS_URL` so rate limits are shared across API replicas (`GET /health/observability` reports `rate_limit_backend`).
 
-## Render note
+## Railway note
 
-Render does not run Prometheus for you. Use Grafana Cloud free tier, self-hosted Prometheus, or Datadog/OpenTelemetry collector scraping `/metrics`.
+Railway does not run Prometheus for you. Use Grafana Cloud free tier, self-hosted Prometheus, or Datadog/OpenTelemetry collector scraping `/metrics`.
 
 ## Alerts (recommended)
 

@@ -9,7 +9,7 @@
 Use  short sections buyers scan in order.
 
 ### 1) One-line pitch
-- *Example:* “Full-stack internal ops dashboard: JWT/RBAC, incidents with audit history, whitelisted SQL reports, schedules, admin audit—FastAPI + React + Postgres, Docker + Render-ready.”
+- *Example:* “Full-stack internal ops dashboard: JWT/RBAC, incidents with audit history, whitelisted SQL reports, schedules, admin audit—FastAPI + React + Postgres, Docker + Railway-ready.”
 
 ### 2) Who it’s for
 - Small teams / consultancies building **internal** tooling  
@@ -18,7 +18,7 @@ Use  short sections buyers scan in order.
 
 ### 3) What’s included (deliverables)
 - Source access method (e.g. private repo invite, versioned ZIP, tagged release `v…`)  
-- **README** + runbook pointers (local Docker Compose, Render env vars)  
+- **README** + runbook pointers (local Docker Compose, Railway env vars)  
 - **Written tutorial** scope if sold separately (e.g. setup, first DBA, incidents, reports, troubleshooting)—page count or topic list  
 - **Explicit exclusions** (e.g. no hosted SaaS from you, no SLA unless purchased, no custom feature work unless SOW)
 

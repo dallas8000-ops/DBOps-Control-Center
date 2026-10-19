@@ -22,7 +22,7 @@ RUN cd /tmp/frontend && npm install
 
 COPY frontend/ /tmp/frontend/
 # Vite bakes VITE_* at build time — set VITE_API_URL in Railway Variables (or use ARG default).
-ARG VITE_API_URL=https://dbops-api-production-5047.up.railway.app
+ARG VITE_API_URL=https://dbops.gilliomfrontlinedigital.com
 ENV VITE_API_URL=${VITE_API_URL}
 RUN cd /tmp/frontend && npm run build \
     && cp -r dist /opt/spa \

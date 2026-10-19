@@ -1,5 +1,5 @@
 {
-  "appUrl": "https://dbops-api-production-5047.up.railway.app",
+  "appUrl": "https://dbops.gilliomfrontlinedigital.com",
   "provision": {
     "reuseExisting": true,
     "createWebhook": true,
@@ -7,41 +7,41 @@
   },
   "tiers": [
     {
-      "name": "Starter",
-      "description": "Essential features",
-      "amount": 900,
+      "name": "DBOps Starter",
+      "description": "10 users, 10 scheduled reports",
+      "amount": 7900,
       "currency": "usd",
       "interval": "month",
-      "trialDays": 14,
-      "features": [
-        "Core features",
-        "Email support"
-      ]
-    },
-    {
-      "name": "Pro",
-      "description": "Growing teams",
-      "amount": 2900,
-      "currency": "usd",
-      "interval": "month",
-      "trialDays": 14,
-      "features": [
-        "Everything in Starter",
-        "Priority support",
-        "Team seats"
-      ]
-    },
-    {
-      "name": "Enterprise",
-      "description": "Full access",
-      "amount": 99000,
-      "currency": "usd",
-      "interval": "year",
       "trialDays": 0,
       "features": [
-        "Custom SLA",
-        "Dedicated support",
-        "SSO"
+        "10 users",
+        "10 scheduled reports"
+      ]
+    },
+    {
+      "name": "DBOps Pro",
+      "description": "5,000 users and 5,000 scheduled reports",
+      "amount": 14900,
+      "currency": "usd",
+      "interval": "month",
+      "trialDays": 0,
+      "features": [
+        "Everything in Starter",
+        "5,000 users",
+        "5,000 scheduled reports"
+      ]
+    },
+    {
+      "name": "DBOps Enterprise",
+      "description": "10,000 users and 10,000 scheduled reports",
+      "amount": 39900,
+      "currency": "usd",
+      "interval": "month",
+      "trialDays": 0,
+      "features": [
+        "Everything in Pro",
+        "10,000 users",
+        "10,000 scheduled reports"
       ]
     }
   ]

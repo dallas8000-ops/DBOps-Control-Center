@@ -3,7 +3,7 @@
 ## Day 0 - Kickoff
 - Confirm business owner and technical owner.
 - Confirm deployment target and network constraints.
-- Validate access to GitHub, Render, and database environment.
+- Validate access to GitHub, Railway, and database environment.
 - Confirm RBAC role mapping (DBA, Analyst, Viewer).
 
 ## Day 1 - Environment Baseline
