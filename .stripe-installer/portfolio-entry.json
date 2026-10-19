@@ -4,9 +4,9 @@
   "gitUrl": "https://github.com/dallas8000-ops/DBOps-Control-Center",
   "framework": "fastapi",
   "platform": "railway",
-  "productionUrl": "https://dbops-api-production-5047.up.railway.app",
-  "healthUrl": "https://dbops-api-production-5047.up.railway.app/health",
-  "billingWebhookUrl": "https://dbops-api-production-5047.up.railway.app/billing/webhook",
+  "productionUrl": "https://dbops.gilliomfrontlinedigital.com",
+  "healthUrl": "https://dbops.gilliomfrontlinedigital.com/health",
+  "billingWebhookUrl": "https://dbops.gilliomfrontlinedigital.com/billing/webhook",
   "licenseTier": "growth",
   "stripeTierKeys": ["starter", "pro", "enterprise"],
   "configFiles": {
