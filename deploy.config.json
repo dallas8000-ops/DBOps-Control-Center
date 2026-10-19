@@ -1,5 +1,5 @@
 {
-  "productionUrl": "https://dbops-api-production-5047.up.railway.app",
+  "productionUrl": "https://dbops.gilliomfrontlinedigital.com",
   "environments": {
     "test": {
       "url": ""
@@ -8,7 +8,7 @@
       "url": ""
     },
     "production": {
-      "url": "https://dbops-api-production-5047.up.railway.app"
+      "url": "https://dbops.gilliomfrontlinedigital.com"
     }
   },
   "platform": "railway",
@@ -31,7 +31,7 @@
       "scripts/backup-db.ps1"
     ]
   },
-  "domain": "dbops-api-production-5047.up.railway.app",
+  "domain": "dbops.gilliomfrontlinedigital.com",
   "framework": "fastapi",
   "runtime": "python",
   "healthCheckPath": "/health",
