@@ -1,6 +1,6 @@
 {
   "createdAt": "2026-06-12T04:56:20.398874+00:00",
-  "updatedAt": "2026-08-27T15:28:35.050812+00:00",
+  "updatedAt": "2026-10-02T15:28:50.059674+00:00",
   "accountId": "acct_1TVQpaRxznXvj6jh",
   "products": [
     {
@@ -57,13 +57,13 @@
     }
   ],
   "webhookEndpoint": {
-    "id": "we_1U95ECRxznXvj6jhapbgS6wi",
-    "url": "https://dbops-api-production-5047.up.railway.app/billing/webhook",
+    "id": "we_1UM8ODRxznXvj6jh7GKSPtXe",
+    "url": "https://dbops-control-center-production.up.railway.app/billing/webhook",
     "reused": false
   },
   "billingPortalConfig": {
     "id": "bpc_1U8q6HRxznXvj6jhAkXFSKbo",
     "reused": true
   },
-  "appUrl": "https://dbops-api-production-5047.up.railway.app"
+  "appUrl": "https://dbops-control-center-production.up.railway.app"
 }
