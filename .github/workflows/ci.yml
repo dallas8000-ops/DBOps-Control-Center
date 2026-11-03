@@ -83,6 +83,10 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # frontend/.env.production points at the live API. E2E specs mock the API on
+      # localhost:8000, so build against that and never send test traffic to production.
+      VITE_API_URL: http://localhost:8000
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
