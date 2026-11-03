@@ -1,7 +1,7 @@
 {
-  "deployedAt": "2026-08-27T15:29:02.016847+00:00",
+  "deployedAt": "2026-10-02T15:30:46.940667+00:00",
   "platform": "railway",
   "productionUrl": "https://dbops-api-production-5047.up.railway.app",
   "postgresProvider": null,
-  "readinessScore": 91
+  "readinessScore": 100
 }
