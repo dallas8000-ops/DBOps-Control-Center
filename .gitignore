@@ -13,3 +13,4 @@ backups/
 
 # local-only artifacts
 /dbops_local.db
+e2e/test-results/
